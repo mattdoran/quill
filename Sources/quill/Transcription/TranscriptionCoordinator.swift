@@ -17,6 +17,7 @@ actor TranscriptionCoordinator {
     private var queue: [URL] = []
     private var draining = false
     private var engine: TranscriptionEngine?
+    private var diarizer: DiarizationEngine?
     private var lastFailure: String?
     private var statusHandler: (@Sendable (Status) -> Void)?
 
@@ -90,6 +91,8 @@ actor TranscriptionCoordinator {
         }
         await engine?.release()
         engine = nil
+        await diarizer?.release()
+        diarizer = nil
         publish(lastFailure.map { .failed(session: $0) } ?? .idle)
         draining = false
         // An enqueue that landed between the loop exiting and the release
@@ -102,6 +105,7 @@ actor TranscriptionCoordinator {
         let engine = try await preparedEngine()
 
         var merged: [Transcript.Segment] = []
+        var diarizedModel: String?
         for track in meta.tracks {
             let audio = dir.appendingPathComponent(track.file)
             guard FileManager.default.fileExists(atPath: audio.path) else {
@@ -118,13 +122,19 @@ actor TranscriptionCoordinator {
                 log(dir, "skipping \(track.file): \(error)")
                 continue
             }
+            let (speakers, split) = await labels(
+                for: segments, track: track, audio: audio, dir: dir
+            )
+            if split {
+                diarizedModel = diarizer?.model
+            }
             let offset = TimeInterval(track.offsetMs) / 1000
-            merged += segments.map {
+            merged += zip(segments, speakers).map { segment, speaker in
                 Transcript.Segment(
-                    speaker: track.speaker,
-                    start_ms: Int(($0.start + offset) * 1000),
-                    end_ms: Int(($0.end + offset) * 1000),
-                    text: $0.text
+                    speaker: speaker,
+                    start_ms: Int((segment.start + offset) * 1000),
+                    end_ms: Int((segment.end + offset) * 1000),
+                    text: segment.text
                 )
             }
         }
@@ -133,11 +143,59 @@ actor TranscriptionCoordinator {
         let transcript = Transcript(
             engine: engine.name,
             model: engine.model,
+            diarizer: diarizedModel,
             created_at: ISO8601DateFormatter().string(from: Date()),
             segments: merged
         )
         try transcript.write(to: dir)
         log(dir, "done — \(merged.count) segments")
+    }
+
+    /// Per-segment speaker labels for one track, diarized when that track's
+    /// config asks for it.
+    ///
+    /// A diarization failure degrades to the flat track label instead of
+    /// propagating — coarse attribution beats losing the transcript — and the
+    /// reason lands in transcribe.log.
+    ///
+    /// - Returns: one label per segment, and whether diarization actually split
+    ///   the track. False when it was off, failed, or found a single speaker,
+    ///   which is what decides whether the transcript records a diarizer.
+    private func labels(
+        for segments: [TranscriptSegment],
+        track: SessionMeta.Track,
+        audio: URL,
+        dir: URL
+    ) async -> (labels: [String], split: Bool) {
+        let settings = Config.speakerDetection(track: track.kind)
+        guard settings.enabled, !segments.isEmpty else {
+            return (segments.map { _ in settings.soloLabel }, false)
+        }
+        do {
+            log(dir, "diarizing \(track.file)")
+            let engine = try await preparedDiarizer()
+            let spans = try await engine.spans(for: audio)
+            let labels = DiarizationEngine.labels(
+                for: segments,
+                spans: spans,
+                solo: settings.soloLabel,
+                shared: settings.sharedLabel
+            )
+            let distinct = Set(labels).count
+            log(dir, "diarized \(track.file) — \(distinct) speaker(s)")
+            return (labels, distinct > 1)
+        } catch {
+            log(dir, "diarization failed for \(track.file), using \(settings.soloLabel): \(error)")
+            return (segments.map { _ in settings.soloLabel }, false)
+        }
+    }
+
+    private func preparedDiarizer() async throws -> DiarizationEngine {
+        if let diarizer { return diarizer }
+        let diarizer = DiarizationEngine()
+        try await diarizer.prepare()
+        self.diarizer = diarizer
+        return diarizer
     }
 
     private func preparedEngine() async throws -> TranscriptionEngine {
@@ -191,8 +249,10 @@ actor TranscriptionCoordinator {
 private struct SessionMeta {
     struct Track {
         let file: String
-        let speaker: String
         let offsetMs: Int
+        /// Config key for this track's diarization settings and its label
+        /// defaults: "mic" or "system".
+        let kind: String
     }
 
     let tracks: [Track]
@@ -220,10 +280,10 @@ private struct SessionMeta {
         let offsets = json["start_offset_ms"] as? [String: Int] ?? [:]
         var tracks: [Track] = []
         if let mic = files["mic"] {
-            tracks.append(Track(file: mic, speaker: "me", offsetMs: offsets["mic"] ?? 0))
+            tracks.append(Track(file: mic, offsetMs: offsets["mic"] ?? 0, kind: "mic"))
         }
         if let system = files["system"] {
-            tracks.append(Track(file: system, speaker: "them", offsetMs: offsets["system"] ?? 0))
+            tracks.append(Track(file: system, offsetMs: offsets["system"] ?? 0, kind: "system"))
         }
         return SessionMeta(tracks: tracks)
     }
@@ -241,6 +301,9 @@ private struct Transcript: Codable {
 
     let engine: String
     let model: String
+    /// Diarization model, when the system track was actually split. Absent on
+    /// transcripts where diarization was off, failed, or found one speaker.
+    let diarizer: String?
     let created_at: String
     let segments: [Segment]
 
@@ -257,7 +320,11 @@ private struct Transcript: Codable {
     }
 
     private func rendered(title: String) -> String {
-        var lines = ["# \(title)", "", "engine: \(engine) (\(model))", ""]
+        var lines = ["# \(title)", "", "engine: \(engine) (\(model))"]
+        if let diarizer {
+            lines.append("diarizer: \(diarizer)")
+        }
+        lines.append("")
         for seg in segments {
             lines.append("**[\(Self.clock(seg.start_ms))] \(seg.speaker):** \(seg.text)")
             lines.append("")

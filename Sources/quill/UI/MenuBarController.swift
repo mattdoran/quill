@@ -9,6 +9,8 @@ final class MenuBarController {
     private let stateLabel: NSMenuItem
     private let transcriptionLabel: NSMenuItem
     private let toggleItem: NSMenuItem
+    private let micSpeakersItem: NSMenuItem
+    private let systemSpeakersItem: NSMenuItem
 
     var onToggle: (() -> Void)?
     var onOpenFolder: (() -> Void)?
@@ -47,6 +49,27 @@ final class MenuBarController {
 
         menu.addItem(.separator())
 
+        // The tracks are independent: a remote call wants the far side split,
+        // an in-person meeting wants the room. Titles name the situation, since
+        // "mic" and "system" don't describe the choice being made. Both sit at
+        // the top level — a setting worth changing per meeting shouldn't cost a
+        // hover and a second click to reach or to read.
+        micSpeakersItem = NSMenuItem(
+            title: "Detect speakers in the room",
+            action: #selector(micSpeakersClicked),
+            keyEquivalent: ""
+        )
+        menu.addItem(micSpeakersItem)
+
+        systemSpeakersItem = NSMenuItem(
+            title: "Detect speakers on the call",
+            action: #selector(systemSpeakersClicked),
+            keyEquivalent: ""
+        )
+        menu.addItem(systemSpeakersItem)
+
+        menu.addItem(.separator())
+
         let quit = NSMenuItem(
             title: "Quit quill",
             action: #selector(quitClicked),
@@ -54,11 +77,14 @@ final class MenuBarController {
         )
         menu.addItem(quit)
 
-        for item in [toggleItem, openFolder, quit] {
+        for item in [
+            toggleItem, openFolder, quit, micSpeakersItem, systemSpeakersItem,
+        ] {
             item.target = self
         }
 
         statusItem.menu = menu
+        refreshSpeakerDetectionState()
 
         if let button = statusItem.button {
             let image = Self.featherImage()
@@ -108,7 +134,30 @@ final class MenuBarController {
         return image
     }
 
+    /// Reads the checkmarks back from the config file, so the menu agrees with
+    /// a hand-edited config and not with whatever was last clicked.
+    private func refreshSpeakerDetectionState() {
+        micSpeakersItem.state =
+            Config.speakerDetection(track: "mic").enabled ? .on : .off
+        systemSpeakersItem.state =
+            Config.speakerDetection(track: "system").enabled ? .on : .off
+    }
+
+    /// Persists, then re-reads: a failed write leaves the checkmark where it
+    /// was instead of showing a setting that isn't on disk.
+    private func setSpeakerDetection(track: String, from item: NSMenuItem) {
+        State.setSpeakerDetection(track: track, enabled: item.state != .on)
+        refreshSpeakerDetectionState()
+    }
+
     @objc private func toggleClicked() { onToggle?() }
     @objc private func openFolderClicked() { onOpenFolder?() }
     @objc private func quitClicked() { onQuit?() }
+    @objc private func micSpeakersClicked() {
+        setSpeakerDetection(track: "mic", from: micSpeakersItem)
+    }
+
+    @objc private func systemSpeakersClicked() {
+        setSpeakerDetection(track: "system", from: systemSpeakersItem)
+    }
 }

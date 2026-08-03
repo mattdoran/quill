@@ -21,6 +21,7 @@ enum DoctorReport {
             checkSystemAudio(),
             checkRecordingsRoot(recordingsRoot),
             checkTranscription(),
+            checkSpeakerDetection(),
         ]
     }
 
@@ -94,6 +95,32 @@ enum DoctorReport {
             name: "transcription",
             status: .warn("parakeet models not downloaded (~600 MB)"),
             remediation: "downloads automatically on first transcription — record a short test session while online"
+        )
+    }
+
+    /// Report the labels a transcript will actually carry, so a config can be
+    /// checked without recording a meeting and reading the result. Silent when
+    /// both tracks are off — there is nothing to get wrong.
+    static func checkSpeakerDetection() -> Check {
+        let mic = Config.speakerDetection(track: "mic")
+        let system = Config.speakerDetection(track: "system")
+        guard mic.enabled || system.enabled else {
+            return Check(name: "speaker detection", status: .ok, remediation: nil)
+        }
+
+        func describe(_ settings: Config.SpeakerDetection) -> String {
+            guard settings.enabled else { return settings.soloLabel }
+            let numbered = "\(settings.sharedLabel) 1, \(settings.sharedLabel) 2, …"
+            // Only worth spelling out where the two labels differ; on the
+            // system track both are "them" and the aside would say nothing.
+            guard settings.soloLabel != settings.sharedLabel else { return numbered }
+            return "\(numbered) (\(settings.soloLabel) if alone)"
+        }
+
+        return Check(
+            name: "speaker detection",
+            status: .warn("mic → \(describe(mic)) · system → \(describe(system))"),
+            remediation: "at most 4 speakers per track — the model has four output slots"
         )
     }
 
