@@ -11,6 +11,7 @@ final class MenuBarController {
     private let toggleItem: NSMenuItem
     private let micSpeakersItem: NSMenuItem
     private let systemSpeakersItem: NSMenuItem
+    private var pulseDim = false
 
     var onToggle: (() -> Void)?
     var onOpenFolder: (() -> Void)?
@@ -91,17 +92,33 @@ final class MenuBarController {
             image?.isTemplate = true
             button.image = image
             button.imagePosition = .imageLeft
+            // Monospaced digits: proportional ones reflow width every tick,
+            // making the icon jiggle as the counter updates.
+            button.font = NSFont.monospacedDigitSystemFont(
+                ofSize: NSFont.systemFontSize, weight: .regular
+            )
         }
     }
 
-    /// Reflect recording state in the icon tint and menu item titles. The
-    /// menu bar shows only the feather (red while recording); the elapsed
-    /// counter lives in the menu's state label. Call once a second while
-    /// recording.
+    /// Reflect recording state in the icon, the counter next to it, and menu
+    /// item titles. The counter runs in the status bar itself (not just the
+    /// menu's state label) because a static red tint reads as decoration, not
+    /// an alarm — a number that visibly counts up is what actually catches
+    /// the eye on a glance. The tint pulses on the same call as the counter
+    /// (not a separate timer) so the two move in lockstep instead of
+    /// drifting in and out of phase. Call once a second while recording.
     func update(recording: Bool, elapsed: String?) {
         stateLabel.title = recording ? "● recording · \(elapsed ?? "0:00")" : "idle"
         toggleItem.title = recording ? "Stop recording" : "Start recording"
-        statusItem.button?.contentTintColor = recording ? .systemRed : nil
+        statusItem.button?.title = recording ? " \(elapsed ?? "0:00")" : ""
+        if recording {
+            pulseDim.toggle()
+            statusItem.button?.contentTintColor =
+                NSColor.systemRed.withAlphaComponent(pulseDim ? 0.35 : 1.0)
+        } else {
+            statusItem.button?.contentTintColor = nil
+            pulseDim = false
+        }
     }
 
     /// Show transcription progress/failure as a second status line in the
