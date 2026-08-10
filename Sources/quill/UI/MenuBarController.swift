@@ -107,14 +107,19 @@ final class MenuBarController {
     /// the eye on a glance. The tint pulses on the same call as the counter
     /// (not a separate timer) so the two move in lockstep instead of
     /// drifting in and out of phase. Call once a second while recording.
-    func update(recording: Bool, elapsed: String?) {
-        stateLabel.title = recording ? "● recording · \(elapsed ?? "0:00")" : "idle"
+    ///
+    /// `trouble` tints yellow: still recording, no longer assumed complete.
+    func update(recording: Bool, elapsed: String?, trouble: String? = nil) {
+        stateLabel.title = recording
+            ? "● recording · \(elapsed ?? "0:00")\(trouble.map { " · \($0)" } ?? "")"
+            : "idle"
         toggleItem.title = recording ? "Stop recording" : "Start recording"
         statusItem.button?.title = recording ? " \(elapsed ?? "0:00")" : ""
         if recording {
             pulseDim.toggle()
+            let tint: NSColor = trouble == nil ? .systemRed : .systemYellow
             statusItem.button?.contentTintColor =
-                NSColor.systemRed.withAlphaComponent(pulseDim ? 0.35 : 1.0)
+                tint.withAlphaComponent(pulseDim ? 0.35 : 1.0)
         } else {
             statusItem.button?.contentTintColor = nil
             pulseDim = false
