@@ -14,8 +14,6 @@ final class RecordingSession {
     /// back.
     private(set) var trouble: String?
 
-    var onTrouble: ((String) -> Void)?
-
     private var reported: Set<String> = []
 
     private let log: SessionLog
@@ -148,13 +146,10 @@ final class RecordingSession {
         }
     }
 
-    /// Each supervisor reports once per outage, so this accumulates rather than
-    /// keeping only the first: both tracks broken must not read as one.
+    /// Accumulates, since both tracks broken must not read as one.
     private func report(_ message: String) {
-        guard !reported.contains(message) else { return }
         reported.insert(message)
         trouble = reported.sorted().joined(separator: " · ")
-        onTrouble?(message)
     }
 
     private func trackMeta(

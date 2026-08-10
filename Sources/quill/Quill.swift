@@ -118,13 +118,6 @@ final class AppController {
     private func startSession() {
         do {
             let newSession = try RecordingSession(root: root)
-            newSession.onTrouble = { [weak self] message in
-                notifyUser(
-                    title: "quill — \(message)",
-                    body: "Recording continues; check session.log when it stops."
-                )
-                self?.tick()
-            }
             try newSession.start()
             session = newSession
             FileHandle.standardError.write(Data("● recording → \(newSession.dir.path)\n".utf8))
