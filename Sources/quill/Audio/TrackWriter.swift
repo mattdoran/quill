@@ -226,8 +226,13 @@ final class TrackWriter: @unchecked Sendable {
         guard let silence = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: chunk) else {
             return
         }
-        for channel in 0..<Int(format.channelCount) {
-            silence.floatChannelData?[channel].update(repeating: 0, count: Int(chunk))
+        // Zeroed through the buffer list so interleaved layouts, where there is
+        // one buffer rather than one per channel, are covered. `frameLength` is
+        // set to capacity first so the whole allocation is cleared, then shrunk
+        // per chunk below.
+        silence.frameLength = chunk
+        for buffer in UnsafeMutableAudioBufferListPointer(silence.mutableAudioBufferList) {
+            memset(buffer.mData, 0, Int(buffer.mDataByteSize))
         }
         while remaining > 0 {
             silence.frameLength = min(chunk, remaining)
@@ -245,9 +250,12 @@ final class TrackWriter: @unchecked Sendable {
     private func trackSilenceLocked(_ buffer: AVAudioPCMBuffer, at now: Date) {
         guard watchSilence else { return }
         var peak: Float = 0
-        for channel in 0..<Int(buffer.format.channelCount) {
-            guard let samples = buffer.floatChannelData?[channel] else { continue }
-            for i in 0..<Int(buffer.frameLength) {
+        for raw in UnsafeMutableAudioBufferListPointer(
+            UnsafeMutablePointer(mutating: buffer.audioBufferList)
+        ) {
+            guard let data = raw.mData else { continue }
+            let samples = data.assumingMemoryBound(to: Float.self)
+            for i in 0..<Int(raw.mDataByteSize) / MemoryLayout<Float>.size {
                 peak = max(peak, abs(samples[i]))
             }
         }
