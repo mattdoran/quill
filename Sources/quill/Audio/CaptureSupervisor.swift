@@ -19,6 +19,9 @@ protocol Capture: AnyObject {
 
     /// Stop and discard the graph, keeping the file.
     func detach()
+
+    /// Finish the track, padding it out to `date`.
+    func close(at date: Date)
 }
 
 /// Records when a capture graph last delivered, written from its own thread and
@@ -76,6 +79,7 @@ final class CaptureSupervisor {
     private var state: State = .stopped
     private let capture: Capture
     private let log: SessionLog
+
     private let onTrouble: (String) -> Void
 
     /// Latest moment capture is known to have been alive, so the stall check
@@ -105,10 +109,12 @@ final class CaptureSupervisor {
         state = .capturing
     }
 
-    func stop() {
-        guard state != .stopped else { return }
+    /// Safe on a supervisor that never started, so a session that failed
+    /// half-way still finishes the track its sibling opened.
+    func stop(at date: Date) {
+        if state != .stopped { capture.detach() }
         state = .stopped
-        capture.detach()
+        capture.close(at: date)
     }
 
     func invalidate(_ reason: String) {
@@ -144,7 +150,7 @@ final class CaptureSupervisor {
             // for the rest of the meeting with nothing shown to the user.
             if let started = outageStartedAt,
                 now.timeIntervalSince(started) > Self.troubleThreshold {
-                report("\(capture.name) capture interrupted")
+                report("\(capture.name) capture lost")
             }
             guard now >= nextTry else { return }
             capture.detach()
@@ -184,8 +190,8 @@ final class CaptureSupervisor {
         }
     }
 
-    /// One report per outage; the caller hears that a track broke, not how many
-    /// times it has been retried since.
+    /// One report per outage: a track that stays broken is not re-announced on
+    /// every retry.
     private func report(_ message: String) {
         guard !troubleReported else { return }
         troubleReported = true

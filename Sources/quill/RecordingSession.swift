@@ -69,11 +69,8 @@ final class RecordingSession {
             // Nothing was captured, so the folder is noise rather than a record
             // of anything. Leaving it behind means a failed start accumulates
             // an empty dated directory every time.
-            systemSupervisor.stop()
-            micSupervisor.stop()
             let ended = Date()
-            mic.close(at: ended)
-            system.close(at: ended)
+            [systemSupervisor, micSupervisor].forEach { $0.stop(at: ended) }
             log.warn("session aborted: \(error)")
             log.close()
             try? FileManager.default.removeItem(at: dir)
@@ -96,12 +93,10 @@ final class RecordingSession {
         ticker?.invalidate()
         ticker = nil
         deviceWatcher = nil
-        supervisors.forEach { $0.stop() }
-        supervisors = []
 
         let ended = Date()
-        mic.close(at: ended)
-        system.close(at: ended)
+        supervisors.forEach { $0.stop(at: ended) }
+        supervisors = []
 
         let iso = ISO8601DateFormatter()
 
