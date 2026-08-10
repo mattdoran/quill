@@ -168,7 +168,8 @@ final class AppController {
         menuBar.update(
             recording: true,
             elapsed: Self.format(Date().timeIntervalSince(session.startedAt)),
-            trouble: session.trouble
+            trouble: session.trouble,
+            degraded: session.isDegraded
         )
     }
 

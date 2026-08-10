@@ -11,7 +11,6 @@ final class MenuBarController {
     private let toggleItem: NSMenuItem
     private let micSpeakersItem: NSMenuItem
     private let systemSpeakersItem: NSMenuItem
-    private var pulseDim = false
 
     var onToggle: (() -> Void)?
     var onOpenFolder: (() -> Void)?
@@ -34,17 +33,20 @@ final class MenuBarController {
 
         menu.addItem(.separator())
 
+        // No key equivalents on these: a menu shortcut only fires while the
+        // menu is open, so advertising one promises a hotkey that cannot work
+        // from inside the meeting you are recording.
         toggleItem = NSMenuItem(
             title: "Start recording",
             action: #selector(toggleClicked),
-            keyEquivalent: "r"
+            keyEquivalent: ""
         )
         menu.addItem(toggleItem)
 
         let openFolder = NSMenuItem(
             title: "Open recordings folder",
             action: #selector(openFolderClicked),
-            keyEquivalent: "o"
+            keyEquivalent: ""
         )
         menu.addItem(openFolder)
 
@@ -88,9 +90,7 @@ final class MenuBarController {
         refreshSpeakerDetectionState()
 
         if let button = statusItem.button {
-            let image = Self.featherImage()
-            image?.isTemplate = true
-            button.image = image
+            button.image = Self.featherImage()
             button.imagePosition = .imageLeft
             // Monospaced digits: proportional ones reflow width every tick,
             // making the icon jiggle as the counter updates.
@@ -101,29 +101,47 @@ final class MenuBarController {
     }
 
     /// Reflect recording state in the icon, the counter next to it, and menu
-    /// item titles. The counter runs in the status bar itself (not just the
-    /// menu's state label) because a static red tint reads as decoration, not
-    /// an alarm — a number that visibly counts up is what actually catches
-    /// the eye on a glance. The tint pulses on the same call as the counter
-    /// (not a separate timer) so the two move in lockstep instead of
-    /// drifting in and out of phase. Call once a second while recording.
+    /// item titles. The counter runs in the status bar itself, not just the
+    /// menu's state label, so the state is readable without opening anything.
+    /// Call once a second while recording.
     ///
-    /// `trouble` tints yellow: still recording, no longer assumed complete.
-    func update(recording: Bool, elapsed: String?, trouble: String? = nil) {
+    /// `trouble` is the session's record of what went wrong and stays in the
+    /// menu; `degraded` is whether a track is down right now and drives the
+    /// icon, so it stops warning about a fault already recovered from.
+    ///
+    /// The three states differ in shape, not just tint: nothing in the macOS
+    /// menu bar animates, and colour alone is one state to a colourblind user
+    /// in the strip of screen with the least contrast to work with.
+    func update(
+        recording: Bool, elapsed: String?, trouble: String? = nil, degraded: Bool = false
+    ) {
         stateLabel.title = recording
             ? "● recording · \(elapsed ?? "0:00")\(trouble.map { " · \($0)" } ?? "")"
             : "idle"
         toggleItem.title = recording ? "Stop recording" : "Start recording"
         statusItem.button?.title = recording ? " \(elapsed ?? "0:00")" : ""
-        if recording {
-            pulseDim.toggle()
-            let tint: NSColor = trouble == nil ? .systemRed : .systemYellow
-            statusItem.button?.contentTintColor =
-                tint.withAlphaComponent(pulseDim ? 0.35 : 1.0)
-        } else {
-            statusItem.button?.contentTintColor = nil
-            pulseDim = false
+
+        guard let button = statusItem.button else { return }
+        switch (recording, degraded) {
+        case (false, _):
+            button.image = Self.featherImage()
+            button.contentTintColor = nil
+            button.setAccessibilityTitle("Quill, idle")
+        case (true, false):
+            button.image = Self.symbol("record.circle.fill", "recording")
+            button.contentTintColor = .systemRed
+            button.setAccessibilityTitle("Quill, recording, \(elapsed ?? "0:00")")
+        case (true, true):
+            button.image = Self.symbol("exclamationmark.triangle.fill", "capture problem")
+            button.contentTintColor = .systemOrange
+            button.setAccessibilityTitle("Quill, capture problem, \(elapsed ?? "0:00")")
         }
+    }
+
+    private static func symbol(_ name: String, _ description: String) -> NSImage? {
+        let image = NSImage(systemSymbolName: name, accessibilityDescription: description)
+        image?.isTemplate = true
+        return image
     }
 
     /// Show transcription progress/failure as a second status line in the
@@ -153,6 +171,8 @@ final class MenuBarController {
         else { return nil }
         // Menu-bar status icons are nominally 18pt tall; size the SVG to match.
         image.size = NSSize(width: 16, height: 16)
+        // Template, so the glyph follows the menu bar's appearance.
+        image.isTemplate = true
         return image
     }
 

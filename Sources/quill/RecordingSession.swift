@@ -14,6 +14,11 @@ final class RecordingSession {
     /// back.
     private(set) var trouble: String?
 
+    /// Whether a track is down *now*, as opposed to `trouble`, which records
+    /// what went wrong at any point. The icon follows this so it stops warning
+    /// about a fault the session has already recovered from.
+    var isDegraded: Bool { supervisors.contains { !$0.isHealthy } }
+
     private var reported: Set<String> = []
 
     private let log: SessionLog

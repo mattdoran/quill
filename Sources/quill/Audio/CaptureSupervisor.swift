@@ -77,6 +77,14 @@ final class CaptureSupervisor {
     }
 
     private var state: State = .stopped
+
+    /// Whether capture is live right now, as opposed to the sticky record of
+    /// what has gone wrong this session.
+    var isHealthy: Bool {
+        if case .recovering = state { return false }
+        return true
+    }
+
     private let capture: Capture
     private let log: SessionLog
 
