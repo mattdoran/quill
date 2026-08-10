@@ -65,11 +65,12 @@ Open Last Transcript
 ────────────────────────────────────────────
 Start Recording
 Open Recordings Folder
+Change Recordings Folder…
 ────────────────────────────────────────────
-Separate Voices in the Room                      ✓
-Separate Voices on the Call                      ✓
 Cancel Echo from Speakers
 Transcribe After Recording                       ✓
+Separate Voices in the Room                      ✓
+Separate Voices on the Call                      ✓
 ────────────────────────────────────────────
 Open at Login                                    ✓
 About Quill
@@ -77,6 +78,8 @@ Quit Quill                                      ⌘Q
 ```
 
 `Open Last Transcript` is disabled when no session has a `transcript.md`.
+`Retry Transcription` and `Download Transcription Models` are hidden unless they
+apply, and appear in the status block at the top.
 
 ### Recording
 
@@ -86,20 +89,68 @@ Open Last Transcript
 ────────────────────────────────────────────
 Stop Recording
 Open Recordings Folder
+Change Recordings Folder…
 ────────────────────────────────────────────
+Cancel Echo from Speakers
+Transcribe After Recording                       ✓
 Separate Voices in the Room                      ✓
 Separate Voices on the Call                      ✓
-Cancel Echo from Speakers                           ⟨disabled⟩
-Transcribe After Recording                       ✓
 ────────────────────────────────────────────
 Open at Login                                    ✓
 About Quill
 Stop Recording and Quit                         ⌘Q
 ```
 
-The two speaker toggles stay live while recording: they are read at
-transcription time, so a mid-meeting change still lands. Echo cancellation is
-not, because it is applied when the mic graph is built.
+Nothing in the settings block greys out while recording. Every item there is
+settable mid-meeting; they differ only in when the setting takes effect, which
+is a job for the tooltip, not for a grey row.
+
+### The settings block: ordering and greying
+
+Four checkboxes, one block, in **pipeline order**: capture, then whether to
+transcribe, then how to label the result.
+
+| Order | Item | Why here |
+|---|---|---|
+| 1 | `Cancel Echo from Speakers` | Changes what gets recorded; everything below only changes what happens to the recording afterwards. It is also the only one that still matters when the rest are off. |
+| 2 | `Transcribe After Recording` | The master switch for the two below. A setting cannot sit underneath the thing that gates it. |
+| 3 | `Separate Voices in the Room` | Depends on 2; greys out with it. |
+| 4 | `Separate Voices on the Call` | Its pair, adjacent, differing only in the last two words on purpose. |
+
+Decisions this settles:
+
+- **One block, not three.** All four answer the same question — what quill does
+  with *this* meeting — which is what separates them from `Open at Login` below.
+  Splitting them by which subsystem reads them is an implementation detail
+  leaking into a menu.
+- **Pipeline order beats frequency order.** Frequency of change would put the two
+  Separate Voices toggles first, which is roughly what shipped. It loses because
+  it puts a dependent setting above its master, and no amount of frequency
+  justifies that.
+- **The two `Separate Voices` items grey out when `Transcribe After Recording`
+  is off.** They configure a pipeline that will not run. The rule that makes this
+  safe: **grey an item only when the cause is visible in the same menu.** An
+  unchecked master one line above is visible. A tooltip is not.
+- **`Cancel Echo from Speakers` is never greyed.** It is read when the mic graph
+  is built, so a mid-recording click applies to the next recording — which is
+  exactly what its tooltip says. Disabling it produced a grey row with its
+  reason hidden in a hover, i.e. a dead end. Enabled, the worst case is a
+  setting that lands one meeting later.
+- **Parallel construction on the pair stays.** They are a matched choice on two
+  tracks; the shared prefix is the signal that they are a pair, and adjacency
+  does the disambiguating. Front-loading the difference would read worse and
+  break the pairing.
+- **No section headers.** `NSMenuItem.sectionHeader(title:)` exists on macOS 14+
+  and is not warranted for four items already fenced by separators. Any honest
+  header text is either redundant with the position or vague, and headers on a
+  fifteen-item menu make it look like the preferences pane this app refuses to
+  have. Indentation under the master (`NSMenuItem.indentationLevel`) was
+  considered and dropped: greying the dependants already carries the
+  relationship, so the indent adds layout risk for nothing.
+- **Nothing is dropped.** `Cancel Echo from Speakers` is the only candidate — it
+  defaults off and costs about 8 dB on the system track — but it is the single
+  fix for recording a room through loudspeakers, and JSON-only means nobody
+  finds it.
 
 ### Recording, degraded
 
@@ -156,9 +207,10 @@ a window. Verbatim:
 | Item | `toolTip` |
 |---|---|
 | Open Recordings Folder | *(the resolved path, e.g.)* `/Users/matt/Recordings` |
+| Change Recordings Folder… | `Pick where recordings are saved. Choosing a folder here is also how macOS grants access to protected places like Documents.` |
 | Separate Voices in the Room  | `Labels each person on your microphone track separately, for in-person meetings. Downloads a second on-device model the first time.` |
 | Separate Voices on the Call  | `Labels each person on the call separately, for group calls. Downloads a second on-device model the first time.` |
-| Cancel Echo from Speakers | `Stops meeting audio bleeding into your microphone when you are not wearing headphones. Slightly quietens other playback while recording. Applies to the next recording.` |
+| Cancel Echo from Speakers | `Stops meeting audio bleeding into your microphone when you are not wearing headphones. Costs about 8 dB on the system audio track, which is usually the worse trade. Applies to the next recording.` |
 | Transcribe After Recording | `Off means quill records only. Turning it back on transcribes the backlog the next time Quill starts.` |
 | Open at Login | `Quill starts hidden in the menu bar when you log in. macOS also lists it under System Settings → General → Login Items.` |
 | Stop Recording and Quit | `Ends the current recording. Transcription resumes the next time Quill starts.` |
@@ -284,8 +336,8 @@ holds nothing until it holds something the menu cannot.**
 |---|---|---|
 | Separate voices, mic | Menu | Changes per meeting: in-person or not. |
 | Separate voices, system | Menu | Changes per meeting: group call or 1:1. |
-| Echo cancellation | Menu | Changes per meeting: headphones or speakers. Defaults to whether sound is currently coming out of the built-in speakers, and a click overrides that for good. Disabled while recording. |
-| Transcribe after recording | Menu | One line explains it. |
+| Echo cancellation | Menu | The fix for recording a room through loudspeakers. Defaults **off**: measurement put the cost at 7.8 dB on the recorded system track, which is the worse trade in every case except that one. Auto-detecting loudspeakers was tried and dropped for the same reason — a setting that costs 8 dB must be asked for, not guessed at. Never greyed; a mid-recording click applies to the next recording. |
+| Transcribe after recording | Menu | One line explains it, and it gates the two Separate Voices toggles, which grey out when it is off. |
 | Open at Login | Menu | Via `SMAppService`. `install --launch-at-login` stays as a thin wrapper over the same call, so a fresh install can be set up without opening the app, and the two can never disagree. |
 | Recordings folder | Menu | The resolved path as the `Open Recordings Folder` tooltip, plus `Change Recordings Folder…`. Not hidden behind an option-click: picking a folder through the open panel is how macOS grants access to a protected location, so it is the fix for a permission failure, not a power-user preference. |
 | `transcription.engine` | JSON | One value ships. Not a setting yet. |

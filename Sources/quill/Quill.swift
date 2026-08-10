@@ -102,7 +102,16 @@ final class AppController {
         menuBar.onOpenFolder = { [weak self] in self?.openFolder() }
         menuBar.onQuit = { [weak self] in self?.shutdown() }
         menuBar.onOpenLastTranscript = { [weak self] in self?.openLastTranscript() }
-        menuBar.hasTranscript = { [weak self] in self?.lastTranscript() != nil }
+        menuBar.hasTranscript = { [weak self] in
+            guard let self else { return false }
+            // Checked here rather than on a timer: the menu opening is the
+            // only moment it matters.
+            let reachable = canReachRoot()
+            menuBar.showFolderProblem(!reachable)
+            // Refresh the state line, which is only otherwise redrawn on a tick.
+            menuBar.update(recording: session != nil, elapsed: nil)
+            return reachable && lastTranscript() != nil
+        }
         menuBar.recordingsPath = { [weak self] in self?.root.path ?? "" }
         menuBar.onChangeFolder = { [weak self] in self?.changeFolder() }
         menuBar.onOpenFailureLog = { [weak self] in

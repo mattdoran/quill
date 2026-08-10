@@ -38,6 +38,11 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     /// rather than tracked, since transcription finishes on its own schedule.
     var hasTranscript: (() -> Bool)?
 
+    /// Reported in the state line rather than as its own row: it is a
+    /// condition, not a command, and Change Recordings Folder… below is the
+    /// action that fixes it.
+    private var folderUnreadable = false
+
     /// Where recordings land. Shown as a tooltip rather than a setting: it is
     /// worth knowing and rarely worth changing.
     var recordingsPath: (() -> String)?
@@ -127,11 +132,37 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
 
+        echoItem = NSMenuItem(
+            title: "Cancel Echo from Speakers",
+            action: #selector(echoClicked),
+            keyEquivalent: ""
+        )
+        echoItem.toolTip = """
+            Stops meeting audio bleeding into your microphone when you are not \
+            wearing headphones. Costs about 8 dB on the system audio track, \
+            which is usually the worse trade. Applies to the next recording.
+            """
+        menu.addItem(echoItem)
+
+        // Ordered by the pipeline: what gets captured, then whether it is
+        // transcribed, then how the transcript is labelled. Transcription is
+        // the master switch for the two below it, so it cannot sit under them.
+        transcribeItem = NSMenuItem(
+            title: "Transcribe After Recording",
+            action: #selector(transcribeClicked),
+            keyEquivalent: ""
+        )
+        transcribeItem.toolTip = """
+            Off means quill records only. Turning it back on transcribes the \
+            backlog the next time Quill starts.
+            """
+        menu.addItem(transcribeItem)
+
         // The tracks are independent: a remote call wants the far side split,
         // an in-person meeting wants the room. Titles name the situation, since
         // "microphone" and "system audio" don't describe the choice being made.
-        // Both sit at the top level — a setting worth changing per meeting
-        // shouldn't cost a hover and a second click to reach or to read.
+        // The shared prefix is deliberate: they are a matched pair, and being
+        // adjacent is what tells them apart.
         micVoicesItem = NSMenuItem(
             title: "Separate Voices in the Room",
             action: #selector(micVoicesClicked),
@@ -154,29 +185,6 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             Downloads a second on-device model the first time.
             """
         menu.addItem(systemVoicesItem)
-
-        echoItem = NSMenuItem(
-            title: "Cancel Echo from Speakers",
-            action: #selector(echoClicked),
-            keyEquivalent: ""
-        )
-        echoItem.toolTip = """
-            Stops meeting audio bleeding into your microphone when you are not \
-            wearing headphones. Costs about 8 dB on the system audio track, \
-            which is usually the worse trade. Applies to the next recording.
-            """
-        menu.addItem(echoItem)
-
-        transcribeItem = NSMenuItem(
-            title: "Transcribe After Recording",
-            action: #selector(transcribeClicked),
-            keyEquivalent: ""
-        )
-        transcribeItem.toolTip = """
-            Off means quill records only. Turning it back on transcribes the \
-            backlog the next time Quill starts.
-            """
-        menu.addItem(transcribeItem)
 
         menu.addItem(.separator())
 
@@ -249,14 +257,14 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         recording: Bool, elapsed: String?, trouble: String? = nil, degraded: Bool = false
     ) {
         let clock = elapsed ?? "0:00"
-        stateLabel.title = recording ? "Recording — \(clock)" : "Quill is idle"
+        stateLabel.title =
+            recording
+            ? "Recording — \(clock)"
+            : (folderUnreadable ? "Can't read the recordings folder" : "Quill is idle")
         toggleItem.title = recording ? "Stop Recording" : "Start Recording"
         // Naming the consequence beats a confirmation sheet from an app with
         // no window to put one in front of.
         quitItem.title = recording ? "Stop Recording and Quit" : "Quit Quill"
-        // Echo cancellation is applied when the mic graph is built, so a
-        // mid-recording change would silently not take effect.
-        echoItem.isEnabled = !recording
         statusItem.button?.title = recording ? " \(clock)" : ""
 
         troubleLabel.title = trouble ?? ""
@@ -284,6 +292,14 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     /// while the last one transcribes.
     /// A failure is a dead end unless you can act on it, so that line becomes
     /// clickable and grows a Retry beneath it. Everything else is status.
+    /// macOS denies a login item access to Documents, Desktop and Downloads
+    /// without ever prompting, and the folder stays writable while listing it
+    /// returns nothing. Saying so in the menu is the only place the user will
+    /// see it.
+    func showFolderProblem(_ hasProblem: Bool) {
+        folderUnreadable = hasProblem
+    }
+
     /// Shown only when quill needs the user to decide, which is why it is a
     /// hidden item rather than a permanent command.
     func showModelDownloadOffer(_ show: Bool) {
@@ -359,7 +375,13 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         micVoicesItem.state = Config.speakerDetection(track: "mic").enabled ? .on : .off
         systemVoicesItem.state = Config.speakerDetection(track: "system").enabled ? .on : .off
         echoItem.state = Config.micVoiceProcessing() ? .on : .off
-        transcribeItem.state = Config.transcriptionEnabled() ? .on : .off
+        let transcribing = Config.transcriptionEnabled()
+        transcribeItem.state = transcribing ? .on : .off
+        // Both only affect a transcript, so with transcription off they are
+        // settings for something that will not run. The unchecked master
+        // directly above them is the visible reason.
+        micVoicesItem.isEnabled = transcribing
+        systemVoicesItem.isEnabled = transcribing
         // Asked of the system rather than remembered, so revoking it in
         // System Settings is reflected here.
         loginItem.state = LoginItem.isEnabled ? .on : .off
