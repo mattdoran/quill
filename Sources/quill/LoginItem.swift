@@ -34,6 +34,12 @@ enum LoginItem {
         }
     }
 
+    static func enableByDefaultOnFirstRun() {
+        guard isAvailable, !Config.loginItemInitialized() else { return }
+        if !isEnabled { setEnabled(true) }
+        Config.setLoginItemInitialized()
+    }
+
     /// Retire a LaunchAgent left by an older install.
     ///
     /// The plist file is deleted but the job is deliberately not booted out:
@@ -47,5 +53,6 @@ enum LoginItem {
         try? FileManager.default.removeItem(at: legacy)
         log("migrated launch-at-login from a LaunchAgent to a login item")
         setEnabled(true)
+        Config.setLoginItemInitialized()
     }
 }

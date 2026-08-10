@@ -48,6 +48,16 @@ cp "$binary" "$app/Contents/MacOS/quill"
 cp "$root/Sources/quill/Info.plist" "$app/Contents/Info.plist"
 cp "$root/Sources/quill/AppIcon.icns" "$app/Contents/Resources/AppIcon.icns"
 
+build_hash=$(git -C "$root" rev-parse --short=8 HEAD 2>/dev/null || echo dev)
+build_commit=$build_hash
+if [ -n "$(git -C "$root" status --porcelain -- Sources Package.swift Package.resolved bundle.sh 2>/dev/null)" ]; then
+    build_commit="$build_commit-dirty"
+fi
+build_date=$(LC_ALL=C date '+%e %b %Y' | sed 's/^ //')
+plist="$app/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Add :QuillBuildCommit string $build_commit" "$plist"
+/usr/libexec/PlistBuddy -c "Add :QuillBuildDate string $build_date" "$plist"
+
 # Apache 2.0 requires its licence to travel with distributed binaries, and MIT
 # requires upstream's notice to travel too. Collected from the checkouts, since
 # that is the version actually linked.

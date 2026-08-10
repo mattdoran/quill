@@ -88,7 +88,7 @@ actor TranscriptionCoordinator {
                     body: SessionName.spoken(dir),
                     opens: dir.appendingPathComponent("transcript.md")
                 )
-                runHook(for: dir)
+                runHook(for: dir, then: { AudioRetention.clean(session: dir) })
             } catch {
                 log(dir, "transcription failed: \(error)")
                 lastFailure = (SessionName.spoken(dir), dir)
@@ -232,15 +232,20 @@ actor TranscriptionCoordinator {
     /// Fires the configured on_stop shell command with the session directory
     /// as its sole argument, after the transcript exists (or immediately after
     /// recording when transcription is disabled).
-    private func runHook(for dir: URL) {
-        guard let cmd = Config.onStop() else { return }
+    private func runHook(for dir: URL, then completion: (@Sendable () -> Void)? = nil) {
+        guard let cmd = Config.onStop() else {
+            completion?()
+            return
+        }
         let task = Process()
         task.launchPath = "/bin/sh"
         task.arguments = ["-c", "\(cmd) \"$0\"", dir.path]
+        task.terminationHandler = { _ in completion?() }
         do {
             try task.run()
         } catch {
             log(dir, "on_stop hook failed to launch: \(error)")
+            completion?()
         }
     }
 

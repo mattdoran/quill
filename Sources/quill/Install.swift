@@ -34,6 +34,7 @@ struct Install: ParsableCommand {
             FileHandle.standardError.write(Data("\(message)\n".utf8))
         }
         LoginItem.setEnabled(launchAtLogin)
+        Config.setLoginItemInitialized()
 
         let state = LoginItem.isEnabled ? "on" : "off"
         let report = "launch at login: \(state)\n"

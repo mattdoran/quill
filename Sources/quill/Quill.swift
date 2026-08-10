@@ -47,6 +47,7 @@ struct Run: ParsableCommand {
         LoginItem.migrateFromLaunchAgent { message in
             FileHandle.standardError.write(Data("\(message)\n".utf8))
         }
+        LoginItem.enableByDefaultOnFirstRun()
         let controller = AppController(root: root)
         Notifier.shared.onStopRequested = { [weak controller] in
             controller?.stopFromNotification()
@@ -89,8 +90,10 @@ final class AppController {
     private let menuBar = MenuBarController()
     private let transcription = TranscriptionCoordinator()
     private let models = ModelDownload()
+    private var settings: SettingsWindowController?
     private var session: RecordingSession?
     private var ticker: Timer?
+    private var retentionTimer: Timer?
 
     /// The session whose transcription failed, so its log can be opened and
     /// the job re-queued without quitting the app.
@@ -126,11 +129,21 @@ final class AppController {
         }
         menuBar.update(recording: false, elapsed: nil)
 
+        AudioRetention.clean(root: root)
+        retentionTimer = Timer.scheduledTimer(withTimeInterval: 24 * 60 * 60, repeats: true) {
+            [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                AudioRetention.clean(root: self.root)
+            }
+        }
+
         menuBar.onDownloadModels = { [weak self] in
             guard let self else { return }
             menuBar.showModelDownloadOffer(false)
             Task { [models] in await models.fetchIfNeeded(force: true) }
         }
+        menuBar.onSettings = { [weak self] in self?.showSettings() }
 
         Task { [models] in
             await models.setStatusHandler { status in
@@ -155,6 +168,7 @@ final class AppController {
     /// Stop any live session cleanly (finalizing files) and exit.
     func shutdown() {
         stopSession()
+        retentionTimer?.invalidate()
         NSApp.terminate(nil)
     }
 
@@ -231,6 +245,7 @@ final class AppController {
     }
 
     private func showModelDownload(_ status: ModelDownload.Status) {
+        settings?.updateModelDownload(status)
         switch status {
         case .idle:
             menuBar.showModelDownloadOffer(false)
@@ -247,6 +262,28 @@ final class AppController {
             menuBar.showModelDownloadOffer(true)
             menuBar.updateTranscription("Model download failed", failed: false)
         }
+    }
+
+    private func showSettings() {
+        if settings == nil {
+            let settings = SettingsWindowController()
+            settings.recordingsPath = { [weak self] in self?.root.path ?? "" }
+            settings.onChangeRecordingsFolder = { [weak self] in self?.changeFolder() }
+            settings.onRetentionChanged = { [weak self] in
+                guard let self else { return }
+                AudioRetention.clean(root: self.root)
+            }
+            settings.onDownloadModels = { [weak self] in
+                guard let self else { return }
+                Task { [models] in await models.fetchIfNeeded(force: true) }
+            }
+            settings.onRemoveModels = { [weak self] in
+                guard let self else { return }
+                Task { [models] in await models.removeCached() }
+            }
+            self.settings = settings
+        }
+        settings?.show()
     }
 
     private func showTranscription(_ status: TranscriptionCoordinator.Status) {
@@ -312,8 +349,9 @@ final class AppController {
         panel.prompt = "Use Folder"
         panel.message = "Where should Quill save recordings and transcripts?"
         guard panel.runModal() == .OK, let chosen = panel.url else { return }
-        State.setRecordingsDir(chosen)
+        Config.setRecordingsDir(chosen)
         root = chosen
+        AudioRetention.clean(root: chosen)
         Task { [transcription] in await transcription.resumePending(root: chosen) }
     }
 

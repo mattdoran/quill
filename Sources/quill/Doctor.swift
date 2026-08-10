@@ -112,7 +112,7 @@ enum DoctorReport {
         return Check(
             name: "transcription",
             status: .warn("parakeet models not downloaded (~600 MB)"),
-            remediation: "downloads automatically on first transcription — record a short test session while online"
+            remediation: "downloads automatically after Quill launches on an unmetered connection"
         )
     }
 

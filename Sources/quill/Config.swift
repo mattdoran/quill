@@ -1,145 +1,129 @@
 import Foundation
 
-/// Optional user config at ~/.config/quill/config.json:
-///
-///     {
-///       "recordings_dir": "~/Recordings",
-///       "transcription": { "enabled": true, "engine": "parakeet" },
-///       "separate_voices": { "mic": { "enabled": false }, "system": { "enabled": true } },
-///       "mic_voice_processing": true,
-///       "on_stop": "my-hook"
-///     }
-///
-/// Read-only: quill never writes this file. Settings it changes for itself go
-/// to `State` instead, which overrides the matching keys here.
-///
-/// Resolution order for the recordings root: --out flag > config file >
-/// ~/Recordings. `on_stop` is a shell command spawned with the session
-/// directory as its argument — after the transcript is written, or right
-/// after recording when transcription is disabled.
+/// User configuration at ~/Library/Application Support/Quill/config.json.
 enum Config {
-    static let path = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent(".config/quill/config.json")
+    static var home: URL {
+        if let override = ProcessInfo.processInfo.environment["QUILL_HOME"], !override.isEmpty {
+            return URL(
+                fileURLWithPath: (override as NSString).expandingTildeInPath,
+                isDirectory: true
+            )
+        }
+        return FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/Quill", isDirectory: true)
+    }
 
-    /// ~/Music, because Documents, Desktop and Downloads are TCC-protected and
-    /// a menu-bar app has no window to hang the permission prompt on: the
-    /// request is denied silently and directory listings come back empty with
-    /// no error. Music is unprotected and is where Mac audio apps put generated
-    /// recordings.
+    static var path: URL { home.appendingPathComponent("config.json") }
+
     static let defaultRoot = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Music/Quill", isDirectory: true)
 
-    /// The configured recordings root, or nil if no config file / no key.
-    /// A folder picked from the menu wins, since choosing it through the open
-    /// panel is also what grants access to a protected location.
     static func recordingsDir() -> URL? {
-        if let chosen = State.recordingsDir() { return chosen }
-        guard let dir = load()?["recordings_dir"] as? String, !dir.isEmpty else { return nil }
+        guard let dir = load()["recordings_dir"] as? String, !dir.isEmpty else { return nil }
         return URL(fileURLWithPath: (dir as NSString).expandingTildeInPath, isDirectory: true)
     }
 
-    /// Shell command to spawn after each session's transcript is written (or
-    /// after recording, if transcription is disabled), or nil.
+    static func setRecordingsDir(_ url: URL) {
+        set("recordings_dir", url.path)
+    }
+
     static func onStop() -> String? {
-        guard let cmd = load()?["on_stop"] as? String, !cmd.isEmpty else { return nil }
-        return cmd
+        guard let command = load()["on_stop"] as? String, !command.isEmpty else { return nil }
+        return command
     }
 
-    /// Whether finished recordings are transcribed automatically. Default on.
-    /// The menu writes to state.json, which wins where it has an opinion.
     static func transcriptionEnabled() -> Bool {
-        State.transcriptionEnabled() ?? (transcription()?["enabled"] as? Bool ?? true)
+        transcription()["enabled"] as? Bool ?? true
     }
 
-    /// Configured engine name. Only "parakeet" ships today; the coordinator
-    /// warns and falls back for anything else.
+    static func setTranscriptionEnabled(_ enabled: Bool) {
+        var root = load()
+        var transcription = root["transcription"] as? [String: Any] ?? [:]
+        transcription["enabled"] = enabled
+        root["transcription"] = transcription
+        writeReporting(root)
+    }
+
     static func transcriptionEngine() -> String {
-        transcription()?["engine"] as? String ?? "parakeet"
+        transcription()["engine"] as? String ?? "parakeet"
     }
 
-    private static func transcription() -> [String: Any]? {
-        load()?["transcription"] as? [String: Any]
+    private static func transcription() -> [String: Any] {
+        load()["transcription"] as? [String: Any] ?? [:]
     }
 
     struct SpeakerDetection {
         let enabled: Bool
-        /// What a track is called when it holds one person — which is what the
-        /// mic holds whenever detection is off, and often enough when it is on.
         let soloLabel: String
-        /// Base for the numbered labels once several people share a track:
-        /// `room 1`, `room 2`.
         let sharedLabel: String
     }
 
-    /// Whether a track's speakers are told apart, and what its segments are
-    /// labelled. `track` is "mic" or "system".
-    ///
-    /// Both tracks can carry several people: the system track holds everyone on
-    /// a group call, the mic track everyone in the room when the meeting is in
-    /// person. They are configured separately because the useful setting
-    /// differs by meeting.
-    ///
-    /// Labels follow how many people a track turns out to hold, not whether
-    /// detection was switched on. One voice on the mic is `me` whether or not a
-    /// model confirmed it; several make it the room, and `me 1` / `me 2` would
-    /// be nonsense. The system track is `them` at both counts: one remote voice
-    /// or four, it is still the other side.
-    ///
-    /// Off by default — it downloads a second model on first use, and a 1:1
-    /// call gains nothing from it.
     static func speakerDetection(track: String) -> SpeakerDetection {
-        let root = load() ?? [:]
-        // Renamed from detect_speakers: "speakers" reads as loudspeakers on an
-        // audio app, and a key in a hand-edited file is user-facing copy too.
+        let root = load()
         let group = (root["separate_voices"] ?? root["detect_speakers"]) as? [String: Any]
         let settings = group?[track] as? [String: Any]
-        let configured = settings?["enabled"] as? Bool ?? false
         let isMic = track == "mic"
         return SpeakerDetection(
-            // The menu writes to state.json, which wins where it has an opinion.
-            enabled: State.speakerDetection(track: track) ?? configured,
+            enabled: settings?["enabled"] as? Bool ?? false,
             soloLabel: isMic ? "me" : "them",
             sharedLabel: isMic ? "room" : "them"
         )
     }
 
-    /// Apple voice processing (acoustic echo cancellation) on the mic, so
-    /// speaker playback doesn't bleed into the mic track and get transcribed
-    /// as "me". Default off — the live voice unit ducks all other playback,
-    /// and on headphones there's no echo to cancel anyway. Set true when
-    /// recording meetings through the speakers.
-    /// Off unless asked for. The voice unit ducks system audio *into the
-    /// recording*, not only out of the speakers: measured at 7.8 dB quieter on
-    /// the system track, which carries the people being recorded. Losing that
-    /// costs more than the echo it removes from the mic track.
-    ///
-    /// Re-read on every mic attach, so a mid-meeting change settles on the
-    /// right answer rather than the one that was true at the start.
+    static func setSpeakerDetection(track: String, enabled: Bool) {
+        var root = load()
+        var voices = (root["separate_voices"] ?? root["detect_speakers"])
+            as? [String: Any] ?? [:]
+        var settings = voices[track] as? [String: Any] ?? [:]
+        settings["enabled"] = enabled
+        voices[track] = settings
+        root["separate_voices"] = voices
+        root["detect_speakers"] = nil
+        writeReporting(root)
+    }
+
     static func micVoiceProcessing() -> Bool {
-        State.micVoiceProcessing() ?? (load()?["mic_voice_processing"] as? Bool ?? false)
+        load()["mic_voice_processing"] as? Bool ?? false
     }
 
-    /// Flip diarization for one track and persist it, so a menu toggle survives
-    /// a restart.
-    ///
-    /// Parse the config file. A malformed config is reported on stderr rather
-    /// than silently ignored — recordings landing in an unexpected place is
-    /// worse than a warning.
-    private static func load() -> [String: Any]? {
-        guard FileManager.default.fileExists(atPath: path.path) else { return nil }
-        guard
-            let data = try? Data(contentsOf: path),
-            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        else {
-            FileHandle.standardError.write(Data(
-                "warning: \(path.path) is not valid JSON — ignoring config\n".utf8
-            ))
-            return nil
+    static func setMicVoiceProcessing(_ enabled: Bool) {
+        set("mic_voice_processing", enabled)
+    }
+
+    enum AudioRetention: String, CaseIterable {
+        case indefinitely
+        case thirtyDays = "30_days"
+        case afterTranscription = "after_transcription"
+
+        var title: String {
+            switch self {
+            case .indefinitely: "Keep indefinitely"
+            case .thirtyDays: "Keep for 30 days"
+            case .afterTranscription: "Delete after transcription"
+            }
         }
-        return json
     }
 
-    /// Resolve the recordings root from an optional CLI override.
+    static func audioRetention() -> AudioRetention {
+        guard
+            let value = load()["audio_retention"] as? String,
+            let retention = AudioRetention(rawValue: value)
+        else { return .indefinitely }
+        return retention
+    }
+
+    static func setAudioRetention(_ retention: AudioRetention) {
+        set("audio_retention", retention.rawValue)
+    }
+
+    static func loginItemInitialized() -> Bool {
+        load()["launch_at_login_initialized"] as? Bool ?? false
+    }
+
+    static func setLoginItemInitialized() {
+        set("launch_at_login_initialized", true)
+    }
+
     static func resolveRoot(cliOverride: String?) -> URL {
         if let cliOverride {
             return URL(
@@ -148,5 +132,44 @@ enum Config {
             )
         }
         return recordingsDir() ?? defaultRoot
+    }
+
+    private static func set(_ key: String, _ value: Any) {
+        var root = load()
+        root[key] = value
+        writeReporting(root)
+    }
+
+    private static func load() -> [String: Any] {
+        guard FileManager.default.fileExists(atPath: path.path) else { return [:] }
+        guard
+            let data = try? Data(contentsOf: path),
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else {
+            warn("\(path.path) is not valid JSON - ignoring it")
+            return [:]
+        }
+        return json
+    }
+
+    private static func writeReporting(_ root: [String: Any]) {
+        do {
+            try write(root)
+        } catch {
+            warn("couldn't write \(path.path): \(error)")
+        }
+    }
+
+    private static func write(_ root: [String: Any]) throws {
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        let data = try JSONSerialization.data(
+            withJSONObject: root,
+            options: [.prettyPrinted, .sortedKeys]
+        )
+        try data.write(to: path, options: .atomic)
+    }
+
+    private static func warn(_ message: String) {
+        FileHandle.standardError.write(Data("warning: \(message)\n".utf8))
     }
 }

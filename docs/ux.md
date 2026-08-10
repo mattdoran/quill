@@ -1,8 +1,8 @@
 # Quill UX
 
-The design of the only surface quill has: a menu bar item, its menu, and its
-notifications. Prescriptive. Where something is not built yet it is marked
-**Proposed**; everything else is what ships today.
+The design of Quill's menu bar item, menu, Settings window and notifications.
+Prescriptive. Where something is not built yet it is marked **Proposed**;
+everything else is what ships today.
 
 ## 1. Principles
 
@@ -15,10 +15,10 @@ notifications. Prescriptive. Where something is not built yet it is marked
 4. **Quill interrupts only when acting in the next minute changes the outcome.**
    Anything you would learn later from the transcript, the menu or a log is not
    a notification.
-5. **A setting stays in the menu until its title plus a tooltip cannot explain
-   it.** That is the trigger for building a window, and only then.
-6. **No wizards, no panes, no windows.** The app is a menu and three
-   notifications. If a feature needs more than that, it needs a better design.
+5. **Per-meeting choices stay in the menu.** Persistent storage and model
+   management live in Settings, where their consequences fit.
+6. **One utility window, no workflows.** Settings is allowed. Wizards,
+   transcript viewers and recording windows are not.
 
 ## 2. Status item
 
@@ -45,7 +45,6 @@ Rules:
 - **Button title only exists while recording.** `m:ss`, becoming `h:mm:ss` past
   an hour. Monospaced digits, so the icon does not jiggle each tick.
 - Accessibility titles are spelled out for speech, not read off the clock face.
-  *(Currently they pass the raw `12:03` — proposed change.)*
 
 ## 3. Menu
 
@@ -73,6 +72,7 @@ Separate Voices in the Room                      ✓
 Separate Voices on the Call                      ✓
 ────────────────────────────────────────────
 Open at Login                                    ✓
+Settings…
 About Quill
 Quit Quill                                      ⌘Q
 ```
@@ -97,6 +97,7 @@ Separate Voices in the Room                      ✓
 Separate Voices on the Call                      ✓
 ────────────────────────────────────────────
 Open at Login                                    ✓
+Settings…
 About Quill
 Stop Recording and Quit                         ⌘Q
 ```
@@ -176,13 +177,9 @@ Open Last Transcript
 Quit Quill                                      ⌘Q
 ```
 
-While the models are downloading, the line reads
-`Preparing transcription model…`. The percentage is **Proposed**: it needs the
-prefetch to move off `AsrModels.downloadAndLoad`, which discards progress, onto
-`ModelHub.download`, which reports it. It must not read "transcribing": today
-`.transcribing` is published before the engine is prepared, so a 600 MB
-first-run download reads as transcription for minutes. Publish a `.preparing`
-state first.
+While models are downloading, the line reads
+`Downloading transcription models - 42%`. Loading a cached model reads
+`Preparing transcription model…`; neither state claims transcription has begun.
 
 ### Transcription failed
 
@@ -196,13 +193,11 @@ Open Last Transcript
 
 The failure line is clickable, not decoration. If more than one failed, it reads
 `2 transcriptions failed` and opens the newest log. `Retry Transcription`
-re-enqueues; today the only recovery is quitting and relaunching so
-`resumePending` finds it, which is not a recovery story.
+re-enqueues the failed session directly.
 
 ### Tooltips
 
-`NSMenuItem.toolTip` is the thing that keeps settings in the menu instead of in
-a window. Verbatim:
+Menu tooltips explain controls without opening Settings. Verbatim:
 
 | Item | `toolTip` |
 |---|---|
@@ -328,48 +323,50 @@ wrong is ten minutes of junk audio and about four seconds of transcription.
 
 ## 5. Config
 
-Three homes, and the rule for which is which: **the menu holds anything a user
-would change between meetings; JSON holds anything that is really code; a window
-holds nothing until it holds something the menu cannot.**
+Three surfaces, with one job each: **the menu holds choices made between
+meetings; Settings holds persistent storage and models; JSON holds code-facing
+configuration.**
 
 | Setting | Home | Why |
 |---|---|---|
 | Separate voices, mic | Menu | Changes per meeting: in-person or not. |
 | Separate voices, system | Menu | Changes per meeting: group call or 1:1. |
-| Echo cancellation | Menu | The fix for recording a room through loudspeakers. Defaults **off**: measurement put the cost at 7.8 dB on the recorded system track, which is the worse trade in every case except that one. Auto-detecting loudspeakers was tried and dropped for the same reason — a setting that costs 8 dB must be asked for, not guessed at. Never greyed; a mid-recording click applies to the next recording. |
-| Transcribe after recording | Menu | One line explains it, and it gates the two Separate Voices toggles, which grey out when it is off. |
+| Echo cancellation | Menu + Settings | The fix for recording a room through loudspeakers. Defaults **off**: measurement put the cost at 7.8 dB on the recorded system track. Never greyed; a mid-recording click applies to the next recording. |
+| Transcribe after recording | Menu + Settings | One line explains it, and it gates the two Separate Voices toggles, which grey out when it is off. |
 | Open at Login | Menu | Via `SMAppService`. `install --launch-at-login` stays as a thin wrapper over the same call, so a fresh install can be set up without opening the app, and the two can never disagree. |
-| Recordings folder | Menu | The resolved path as the `Open Recordings Folder` tooltip, plus `Change Recordings Folder…`. Not hidden behind an option-click: picking a folder through the open panel is how macOS grants access to a protected location, so it is the fix for a permission failure, not a power-user preference. |
-| `transcription.engine` | JSON | One value ships. Not a setting yet. |
+| Recordings folder | Menu + Settings | The menu remains the fix for a permission failure; Settings presents the persistent location. |
+| Audio retention | Settings | The choice can irreversibly delete source audio and needs explanatory copy plus confirmation. |
+| `transcription.engine` | Settings + JSON | One engine ships, so the control reports Parakeet and remains disabled. |
 | `on_stop` | JSON, permanently | It is a shell command. A shell command never gets a GUI field. |
 
-**Trigger for building a Settings window:** when a setting exists that a title
-plus a tooltip cannot explain, *and* it is not `on_stop`. Two of the backlog
-items will trip it and nothing else currently will:
-
-- **Audio retention** — keep or discard the tracks after transcription, and for
-  how long. A retention window is a number with consequences; it is not a
-  checkbox.
-- **Model management** — download progress, cache size, re-download.
-
-When that window is built, it contains exactly five things and nothing else:
+The Settings window contains exactly five things:
 
 1. Recordings folder (path, with a Change… button)
-2. Audio retention (keep / discard / keep for N days)
+2. Audio retention (keep indefinitely / keep 30 days / delete after transcription)
 3. Transcription: on/off, engine
 4. Echo cancellation
 5. Models: status, size, Download / Remove
 
-Everything in the menu that is per-meeting — start/stop, open last transcript,
-the two speaker toggles, open folder, quit — stays in the menu. Duplicating a
-control into both is allowed only for echo cancellation and transcription
-on/off, which are per-meeting *and* belong beside their neighbours.
+Everything in the menu that is per-meeting stays there. Echo cancellation and
+transcription appear in both surfaces because they belong beside related
+controls in each. All values share one file at
+`~/Library/Application Support/Quill/config.json`.
 
-**Known trap:** `state.json` overrides `config.json` for the speaker toggles, so
-a user who has ever clicked either menu item will find later hand-edits to
-`config.json` silently ignored. Resolving the two files into one home is a
-backlog item; until then the precedence must be documented where the user reads
-it, not only in a source comment.
+### Audio retention
+
+The default is `Keep indefinitely`. The original tracks are the source for
+verification and future re-transcription, so Quill never removes them without
+an explicit user choice.
+
+Both destructive choices require confirmation when selected. `Keep for 30 days`
+uses `created_at` from `transcript.json`, falling back to its modification date
+for older transcripts. `Delete after transcription` becomes eligible as soon as
+that file exists. In both cases Quill deletes only `mic.caf` and `system.caf`.
+Metadata, logs and transcripts remain.
+
+Cleanup runs after a successful transcript, at launch, when the recordings
+folder changes, and daily while Quill stays open. A configured `on_stop` command
+must terminate before cleanup touches that session's audio.
 
 ## 6. Copy rules
 

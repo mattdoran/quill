@@ -15,7 +15,7 @@ let package = Package(
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
                 .product(name: "FluidAudio", package: "FluidAudio"),
             ],
-            exclude: ["Info.plist"],
+            exclude: ["AppIcon.icns", "AppIcon.svg", "Info.plist", "quill.entitlements"],
             linkerSettings: [
                 // Keeps `swift run` and the raw binary working: TCC can still
                 // attribute microphone and system-audio capture without the

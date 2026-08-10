@@ -8,14 +8,22 @@ Nothing ever leaves the machine.
 Named for the feather. Sibling of [parrot](https://github.com/digimata/parrot), same skeleton: single
 Swift binary, menu-bar tray, no Xcode.
 
+Starting a fresh session? Read these in order:
+
+| File | Purpose |
+|---|---|
+| `README.md` | Install, run and configure Quill. |
+| `docs/ux.md` | The current product and UI design. |
+| `docs/decisions.md` | Settled decisions and their reasons. |
+| `TODO.md` | Work that remains. |
+
 ## Install
 
 ```sh
 cd quill
 swift build -c release
 ./bundle.sh                                   # wraps the binary in Quill.app
-cp -R .build/release/Quill.app /Applications/
-open /Applications/Quill.app
+./build-dmg.sh                                # optional distributable image
 ```
 
 The `.app` wrapper is what gives quill its own identity: notifications that
@@ -23,10 +31,10 @@ carry its name and open the transcript when clicked, rather than arriving as
 anonymous banners. It is still one SwiftPM binary and no Xcode — the bundle is
 two folders around it.
 
-Turn on **Open at Login** from the menu to have it start with your Mac. It
-registers as a normal login item, so you can also revoke it in System Settings
-→ General → Login Items. Startup is tied to where the app lives, so move it
-before enabling rather than after.
+Open at Login is enabled on the first bundled launch. It registers as a normal
+login item, so you can change it from the menu or in System Settings → General
+→ Login Items. Startup is tied to where the app lives, so move it before the
+first launch rather than afterwards.
 
 **Requires:** macOS 15+ (Core Audio process taps for system audio — no
 virtual device, no kernel extension). Apple Silicon recommended for
@@ -34,7 +42,7 @@ transcription speed.
 
 ## How to use
 
-1. **Run it** (`quill` in a terminal, or the LaunchAgent).
+1. **Run it** (`quill` in a terminal, or launch `Quill.app`).
 2. **Click the feather in the menu bar → Start recording.** First use prompts
    for microphone and System Audio Recording permissions. While recording, the
    icon turns red with a running elapsed counter, and macOS shows the purple
@@ -73,10 +81,9 @@ happened.
 
 Built in, on-device, automatic. The default engine is **Parakeet TDT 0.6B v2**
 (English) via [FluidAudio](https://github.com/FluidInference/FluidAudio)'s
-Core ML port — roughly 20 seconds per hour of audio on Apple Silicon. Models
-(~600 MB) download once on first transcription; `quill doctor` tells you
-whether they're already cached so you're never downloading after an important
-meeting.
+Core ML port, roughly 20 seconds per hour of audio on Apple Silicon. Models
+(~600 MB) download after the first unmetered launch; progress appears in the
+menu and Settings. `quill doctor` reports whether they are ready.
 
 Each track is transcribed separately, shifted by its start offset so both
 share one clock, and merged by timestamp. Jobs run in a serial queue — you can
@@ -90,20 +97,20 @@ large-v3-turbo) is planned as the fallback / re-transcription option.
 
 ## Config
 
-Optional, at `~/.config/quill/config.json`:
+At `~/Library/Application Support/Quill/config.json`:
 
 ```json
 {
-  "recordings_dir": "~/Recordings",
+  "recordings_dir": "~/Music/Quill",
   "transcription": { "enabled": true, "engine": "parakeet" },
+  "audio_retention": "indefinitely",
   "on_stop": "my-hook"
 }
 ```
 
-Settings you can reach from the menu are also written to `state.json` beside
-this file, and **state wins over config**: once you have clicked a menu item,
-hand-editing the matching key here has no effect until you delete it from
-`state.json`.
+The menu and Settings window write to this same file. Hand-edited keys such as
+`on_stop` are preserved when a UI setting changes. `QUILL_HOME` overrides the
+application home for isolated development and tests.
 
 - `recordings_dir` — where sessions land. Resolution order: `--out` flag >
   the folder picked in the menu > config > `~/Music/Quill`.
@@ -115,6 +122,10 @@ hand-editing the matching key here has no effect until you delete it from
   anyway, use **Change Recordings Folder…** in the menu rather than setting it
   here — choosing a folder through the open panel is what grants access.
 - `transcription.enabled` — set `false` to just record.
+- `audio_retention`: `indefinitely` (the default), `30_days`, or
+  `after_transcription`. Deletion only applies after `transcript.json` exists.
+  It removes both CAF tracks, so the transcript can no longer be verified or
+  regenerated with a different model.
 - `mic_voice_processing` — Apple's echo cancellation on the mic (default off).
   Useful when recording through speakers, where the far side otherwise bleeds
   into the mic track and gets transcribed twice. The catch, measured: the voice
@@ -134,7 +145,7 @@ hand-editing the matching key here has no effect until you delete it from
 
 ```sh
 quill                        # run the menu-bar daemon (^C to quit)
-quill run --out <dir>        # custom recordings root (default ~/Recordings)
+quill run --out <dir>        # custom recordings root (default ~/Music/Quill)
 quill doctor                 # check permissions, recordings folder, models
 quill install --launch-at-login   # same as the menu's Open at Login
 quill install --uninstall
@@ -148,7 +159,7 @@ quill install --uninstall
 - **AVAudioEngine** — mic capture
 - **AVAudioFile** — streaming AAC encode into CAF
 - **FluidAudio / Parakeet** — on-device Core ML transcription
-- **NSStatusItem** — the whole UI
+- **NSStatusItem + AppKit**: menu-bar controls and a small Settings window
 
 ## Gotchas
 
@@ -160,4 +171,4 @@ quill install --uninstall
 - Parakeet v2 is English-only. Other languages will come with the Whisper
   engine.
 - The binary embeds its Info.plist (`__TEXT,__info_plist`) so TCC can
-  attribute permissions to quill itself when running as a LaunchAgent.
+  attribute permissions to quill itself when running as a login item.

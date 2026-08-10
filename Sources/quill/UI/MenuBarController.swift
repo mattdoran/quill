@@ -2,11 +2,10 @@ import AppKit
 
 /// Status bar item in the top-right of the menu bar. Shows recording state at
 /// a glance and provides the only persistent control surface for the daemon
-/// (since we run as `.accessory` — no dock icon, no main window).
+/// (since we run as `.accessory`, with no dock icon).
 ///
 /// Wording and structure follow docs/ux.md: commands in title case, status
-/// lines in sentence case, and every setting explained by a tooltip rather
-/// than by a settings window.
+/// lines in sentence case.
 @MainActor
 final class MenuBarController: NSObject, NSMenuDelegate {
     private let statusItem: NSStatusItem
@@ -32,6 +31,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     var onOpenFailureLog: (() -> Void)?
     var onRetryTranscription: (() -> Void)?
     var onDownloadModels: (() -> Void)?
+    var onSettings: (() -> Void)?
     var onQuit: (() -> Void)?
 
     /// Whether a transcript exists to open, re-asked each time the menu opens
@@ -199,6 +199,13 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             """
         menu.addItem(loginItem)
 
+        let settings = NSMenuItem(
+            title: "Settings…",
+            action: #selector(settingsClicked),
+            keyEquivalent: ""
+        )
+        menu.addItem(settings)
+
         let about = NSMenuItem(
             title: "About Quill",
             action: #selector(aboutClicked),
@@ -220,6 +227,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             echoItem, transcribeItem, lastTranscriptItem, about, retryItem, loginItem,
             downloadModelsItem,
             transcriptionLabel,
+            settings,
         ] {
             item.target = self
         }
@@ -369,8 +377,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     }
 
     /// Reads the checkmarks back from disk, so the menu agrees with what is
-    /// stored rather than with whatever was last clicked. State wins over
-    /// config wherever it has an opinion.
+    /// stored rather than with whatever was last clicked.
     private func refreshSettings() {
         micVoicesItem.state = Config.speakerDetection(track: "mic").enabled ? .on : .off
         systemVoicesItem.state = Config.speakerDetection(track: "system").enabled ? .on : .off
@@ -391,22 +398,22 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     /// Persists, then re-reads: a failed write leaves the checkmark where it
     /// was instead of showing a setting that isn't on disk.
     @objc private func micVoicesClicked() {
-        State.setSpeakerDetection(track: "mic", enabled: micVoicesItem.state != .on)
+        Config.setSpeakerDetection(track: "mic", enabled: micVoicesItem.state != .on)
         refreshSettings()
     }
 
     @objc private func systemVoicesClicked() {
-        State.setSpeakerDetection(track: "system", enabled: systemVoicesItem.state != .on)
+        Config.setSpeakerDetection(track: "system", enabled: systemVoicesItem.state != .on)
         refreshSettings()
     }
 
     @objc private func echoClicked() {
-        State.setMicVoiceProcessing(echoItem.state != .on)
+        Config.setMicVoiceProcessing(echoItem.state != .on)
         refreshSettings()
     }
 
     @objc private func transcribeClicked() {
-        State.setTranscriptionEnabled(transcribeItem.state != .on)
+        Config.setTranscriptionEnabled(transcribeItem.state != .on)
         refreshSettings()
     }
 
@@ -415,9 +422,17 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         refreshSettings()
     }
 
+    @objc private func settingsClicked() { onSettings?() }
+
     @objc private func aboutClicked() {
         NSApp.activate(ignoringOtherApps: true)
-        NSApp.orderFrontStandardAboutPanel(nil)
+        let info = Bundle.main.infoDictionary ?? [:]
+        let version = info["CFBundleShortVersionString"] as? String ?? ""
+        let commit = info["QuillBuildCommit"] as? String
+        let date = info["QuillBuildDate"] as? String
+        let identity = [commit, date].compactMap { $0 }.joined(separator: ", ")
+        let display = identity.isEmpty ? version : "\(version) (\(identity))"
+        NSApp.orderFrontStandardAboutPanel(options: [.applicationVersion: display])
     }
 
     @objc private func failureLogClicked() { onOpenFailureLog?() }

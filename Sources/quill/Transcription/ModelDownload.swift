@@ -34,6 +34,20 @@ actor ModelDownload {
         AsrModels.modelsExist(at: AsrModels.defaultCacheDirectory(for: .v2), version: .v2)
     }
 
+    nonisolated static var cachedBytes: Int64 {
+        let root = AsrModels.defaultCacheDirectory(for: .v2)
+        guard let files = FileManager.default.enumerator(
+            at: root,
+            includingPropertiesForKeys: [.fileSizeKey],
+            options: [.skipsHiddenFiles]
+        ) else { return 0 }
+        var total: Int64 = 0
+        for case let file as URL in files {
+            total += Int64((try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
+        }
+        return total
+    }
+
     /// Fetch unless the models are present, a fetch is already running, or the
     /// connection is metered. `force` is the menu saying "do it anyway".
     func fetchIfNeeded(force: Bool = false) async {
@@ -60,6 +74,22 @@ actor ModelDownload {
         } catch {
             FileHandle.standardError.write(Data(
                 "model download failed: \(error)\n".utf8
+            ))
+            publish(.failed)
+        }
+    }
+
+    func removeCached() {
+        guard !running else { return }
+        let root = AsrModels.defaultCacheDirectory(for: .v2)
+        do {
+            if FileManager.default.fileExists(atPath: root.path) {
+                try FileManager.default.removeItem(at: root)
+            }
+            publish(.waitingForNetwork)
+        } catch {
+            FileHandle.standardError.write(Data(
+                "model removal failed: \(error)\n".utf8
             ))
             publish(.failed)
         }
