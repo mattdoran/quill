@@ -2,7 +2,7 @@ import Foundation
 
 /// Settings quill writes for itself, at ~/.config/quill/state.json:
 ///
-///     { "detect_speakers": { "mic": false, "system": true } }
+///     { "separate_voices": { "mic": false, "system": true } }
 ///
 /// Kept apart from config.json because that file is hand-edited. Serializing a
 /// whole document back out restyles it — escaping slashes, reordering keys —
@@ -18,14 +18,19 @@ enum State {
     /// Whether the menu has set speaker detection for this track, or nil if it
     /// never has.
     static func speakerDetection(track: String) -> Bool? {
-        (load()["detect_speakers"] as? [String: Any])?[track] as? Bool
+        let root = load()
+        let group = (root["separate_voices"] ?? root["detect_speakers"]) as? [String: Any]
+        return group?[track] as? Bool
     }
 
     static func setSpeakerDetection(track: String, enabled: Bool) {
         var root = load()
-        var detection = root["detect_speakers"] as? [String: Any] ?? [:]
-        detection[track] = enabled
-        root["detect_speakers"] = detection
+        var voices = (root["separate_voices"] ?? root["detect_speakers"]) as? [String: Any] ?? [:]
+        voices[track] = enabled
+        root["separate_voices"] = voices
+        // Written under the new name, so the old one is dropped rather than
+        // left to disagree with it.
+        root["detect_speakers"] = nil
         write(root)
     }
 

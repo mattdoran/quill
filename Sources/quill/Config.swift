@@ -5,7 +5,7 @@ import Foundation
 ///     {
 ///       "recordings_dir": "~/Recordings",
 ///       "transcription": { "enabled": true, "engine": "parakeet" },
-///       "detect_speakers": { "mic": { "enabled": false }, "system": { "enabled": true } },
+///       "separate_voices": { "mic": { "enabled": false }, "system": { "enabled": true } },
 ///       "mic_voice_processing": true,
 ///       "on_stop": "my-hook"
 ///     }
@@ -88,7 +88,11 @@ enum Config {
     /// Off by default — it downloads a second model on first use, and a 1:1
     /// call gains nothing from it.
     static func speakerDetection(track: String) -> SpeakerDetection {
-        let settings = (load()?["detect_speakers"] as? [String: Any])?[track] as? [String: Any]
+        let root = load() ?? [:]
+        // Renamed from detect_speakers: "speakers" reads as loudspeakers on an
+        // audio app, and a key in a hand-edited file is user-facing copy too.
+        let group = (root["separate_voices"] ?? root["detect_speakers"]) as? [String: Any]
+        let settings = group?[track] as? [String: Any]
         let configured = settings?["enabled"] as? Bool ?? false
         let isMic = track == "mic"
         return SpeakerDetection(
