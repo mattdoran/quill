@@ -3,9 +3,11 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleIdentifier</key>
-    <string>com.digimata.quill</string>
+    <string>com.mattdoran.quill</string>
     <key>CFBundleName</key>
-    <string>quill</string>
+    <string>Quill</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundleExecutable</key>
     <string>quill</string>
     <key>CFBundlePackageType</key>

@@ -52,7 +52,7 @@ final class SystemAudioRecorder: Capture {
     private var writer: TrackWriter?
     private var url: URL?
     private var log: SessionLog?
-    private let queue = DispatchQueue(label: "com.digimata.quill.system-tap")
+    private let queue = DispatchQueue(label: "com.mattdoran.quill.system-tap")
 
     /// Use a .caf extension: CAF needs no finalization pass, so a crash
     /// mid-meeting loses nothing already written. The file itself waits for the

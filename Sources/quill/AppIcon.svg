@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Source for AppIcon.icns. macOS icon grid: 824x824 body centred in a
+       1024 canvas, corner radius 185. Edit here, then regenerate the .icns. -->
+  <defs>
+    <linearGradient id="ink" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4A5B7C"/>
+      <stop offset="1" stop-color="#232B3D"/>
+    </linearGradient>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="185" ry="185" fill="url(#ink)"/>
+  <!-- The feather is not centred within its own 24-unit viewBox: its ink
+       spans x 2-20.6, y 2.5-22. The offsets below centre the mark, not the box. -->
+  <g transform="translate(269 249) scale(21.5)"
+     fill="none" stroke="#FFFFFF" stroke-width="2.1"
+     stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12.67 19a2 2 0 0 0 1.416-.588l6.154-6.172a6 6 0 0 0-8.49-8.49L5.586 9.914A2 2 0 0 0 5 11.328V18a1 1 0 0 0 1 1z"/>
+    <path d="M16 8 2 22"/>
+    <path d="M17.5 15H9"/>
+  </g>
+</svg>

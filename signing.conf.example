@@ -1,0 +1,12 @@
+# Copy to signing.conf (git-ignored) to configure release builds.
+# Nothing secret belongs here: the certificate lives in your keychain, and the
+# app-specific password lives in the notarytool keychain profile.
+
+# Code-signing identity. Leave empty to use whatever Developer ID Application
+# certificate is in the keychain, which is usually what you want.
+SIGN_IDENTITY=""
+
+# Keychain profile created once with:
+#   xcrun notarytool store-credentials <name> \
+#       --apple-id <you@example.com> --team-id <TEAMID> --password <app-specific>
+NOTARY_PROFILE=""

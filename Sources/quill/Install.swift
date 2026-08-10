@@ -30,7 +30,7 @@ struct Install: ParsableCommand {
 
     // MARK: -
 
-    private static let label = "com.digimata.quill"
+    private static let label = "com.mattdoran.quill"
 
     private var plistURL: URL {
         let home = FileManager.default.homeDirectoryForCurrentUser
@@ -92,12 +92,12 @@ struct Install: ParsableCommand {
 
     private func resolveBinaryPath() throws -> String {
         // The bundled app first: notifications only carry an identity when
-        // quill runs from inside quill.app. A bare binary still works, and is
+        // quill runs from inside Quill.app. A bare binary still works, and is
         // what a pre-bundle install left behind.
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let candidates = [
-            "/Applications/quill.app/Contents/MacOS/quill",
-            "\(home)/Applications/quill.app/Contents/MacOS/quill",
+            "/Applications/Quill.app/Contents/MacOS/quill",
+            "\(home)/Applications/Quill.app/Contents/MacOS/quill",
             "/usr/local/bin/quill",
         ]
         for candidate in candidates

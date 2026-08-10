@@ -51,7 +51,7 @@ final class TrackWriter: @unchecked Sendable {
     private let name: String
     private let log: SessionLog
     private let lock = NSLock()
-    private let work = DispatchQueue(label: "com.digimata.quill.track-writer", qos: .utility)
+    private let work = DispatchQueue(label: "com.mattdoran.quill.track-writer", qos: .utility)
     private let pendingLock = NSLock()
     private var pending = 0
     private var droppedReported = false
