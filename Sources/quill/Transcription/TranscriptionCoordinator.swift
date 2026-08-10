@@ -79,7 +79,7 @@ actor TranscriptionCoordinator {
             do {
                 try await transcribe(dir)
                 notifyUser(
-                    title: "quill — transcript ready",
+                    title: "Transcript ready",
                     body: dir.lastPathComponent,
                     opens: dir.appendingPathComponent("transcript.md")
                 )
@@ -88,7 +88,7 @@ actor TranscriptionCoordinator {
                 log(dir, "transcription failed: \(error)")
                 lastFailure = dir.lastPathComponent
                 notifyUser(
-                    title: "quill — transcription failed",
+                    title: "Transcription failed",
                     body: "\(dir.lastPathComponent) — see transcribe.log",
                     opens: dir.appendingPathComponent("transcribe.log")
                 )
