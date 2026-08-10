@@ -81,9 +81,13 @@ enum DoctorReport {
         guard (try? FileManager.default.contentsOfDirectory(
             at: root, includingPropertiesForKeys: nil
         )) != nil else {
+            // A warning, not a failure: startup checks are fatal, and a
+            // folder quill cannot read is a reason to say so in the menu, not
+            // a reason to refuse to run. Starting a recording refuses on its
+            // own, which is where it actually matters.
             return Check(
                 name: "recordings folder",
-                status: .fail("can't list \(root.path) — macOS is blocking access"),
+                status: .warn("can't list \(root.path) — macOS is blocking access"),
                 remediation: "pick the folder again with Change Recordings Folder… "
                     + "in the menu, which is what grants access"
             )

@@ -88,6 +88,7 @@ final class AppController {
     private var root: URL
     private let menuBar = MenuBarController()
     private let transcription = TranscriptionCoordinator()
+    private let models = ModelDownload()
     private var session: RecordingSession?
     private var ticker: Timer?
 
@@ -115,6 +116,19 @@ final class AppController {
             Task { [transcription] in await transcription.enqueue(dir) }
         }
         menuBar.update(recording: false, elapsed: nil)
+
+        menuBar.onDownloadModels = { [weak self] in
+            guard let self else { return }
+            menuBar.showModelDownloadOffer(false)
+            Task { [models] in await models.fetchIfNeeded(force: true) }
+        }
+
+        Task { [models] in
+            await models.setStatusHandler { status in
+                Task { @MainActor [weak self] in self?.showModelDownload(status) }
+            }
+            await models.fetchIfNeeded()
+        }
 
         Task { [transcription, root] in
             await transcription.setStatusHandler { status in
@@ -205,6 +219,25 @@ final class AppController {
 
         let dir = session.dir
         Task { [transcription] in await transcription.enqueue(dir) }
+    }
+
+    private func showModelDownload(_ status: ModelDownload.Status) {
+        switch status {
+        case .idle:
+            menuBar.showModelDownloadOffer(false)
+            menuBar.updateTranscription(nil)
+        case .downloading(let fraction):
+            menuBar.showModelDownloadOffer(false)
+            menuBar.updateTranscription(
+                "Downloading transcription models — \(Int(fraction * 100))%"
+            )
+        case .waitingForNetwork:
+            menuBar.showModelDownloadOffer(true)
+            menuBar.updateTranscription("Transcription models not downloaded")
+        case .failed:
+            menuBar.showModelDownloadOffer(true)
+            menuBar.updateTranscription("Model download failed", failed: false)
+        }
     }
 
     private func showTranscription(_ status: TranscriptionCoordinator.Status) {

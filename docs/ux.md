@@ -52,9 +52,10 @@ Rules:
 Title case on commands, sentence case on status lines. `✓` marks a checkmark,
 `⟨disabled⟩` marks a greyed, unclickable item.
 
-Status lines are disabled but must not be low-contrast: set `attributedTitle`
-with `.labelColor` (and `.systemOrange` for the trouble line). The one thing the
-user opened the menu to read cannot be the dimmest text in it.
+Status lines are disabled, and macOS greys disabled items regardless of any
+colour set on `attributedTitle` — tried, and it has no effect. Dimmed status
+text is also what Apple's own menu bar extras do, so this is left alone rather
+than fought with a custom view.
 
 ### Idle
 

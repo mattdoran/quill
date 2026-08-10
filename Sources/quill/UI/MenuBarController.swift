@@ -16,6 +16,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private let toggleItem: NSMenuItem
     private let lastTranscriptItem: NSMenuItem
     private let retryItem: NSMenuItem
+    private let downloadModelsItem: NSMenuItem
     private let micVoicesItem: NSMenuItem
     private let systemVoicesItem: NSMenuItem
     private let echoItem: NSMenuItem
@@ -30,6 +31,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     var onOpenLastTranscript: (() -> Void)?
     var onOpenFailureLog: (() -> Void)?
     var onRetryTranscription: (() -> Void)?
+    var onDownloadModels: (() -> Void)?
     var onQuit: (() -> Void)?
 
     /// Whether a transcript exists to open, re-asked each time the menu opens
@@ -67,6 +69,20 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         )
         retryItem.isHidden = true
         menu.addItem(retryItem)
+
+        // Absent unless quill cannot get the models on its own: a metered
+        // connection it will not spend, or a download that failed.
+        downloadModelsItem = NSMenuItem(
+            title: "Download Transcription Models",
+            action: #selector(downloadModelsClicked),
+            keyEquivalent: ""
+        )
+        downloadModelsItem.toolTip = """
+            About 600 MB, once. Quill normally fetches these on its own, but \
+            not over a metered connection.
+            """
+        downloadModelsItem.isHidden = true
+        menu.addItem(downloadModelsItem)
 
         lastTranscriptItem = NSMenuItem(
             title: "Open Last Transcript",
@@ -194,6 +210,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         for item in [
             toggleItem, openFolderItem, changeFolder, quitItem, micVoicesItem, systemVoicesItem,
             echoItem, transcribeItem, lastTranscriptItem, about, retryItem, loginItem,
+            downloadModelsItem,
             transcriptionLabel,
         ] {
             item.target = self
@@ -232,9 +249,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         recording: Bool, elapsed: String?, trouble: String? = nil, degraded: Bool = false
     ) {
         let clock = elapsed ?? "0:00"
-        stateLabel.attributedTitle = Self.status(
-            recording ? "Recording — \(clock)" : "Quill is idle"
-        )
+        stateLabel.title = recording ? "Recording — \(clock)" : "Quill is idle"
         toggleItem.title = recording ? "Stop Recording" : "Start Recording"
         // Naming the consequence beats a confirmation sheet from an app with
         // no window to put one in front of.
@@ -244,7 +259,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         echoItem.isEnabled = !recording
         statusItem.button?.title = recording ? " \(clock)" : ""
 
-        troubleLabel.attributedTitle = Self.status(trouble ?? "", color: .systemOrange)
+        troubleLabel.title = trouble ?? ""
         troubleLabel.isHidden = trouble == nil
 
         guard let button = statusItem.button else { return }
@@ -269,10 +284,14 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     /// while the last one transcribes.
     /// A failure is a dead end unless you can act on it, so that line becomes
     /// clickable and grows a Retry beneath it. Everything else is status.
+    /// Shown only when quill needs the user to decide, which is why it is a
+    /// hidden item rather than a permanent command.
+    func showModelDownloadOffer(_ show: Bool) {
+        downloadModelsItem.isHidden = !show
+    }
+
     func updateTranscription(_ text: String?, failed: Bool = false) {
-        transcriptionLabel.attributedTitle = Self.status(
-            text ?? "", color: failed ? .systemOrange : .labelColor
-        )
+        transcriptionLabel.title = text ?? ""
         transcriptionLabel.isHidden = text == nil
         transcriptionLabel.isEnabled = failed
         transcriptionLabel.action = failed ? #selector(failureLogClicked) : nil
@@ -288,17 +307,6 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     }
 
     // MARK: -
-
-    /// Disabled items render grey, which would leave the line the user opened
-    /// the menu to read as the dimmest text in it.
-    private static func status(
-        _ text: String, color: NSColor = .labelColor
-    ) -> NSAttributedString {
-        NSAttributedString(string: text, attributes: [
-            .foregroundColor: color,
-            .font: NSFont.menuFont(ofSize: 0),
-        ])
-    }
 
     /// VoiceOver reads "12:03" as a time of day; spell it out instead.
     private static func spoken(_ clock: String) -> String {
@@ -392,6 +400,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     @objc private func failureLogClicked() { onOpenFailureLog?() }
     @objc private func retryClicked() { onRetryTranscription?() }
+    @objc private func downloadModelsClicked() { onDownloadModels?() }
     @objc private func toggleClicked() { onToggle?() }
     @objc private func openFolderClicked() { onOpenFolder?() }
     @objc private func changeFolderClicked() { onChangeFolder?() }
