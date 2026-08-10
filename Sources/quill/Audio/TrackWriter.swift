@@ -16,7 +16,7 @@ final class TrackWriter: @unchecked Sendable {
 
         var description: String {
             switch self {
-            case .unsupportedFormat(let f): return "track format must be deinterleaved float32, got \(f)"
+            case .unsupportedFormat(let f): return "track format must be float32, got \(f)"
             }
         }
     }
@@ -43,10 +43,18 @@ final class TrackWriter: @unchecked Sendable {
     /// the route is probably dead but still delivering.
     var onProlongedSilence: (@Sendable () -> Void)?
 
+    /// Beyond this many buffers queued, the disk is losing badly enough that
+    /// holding more would only grow unbounded. Roughly 20 seconds of audio.
+    private static let maxPending = 256
+
     private let format: AVAudioFormat
     private let name: String
     private let log: SessionLog
     private let lock = NSLock()
+    private let work = DispatchQueue(label: "com.digimata.quill.track-writer", qos: .utility)
+    private let pendingLock = NSLock()
+    private var pending = 0
+    private var droppedReported = false
 
     private var file: AVAudioFile?
     private var converter: AVAudioConverter?
@@ -66,9 +74,10 @@ final class TrackWriter: @unchecked Sendable {
         self.name = name
         self.log = log
         self.watchSilence = watchSilence
-        // Silence padding writes through `floatChannelData`, which is nil for
-        // any other layout — the zeroes would come out as uninitialised heap.
-        guard format.commonFormat == .pcmFormatFloat32, !format.isInterleaved else {
+        // Silence and peak both walk raw sample memory as Float. The system tap
+        // hands back interleaved stereo, so layout is not assumed, but the
+        // sample type is.
+        guard format.commonFormat == .pcmFormatFloat32 else {
             throw WriterError.unsupportedFormat(format)
         }
         let settings: [String: Any] = [
@@ -112,10 +121,46 @@ final class TrackWriter: @unchecked Sendable {
         return _gaps
     }
 
-    /// Gaps since the last buffer are padded here, so callers never sequence
-    /// padding against a live tap.
+    /// Called on a capture thread, which must not block: this copies the
+    /// buffer, stamps its arrival and hands it off. Resampling, AAC encode and
+    /// the disk write all happen on `work`, where a slow disk costs latency
+    /// rather than dropped buffers.
     func write(_ buffer: AVAudioPCMBuffer) {
         let now = Date()
+        guard let copy = Self.copy(buffer) else { return }
+
+        pendingLock.lock()
+        guard pending < Self.maxPending else {
+            let firstDrop = !droppedReported
+            droppedReported = true
+            pendingLock.unlock()
+            if firstDrop {
+                log.warn("\(name): writer fell behind — dropped audio becomes a padded gap")
+            }
+            return
+        }
+        pending += 1
+        pendingLock.unlock()
+
+        work.async { [self] in
+            consume(copy, at: now)
+            pendingLock.lock()
+            pending -= 1
+            pendingLock.unlock()
+        }
+    }
+
+    /// Padding to `date` keeps a track that died early the same length as one
+    /// that didn't.
+    func close(paddingTo date: Date) {
+        // Drains everything already queued before closing, since `work` is
+        // serial.
+        work.sync { self.closeDraining(paddingTo: date) }
+    }
+
+    // MARK: -
+
+    private func consume(_ buffer: AVAudioPCMBuffer, at now: Date) {
         lock.lock()
         defer { lock.unlock() }
         guard file != nil else { return }
@@ -132,9 +177,25 @@ final class TrackWriter: @unchecked Sendable {
         writeLocked(converted)
     }
 
-    /// Padding to `date` keeps a track that died early the same length as one
-    /// that didn't.
-    func close(paddingTo date: Date) {
+    /// Layout-agnostic copy: the tap's buffer is only valid for the duration of
+    /// its callback.
+    private static func copy(_ buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
+        guard let out = AVAudioPCMBuffer(
+            pcmFormat: buffer.format, frameCapacity: buffer.frameLength
+        ) else { return nil }
+        out.frameLength = buffer.frameLength
+        let src = UnsafeMutableAudioBufferListPointer(
+            UnsafeMutablePointer(mutating: buffer.audioBufferList)
+        )
+        let dst = UnsafeMutableAudioBufferListPointer(out.mutableAudioBufferList)
+        for i in 0..<min(src.count, dst.count) {
+            guard let from = src[i].mData, let to = dst[i].mData else { continue }
+            memcpy(to, from, Int(min(src[i].mDataByteSize, dst[i].mDataByteSize)))
+        }
+        return out
+    }
+
+    private func closeDraining(paddingTo date: Date) {
         lock.lock()
         defer { lock.unlock() }
         guard file != nil else { return }
@@ -147,8 +208,6 @@ final class TrackWriter: @unchecked Sendable {
         // close.
         file = nil
     }
-
-    // MARK: -
 
     private func writeLocked(_ buffer: AVAudioPCMBuffer) {
         guard let file else { return }
