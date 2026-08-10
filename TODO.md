@@ -89,6 +89,69 @@ Working backlog. Notes marked **now** are the current state, not a decision.
 - [ ] **Add my own copyright line.** Alongside `Copyright (c) 2026 Andrew
       Jones`, not replacing it, covering the changes in this fork.
 
+## UI
+
+From an independent review of the menu-bar surface. Ordered worst first.
+
+### Wrong, not just unpolished
+
+- [ ] **Trouble never clears.** `reported` is insert-only, so a 4s blip at
+      minute 2 leaves the icon yellow for the rest of the meeting, claiming
+      something is wrong when nothing is. Split live state (`isDegraded`,
+      clears on recovery, drives the icon) from the incident list (sticky,
+      drives the menu line).
+- [ ] **"Transcribing X" is a lie during the model download.** `.transcribing`
+      is published before `preparedEngine()` runs, so a 600 MB first-run
+      download reads as transcribing for minutes. Publish a `.preparing` state
+      first: "Preparing transcription model…".
+- [ ] **Cmd-R and Cmd-O do not work.** Menu key equivalents only fire while the
+      menu is open, so advertising them promises a shortcut that does not
+      exist from inside Zoom. Remove them, or add a real global hotkey.
+- [ ] **Session folder names shown to humans.** "transcribing 2026.08.10-1432"
+      is a filesystem identifier. Format as "Transcribing 2:32 PM recording".
+- [ ] **Status item position is not remembered.** Set
+      `statusItem.autosaveName`. One line.
+- [ ] **Notification permission asked at login**, before the user has done
+      anything, and worst when launched by the LaunchAgent. Ask on first stop
+      instead, seconds before the first notification fires.
+- [ ] **State-by-colour only.** Red vs yellow at 16pt is one state to a
+      deuteranope, and VoiceOver reads a nameless image plus a number. Change
+      the glyph, not just the tint, and set an accessibility title.
+
+### Wording
+
+- [ ] **"Detect speakers" reads as loudspeakers** on an audio app. Proposed:
+      "Separate Voices in the Room (Mic)" and "Separate Voices on the Call
+      (System Audio)". Add tooltips naming the second model download.
+- [ ] **Title case on commands, and "Quit Quill" not "Quit quill".**
+- [ ] **Use `NSMenuItem.toolTip`.** Currently unused everywhere. It is the
+      thing that lets settings stay in the menu instead of needing a window.
+
+### Missing
+
+- [ ] **Open Last Transcript.** The app's whole output is three steps away once
+      the notification is gone.
+- [ ] **Cmd-Q silently ends a live recording.** Retitle to "Stop Recording and
+      Quit" while recording.
+- [ ] **Retry a failed transcription.** Today the documented recovery is quit
+      and relaunch so `resumePending` picks it up.
+- [ ] **About box and version.** `Info.plist` has no
+      `CFBundleShortVersionString`; Get Info shows blank.
+- [ ] **"Open at Login" toggle**, via `SMAppService`, replacing
+      `install --launch-at-login`.
+
+### Decide
+
+- [ ] **Should an unrecovered track interrupt?** The review's top finding is
+      that a dead mic is announced only by a hue change, so a meeting can be
+      lost in silence. That argues for one notification when a track is still
+      down, which is the design deliberately removed for being noisy. The
+      narrow version: notify once per session, only when a track has not
+      recovered, never on a blip that healed.
+- [ ] **Settings window: not yet.** Everything current fits in the menu with
+      tooltips. Build one when model-download progress and audio retention
+      land, since neither fits a menu item.
+
 ## Repo hygiene
 
 - [ ] **Branch name no longer describes the work.** `feat/detect-speakers`
