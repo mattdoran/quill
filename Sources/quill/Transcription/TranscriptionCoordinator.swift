@@ -10,6 +10,10 @@ import Foundation
 actor TranscriptionCoordinator {
     enum Status: Sendable {
         case idle
+        /// Loading models, which on first run means downloading ~600 MB. A
+        /// separate state because calling this "transcribing" is a lie the
+        /// user sits in front of for minutes.
+        case preparing
         case transcribing(session: String, queued: Int)
         case failed(session: String)
     }
@@ -75,9 +79,9 @@ actor TranscriptionCoordinator {
     private func drain() async {
         while !queue.isEmpty {
             let dir = queue.removeFirst()
-            publish(.transcribing(session: SessionName.spoken(dir), queued: queue.count))
+            let session = SessionName.spoken(dir)
             do {
-                try await transcribe(dir)
+                try await transcribe(dir, session: session)
                 notifyUser(
                     title: "Transcript ready",
                     body: SessionName.spoken(dir),
@@ -108,9 +112,13 @@ actor TranscriptionCoordinator {
         drainIfIdle()
     }
 
-    private func transcribe(_ dir: URL) async throws {
+    private func transcribe(_ dir: URL, session: String) async throws {
         let meta = try SessionMeta.read(from: dir)
+        // Model loading happens before any audio is read, and on first run
+        // that is a 600 MB download.
+        if engine == nil { publish(.preparing) }
         let engine = try await preparedEngine()
+        publish(.transcribing(session: session, queued: queue.count))
 
         var merged: [Transcript.Segment] = []
         var diarizedModel: String?

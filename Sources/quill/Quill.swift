@@ -164,12 +164,14 @@ final class AppController {
         switch status {
         case .idle:
             menuBar.updateTranscription(nil)
+        case .preparing:
+            menuBar.updateTranscription("Preparing transcription model…")
         case .transcribing(let name, let queued):
             menuBar.updateTranscription(
-                queued > 0 ? "transcribing \(name) · \(queued) queued" : "transcribing \(name)"
+                queued > 0 ? "Transcribing \(name) — \(queued) queued" : "Transcribing \(name)"
             )
         case .failed(let name):
-            menuBar.updateTranscription("transcription failed · \(name)")
+            menuBar.updateTranscription("Transcription failed — \(name)")
         }
     }
 
