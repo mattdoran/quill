@@ -1,0 +1,194 @@
+import Foundation
+
+/// Conformers own the graph and the `TrackWriter`; they own no policy about
+/// when to rebuild.
+@MainActor
+protocol Capture: AnyObject {
+    var name: String { get }
+
+    /// The only evidence capture is happening: a dead graph raises no error and
+    /// delivers no final callback, it simply stops.
+    var lastBufferAt: Date? { get }
+
+    /// Raised when the system reports the graph gone.
+    var onInvalidated: ((String) -> Void)? { get set }
+
+    /// The file is untouched, so a rebuild resumes the track it was already
+    /// writing.
+    func attach() throws
+
+    /// Stop and discard the graph, keeping the file.
+    func detach()
+}
+
+/// Records when a capture graph last delivered, written from its own thread and
+/// read on the main actor. Kept at the capture boundary rather than taken from
+/// the file: a track that stops being written for any other reason must not
+/// look like a dead device, since rebuilding the graph would not fix it.
+final class LivenessClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stamp: Date?
+
+    var last: Date? {
+        lock.lock()
+        defer { lock.unlock() }
+        return stamp
+    }
+
+    func mark() {
+        lock.lock()
+        stamp = Date()
+        lock.unlock()
+    }
+}
+
+/// Decides when a track's capture graph is rebuilt, and is the only thing that
+/// does.
+///
+/// Invalidation and the stall check feed one state machine, so a route change
+/// during a retry, or two signals for the same failure, cannot start
+/// overlapping rebuilds.
+@MainActor
+final class CaptureSupervisor {
+    private enum State: Equatable {
+        case capturing
+        case recovering(attempt: Int, nextTry: Date)
+        case stopped
+    }
+
+    /// No buffers for this long means the graph is dead, whatever it claims.
+    /// Long enough to clear a route change settling (~2s observed), short
+    /// enough to lose seconds rather than minutes.
+    private static let stallTimeout: TimeInterval = 5
+
+    /// Below this, recovery was quick enough that the recording is still what
+    /// the user expects, and warning on every headphone connection only teaches
+    /// them to ignore it.
+    private static let troubleThreshold: TimeInterval = 3
+
+    /// A device that has gone for good must not be hammered for the rest of the
+    /// meeting: each system-track rebuild creates and destroys an aggregate
+    /// device.
+    private static func backoff(attempt: Int) -> TimeInterval {
+        min(0.5 * pow(2, Double(attempt - 1)), 15)
+    }
+
+    private var state: State = .stopped
+    private let capture: Capture
+    private let log: SessionLog
+    private let onTrouble: (String) -> Void
+
+    /// Latest moment capture is known to have been alive, so the stall check
+    /// has an anchor before the first buffer arrives.
+    private var lastEvidence: Date
+    private var outageStartedAt: Date?
+    private var troubleReported = false
+
+    init(
+        capture: Capture,
+        log: SessionLog,
+        startedAt: Date,
+        onTrouble: @escaping (String) -> Void
+    ) {
+        self.capture = capture
+        self.log = log
+        self.lastEvidence = startedAt
+        self.onTrouble = onTrouble
+        capture.onInvalidated = { [weak self] reason in self?.invalidate(reason) }
+    }
+
+    /// Initial attach. Throws rather than entering recovery: a session that
+    /// cannot capture at all should fail in front of the user, not quietly
+    /// retry into an empty file.
+    func start() throws {
+        try capture.attach()
+        state = .capturing
+    }
+
+    func stop() {
+        guard state != .stopped else { return }
+        state = .stopped
+        capture.detach()
+    }
+
+    func invalidate(_ reason: String) {
+        guard state == .capturing else { return }
+        log.warn("\(capture.name): \(reason)")
+        // The outage runs from the last good buffer, not from noticing it.
+        outageStartedAt = lastEvidence
+        capture.detach()
+        rebuild(attempt: 1, now: Date())
+    }
+
+    /// Called on a fixed tick.
+    func tick() {
+        let now = Date()
+        switch state {
+        case .stopped:
+            return
+
+        case .capturing:
+            if let last = capture.lastBufferAt { lastEvidence = max(lastEvidence, last) }
+            guard now.timeIntervalSince(lastEvidence) > Self.stallTimeout else { return }
+            invalidate("no audio for \(Int(Self.stallTimeout))s")
+
+        case .recovering(let attempt, let nextTry):
+            // A rebuild that took hold shows buffers; that is the only proof
+            // that counts, since attach() succeeding says nothing about
+            // whether the device will deliver.
+            if let last = capture.lastBufferAt, last > lastEvidence {
+                resume(at: last)
+                return
+            }
+            // A device that never comes back would otherwise retry in silence
+            // for the rest of the meeting with nothing shown to the user.
+            if let started = outageStartedAt,
+                now.timeIntervalSince(started) > Self.troubleThreshold {
+                report("\(capture.name) capture interrupted")
+            }
+            guard now >= nextTry else { return }
+            capture.detach()
+            rebuild(attempt: attempt + 1, now: now)
+        }
+    }
+
+    // MARK: -
+
+    private func resume(at last: Date) {
+        let outage = last.timeIntervalSince(outageStartedAt ?? last)
+        lastEvidence = last
+        outageStartedAt = nil
+        state = .capturing
+        log.log(String(format: "%@: capture resumed after %.1fs", capture.name, outage))
+        if outage > Self.troubleThreshold {
+            report("\(capture.name) lost \(Int(outage.rounded()))s")
+        }
+        troubleReported = false
+    }
+
+    private func rebuild(attempt: Int, now: Date) {
+        let delay = Self.backoff(attempt: attempt)
+        do {
+            try capture.attach()
+            // A rebuilt graph gets at least the stall timeout to prove itself,
+            // and longer as attempts mount.
+            state = .recovering(attempt: attempt, nextTry: now + max(Self.stallTimeout, delay))
+            log.log("\(capture.name): rebuilt on attempt \(attempt)")
+        } catch {
+            state = .recovering(attempt: attempt, nextTry: now + delay)
+            log.warn(String(
+                format: "%@: rebuild attempt %d failed (%@) — retrying in %.1fs",
+                capture.name, attempt, "\(error)", delay
+            ))
+            report("\(capture.name) capture failed to restart")
+        }
+    }
+
+    /// One report per outage; the caller hears that a track broke, not how many
+    /// times it has been retried since.
+    private func report(_ message: String) {
+        guard !troubleReported else { return }
+        troubleReported = true
+        onTrouble(message)
+    }
+}

@@ -1,15 +1,29 @@
 import Foundation
 
 /// One meeting recording: a timestamped folder holding two independent tracks
-/// (mic = you, system = them) plus a meta.json written on clean stop. Tracks
-/// are separate on purpose — whisper does better on clean single-source audio,
-/// and two tracks give free two-party diarization.
+/// (mic = you, system = them), a session.log, and a meta.json written on clean
+/// stop. Tracks are separate on purpose — whisper does better on clean
+/// single-source audio, and two tracks give free two-party diarization.
+@MainActor
 final class RecordingSession {
     let dir: URL
     let startedAt = Date()
 
+    /// Set the first time a track is interrupted and never cleared: the
+    /// recording can no longer be assumed complete, even though capture came
+    /// back.
+    private(set) var trouble: String?
+
+    var onTrouble: ((String) -> Void)?
+
+    private var reported: Set<String> = []
+
+    private let log: SessionLog
     private let mic = MicRecorder()
     private let system = SystemAudioRecorder()
+    private var supervisors: [CaptureSupervisor] = []
+    private var deviceWatcher: AudioDevices.Watcher?
+    private var ticker: Timer?
 
     private static let folderFormat: DateFormatter = {
         let f = DateFormatter()
@@ -30,26 +44,65 @@ final class RecordingSession {
         }
         try FileManager.default.createDirectory(at: candidate, withIntermediateDirectories: true)
         dir = candidate
+        log = SessionLog(dir: candidate)
     }
 
     /// Start both tracks. If the mic fails after the system tap started, the
     /// tap is torn down so we never run half a session silently.
     func start() throws {
-        try system.start(writingTo: dir.appendingPathComponent("system.caf"))
+        log.log("session started — \(dir.lastPathComponent)")
+        log.log(
+            "devices — input=\(AudioDevices.defaultInputName()) "
+                + "output=\(AudioDevices.defaultOutputName())"
+        )
+        deviceWatcher = AudioDevices.Watcher(log: log)
+
+        system.prepare(writingTo: dir.appendingPathComponent("system.caf"), log: log)
+        try mic.prepare(writingTo: dir.appendingPathComponent("mic.caf"), log: log)
+
+        let systemSupervisor = supervise(system)
+        let micSupervisor = supervise(mic)
         do {
-            try mic.start(writingTo: dir.appendingPathComponent("mic.caf"))
+            try systemSupervisor.start()
+            try micSupervisor.start()
         } catch {
-            system.stop()
+            // Nothing was captured, so the folder is noise rather than a record
+            // of anything. Leaving it behind means a failed start accumulates
+            // an empty dated directory every time.
+            systemSupervisor.stop()
+            micSupervisor.stop()
+            let ended = Date()
+            mic.close(at: ended)
+            system.close(at: ended)
+            log.warn("session aborted: \(error)")
+            log.close()
+            try? FileManager.default.removeItem(at: dir)
             throw error
+        }
+        supervisors = [micSupervisor, systemSupervisor]
+
+        ticker = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            // assumeIsolated traps if this ever fires off-main; scheduledTimer
+            // on the main run loop is the only thing making it safe.
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.supervisors.forEach { $0.tick() }
+            }
         }
     }
 
     /// Stop both tracks and write meta.json.
     func stop() {
-        mic.stop()
-        system.stop()
+        ticker?.invalidate()
+        ticker = nil
+        deviceWatcher = nil
+        supervisors.forEach { $0.stop() }
+        supervisors = []
 
         let ended = Date()
+        mic.close(at: ended)
+        system.close(at: ended)
+
         let iso = ISO8601DateFormatter()
 
         // The tracks don't start on the same buffer; record how far each
@@ -67,6 +120,14 @@ final class RecordingSession {
                 "mic": Int(micStart.timeIntervalSince(earliest) * 1000),
                 "system": Int(systemStart.timeIntervalSince(earliest) * 1000),
             ],
+            // `captured_seconds` excludes silence padded over gaps, so a track
+            // that runs full length but recorded three minutes says so.
+            "tracks": [
+                "mic": trackMeta(file: "mic.caf", duration: mic.duration, gaps: mic.gaps),
+                "system": trackMeta(
+                    file: "system.caf", duration: system.duration, gaps: system.gaps
+                ),
+            ],
         ]
         if let data = try? JSONSerialization.data(
             withJSONObject: meta,
@@ -74,5 +135,42 @@ final class RecordingSession {
         ) {
             try? data.write(to: dir.appendingPathComponent("meta.json"))
         }
+
+        log.log(String(
+            format: "session stopped — %.0fs wall, mic %.0fs (%d gap(s)), system %.0fs (%d gap(s))",
+            ended.timeIntervalSince(startedAt),
+            mic.duration, mic.gaps.count, system.duration, system.gaps.count
+        ))
+        log.close()
+    }
+
+    // MARK: -
+
+    private func supervise(_ capture: Capture) -> CaptureSupervisor {
+        CaptureSupervisor(capture: capture, log: log, startedAt: startedAt) {
+            [weak self] message in
+            self?.report(message)
+        }
+    }
+
+    /// Each supervisor reports once per outage, so this accumulates rather than
+    /// keeping only the first: both tracks broken must not read as one.
+    private func report(_ message: String) {
+        guard !reported.contains(message) else { return }
+        reported.insert(message)
+        trouble = reported.sorted().joined(separator: " · ")
+        onTrouble?(message)
+    }
+
+    private func trackMeta(
+        file: String, duration: TimeInterval, gaps: [TrackWriter.Gap]
+    ) -> [String: Any] {
+        let padded = gaps.reduce(0) { $0 + $1.seconds }
+        return [
+            "file": file,
+            "duration_seconds": Int(duration.rounded()),
+            "captured_seconds": Int((duration - padded).rounded()),
+            "gaps": gaps.map { ["at": Int($0.at.rounded()), "seconds": Int($0.seconds.rounded())] },
+        ]
     }
 }
