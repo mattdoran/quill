@@ -254,6 +254,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     func update(
         recording: Bool, elapsed: String?, trouble: String? = nil, degraded: Bool = false
     ) {
+        precondition(!recording || elapsed != nil)
+        toggleItem.isEnabled = true
         let clock = elapsed ?? "0:00"
         stateLabel.title =
             recording
@@ -283,6 +285,21 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             button.contentTintColor = .systemOrange
             button.setAccessibilityTitle("Quill, capture problem, \(Self.spoken(clock))")
         }
+    }
+
+    func updateStarting() {
+        stateLabel.title = "Starting recording…"
+        toggleItem.title = "Starting Recording…"
+        toggleItem.isEnabled = false
+        quitItem.title = "Quit Quill"
+        statusItem.button?.title = ""
+        troubleLabel.title = ""
+        troubleLabel.isHidden = true
+
+        guard let button = statusItem.button else { return }
+        button.image = Self.symbol("record.circle", "starting recording")
+        button.contentTintColor = nil
+        button.setAccessibilityTitle("Quill, starting recording")
     }
 
     /// Show transcription progress/failure as a status line in the menu; nil

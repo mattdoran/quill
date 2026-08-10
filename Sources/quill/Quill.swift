@@ -92,6 +92,7 @@ final class AppController {
     private let models = ModelDownload()
     private var settings: SettingsWindowController?
     private var session: RecordingSession?
+    private var isStarting = false
     private var ticker: Timer?
     private var retentionTimer: Timer?
 
@@ -111,8 +112,9 @@ final class AppController {
             // only moment it matters.
             let reachable = canReachRoot()
             menuBar.showFolderProblem(!reachable)
-            // Refresh the state line, which is only otherwise redrawn on a tick.
-            menuBar.update(recording: session != nil, elapsed: nil)
+            // Refresh immediately because opening the menu can change the
+            // folder warning between timer ticks.
+            refreshMenuStatus()
             return reachable && lastTranscript() != nil
         }
         menuBar.recordingsPath = { [weak self] in self?.root.path ?? "" }
@@ -175,6 +177,7 @@ final class AppController {
     }
 
     private func toggle() {
+        guard !isStarting else { return }
         if session == nil {
             startSession()
         } else {
@@ -183,8 +186,21 @@ final class AppController {
     }
 
     private func startSession() {
+        isStarting = true
+        menuBar.updateStarting()
+        // Let the NSMenu action return and AppKit paint the acknowledgement
+        // before audio-device attachment occupies the main thread.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            self?.attachSession()
+        }
+    }
+
+    private func attachSession() {
+        guard isStarting else { return }
         Notifier.shared.requestAuthorizationOnce()
         guard canReachRoot() else {
+            isStarting = false
+            refreshMenuStatus()
             notifyUser(
                 title: "Can't reach the recordings folder",
                 body: "macOS is blocking access to \(root.path). Use Change "
@@ -212,6 +228,8 @@ final class AppController {
             FileHandle.standardError.write(Data("● recording → \(newSession.dir.path)\n".utf8))
         } catch {
             FileHandle.standardError.write(Data("recording start failed: \(error)\n".utf8))
+            isStarting = false
+            refreshMenuStatus()
             // The raw error goes to stderr and the log. What reaches someone
             // about to start a meeting is the thing they can act on.
             notifyUser(
@@ -224,7 +242,8 @@ final class AppController {
             return
         }
 
-        menuBar.update(recording: true, elapsed: "0:00")
+        isStarting = false
+        refreshMenuStatus()
         let ticker = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
         }
@@ -310,7 +329,18 @@ final class AppController {
     }
 
     private func tick() {
-        guard let session else { return }
+        refreshMenuStatus()
+    }
+
+    private func refreshMenuStatus() {
+        if isStarting {
+            menuBar.updateStarting()
+            return
+        }
+        guard let session else {
+            menuBar.update(recording: false, elapsed: nil)
+            return
+        }
         menuBar.update(
             recording: true,
             elapsed: Self.format(Date().timeIntervalSince(session.startedAt)),

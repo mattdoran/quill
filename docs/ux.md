@@ -33,6 +33,7 @@ the item keeps the position the user dragged it to.
 | State | Glyph | Tint | Button title | Accessibility title |
 |---|---|---|---|---|
 | Idle | feather (inline SVG, template) | none | *(empty)* | `Quill, idle` |
+| Starting | `record.circle` | none | *(empty)* | `Quill, starting recording` |
 | Recording | `record.circle.fill` | `.systemRed` | ` 12:03` | `Quill, recording, 12 minutes 3 seconds` |
 | Degraded | `exclamationmark.triangle.fill` | `.systemOrange` | ` 12:03` | `Quill, capture problem, 12 minutes 3 seconds` |
 | Transcribing, not recording | feather | none | *(empty)* | `Quill, idle` |
@@ -49,6 +50,9 @@ Rules:
   recording, the menu reports everything else.
 - **Button title only exists while recording.** `m:ss`, becoming `h:mm:ss` past
   an hour. Monospaced digits, so the icon does not jiggle each tick.
+- **Starting changes shape, not width.** The menu action returns before audio
+  devices attach, so the outline record glyph acknowledges the click at once.
+  The clock appears only after capture succeeds.
 - Accessibility titles are spelled out for speech, not read off the clock face.
 
 ## 3. Menu
@@ -103,6 +107,11 @@ Settings…
 About Quill
 Stop Recording and Quit                         ⌘Q
 ```
+
+During audio-device attachment, the status line reads `Starting recording…`
+and the command beneath it reads `Starting Recording…` disabled. The menu-bar
+glyph changes immediately, but its title stays empty so startup does not widen
+and then shrink the status item.
 
 Nothing in the settings block greys out while recording. Every item there is
 settable mid-meeting; they differ only in when the setting takes effect, which
