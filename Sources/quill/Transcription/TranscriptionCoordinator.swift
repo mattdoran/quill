@@ -75,21 +75,24 @@ actor TranscriptionCoordinator {
     private func drain() async {
         while !queue.isEmpty {
             let dir = queue.removeFirst()
-            publish(.transcribing(session: dir.lastPathComponent, queued: queue.count))
+            publish(.transcribing(session: SessionName.spoken(dir), queued: queue.count))
             do {
                 try await transcribe(dir)
                 notifyUser(
                     title: "Transcript ready",
-                    body: dir.lastPathComponent,
+                    body: SessionName.spoken(dir),
                     opens: dir.appendingPathComponent("transcript.md")
                 )
                 runHook(for: dir)
             } catch {
                 log(dir, "transcription failed: \(error)")
-                lastFailure = dir.lastPathComponent
+                lastFailure = SessionName.spoken(dir)
                 notifyUser(
+                    // Clicking opens the log, so saying "see transcribe.log"
+                    // only spends a line telling the user to do what the
+                    // notification already does.
                     title: "Transcription failed",
-                    body: "\(dir.lastPathComponent) — see transcribe.log",
+                    body: SessionName.spoken(dir),
                     opens: dir.appendingPathComponent("transcribe.log")
                 )
             }

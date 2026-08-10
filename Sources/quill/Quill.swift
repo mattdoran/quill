@@ -126,7 +126,15 @@ final class AppController {
             FileHandle.standardError.write(Data("● recording → \(newSession.dir.path)\n".utf8))
         } catch {
             FileHandle.standardError.write(Data("recording start failed: \(error)\n".utf8))
-            notifyUser(title: "Recording failed", body: "\(error)")
+            // The raw error goes to stderr and the log. What reaches someone
+            // about to start a meeting is the thing they can act on.
+            notifyUser(
+                title: "Recording failed",
+                body: """
+                    Quill couldn't start recording. Check Microphone and \
+                    Screen & System Audio Recording permissions.
+                    """
+            )
             return
         }
 
