@@ -13,15 +13,20 @@ Swift binary, menu-bar tray, no Xcode.
 ```sh
 cd quill
 swift build -c release
-./bundle.sh                                   # wraps the binary in quill.app
-cp -R .build/release/quill.app /Applications/
-/Applications/quill.app/Contents/MacOS/quill install --launch-at-login   # optional
+./bundle.sh                                   # wraps the binary in Quill.app
+cp -R .build/release/Quill.app /Applications/
+open /Applications/Quill.app
 ```
 
 The `.app` wrapper is what gives quill its own identity: notifications that
 carry its name and open the transcript when clicked, rather than arriving as
 anonymous banners. It is still one SwiftPM binary and no Xcode — the bundle is
 two folders around it.
+
+Turn on **Open at Login** from the menu to have it start with your Mac. It
+registers as a normal login item, so you can also revoke it in System Settings
+→ General → Login Items. Startup is tied to where the app lives, so move it
+before enabling rather than after.
 
 **Requires:** macOS 15+ (Core Audio process taps for system audio — no
 virtual device, no kernel extension). Apple Silicon recommended for
@@ -120,7 +125,7 @@ hand-editing the matching key here has no effect until you delete it from
 quill                        # run the menu-bar daemon (^C to quit)
 quill run --out <dir>        # custom recordings root (default ~/Recordings)
 quill doctor                 # check permissions, recordings folder, models
-quill install --launch-at-login
+quill install --launch-at-login   # same as the menu's Open at Login
 quill install --uninstall
 ```
 

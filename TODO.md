@@ -94,6 +94,21 @@ Working backlog. Notes marked **now** are the current state, not a decision.
       middle option is a higher threshold plus requiring the level to *vary*,
       since steady noise has far less variance than speech.
 
+## About and versioning
+
+- [ ] **Short commit hash and build date in the version**, tastefully. `About`
+      currently shows `0.1` and nothing else, and `CFBundleVersion` is hardcoded
+      to `1`, so two builds a week apart are indistinguishable.
+      Shape: `bundle.sh` stamps `CFBundleVersion` as the short hash and a
+      build date at assembly time, leaving `CFBundleShortVersionString` as the
+      human version. The About panel then reads `0.1 (a1b2c3d, 10 Aug 2026)`.
+      Do not commit the stamped plist — generate it into the bundle.
+- [x] **Acknowledgements in About?** Not required. Apache 2.0's attribution
+      clause applies only where a `NOTICE` file exists, and neither dependency
+      has one; shipping the licence text in `Contents/Resources/Licenses`
+      satisfies it. The standard About panel takes a credits attachment if it
+      is ever wanted for its own sake.
+
 ## Licensing
 
 - [ ] **Bundle the licences with the app.** Apache 2.0 (FluidAudio,

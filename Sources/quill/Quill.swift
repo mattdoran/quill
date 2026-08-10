@@ -44,6 +44,9 @@ struct Run: ParsableCommand {
         app.setActivationPolicy(.accessory)
 
         Notifier.shared.start()
+        LoginItem.migrateFromLaunchAgent { message in
+            FileHandle.standardError.write(Data("\(message)\n".utf8))
+        }
         let controller = AppController(root: root)
         Notifier.shared.onStopRequested = { [weak controller] in
             controller?.stopFromNotification()

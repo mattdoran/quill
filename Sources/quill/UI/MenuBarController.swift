@@ -21,6 +21,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private let echoItem: NSMenuItem
     private let transcribeItem: NSMenuItem
     private let openFolderItem: NSMenuItem
+    private let loginItem: NSMenuItem
     private let quitItem: NSMenuItem
 
     var onToggle: (() -> Void)?
@@ -147,6 +148,17 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
 
+        loginItem = NSMenuItem(
+            title: "Open at Login",
+            action: #selector(loginItemClicked),
+            keyEquivalent: ""
+        )
+        loginItem.toolTip = """
+            Quill starts hidden in the menu bar when you log in. macOS also \
+            lists it under System Settings → General → Login Items.
+            """
+        menu.addItem(loginItem)
+
         let about = NSMenuItem(
             title: "About Quill",
             action: #selector(aboutClicked),
@@ -165,7 +177,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
         for item in [
             toggleItem, openFolderItem, quitItem, micVoicesItem, systemVoicesItem,
-            echoItem, transcribeItem, lastTranscriptItem, about, retryItem,
+            echoItem, transcribeItem, lastTranscriptItem, about, retryItem, loginItem,
             transcriptionLabel,
         ] {
             item.target = self
@@ -324,6 +336,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         systemVoicesItem.state = Config.speakerDetection(track: "system").enabled ? .on : .off
         echoItem.state = Config.micVoiceProcessing() ? .on : .off
         transcribeItem.state = Config.transcriptionEnabled() ? .on : .off
+        // Asked of the system rather than remembered, so revoking it in
+        // System Settings is reflected here.
+        loginItem.state = LoginItem.isEnabled ? .on : .off
+        loginItem.isEnabled = LoginItem.isAvailable
     }
 
     /// Persists, then re-reads: a failed write leaves the checkmark where it
@@ -345,6 +361,11 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     @objc private func transcribeClicked() {
         State.setTranscriptionEnabled(transcribeItem.state != .on)
+        refreshSettings()
+    }
+
+    @objc private func loginItemClicked() {
+        LoginItem.setEnabled(loginItem.state != .on)
         refreshSettings()
     }
 
