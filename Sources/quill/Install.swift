@@ -2,10 +2,6 @@ import ArgumentParser
 import Foundation
 
 /// Manage quill's LaunchAgent so the daemon starts at login.
-///
-/// We deliberately do NOT use SMAppService.mainApp here — that requires a full
-/// .app bundle. Since quill ships as a single binary in /usr/local/bin, a
-/// plain LaunchAgent plist is the simpler, more honest mechanism.
 struct Install: ParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Install or remove the launch-at-login LaunchAgent."
@@ -95,10 +91,17 @@ struct Install: ParsableCommand {
     }
 
     private func resolveBinaryPath() throws -> String {
-        // /usr/local/bin/quill is the canonical install path. Honor a real
-        // location if running from elsewhere (e.g. dev).
-        let candidate = "/usr/local/bin/quill"
-        if FileManager.default.isExecutableFile(atPath: candidate) {
+        // The bundled app first: notifications only carry an identity when
+        // quill runs from inside quill.app. A bare binary still works, and is
+        // what a pre-bundle install left behind.
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let candidates = [
+            "/Applications/quill.app/Contents/MacOS/quill",
+            "\(home)/Applications/quill.app/Contents/MacOS/quill",
+            "/usr/local/bin/quill",
+        ]
+        for candidate in candidates
+        where FileManager.default.isExecutableFile(atPath: candidate) {
             return candidate
         }
         // Fall back to the running executable's resolved path.

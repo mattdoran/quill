@@ -6,16 +6,22 @@ stop, quill transcribes both on-device and writes a speaker-tagged transcript.
 Nothing ever leaves the machine.
 
 Named for the feather. Sibling of [parrot](https://github.com/digimata/parrot), same skeleton: single
-Swift binary, menu-bar tray, no app bundle.
+Swift binary, menu-bar tray, no Xcode.
 
 ## Install
 
 ```sh
 cd quill
 swift build -c release
-sudo cp .build/release/quill /usr/local/bin/quill
-quill install --launch-at-login   # optional — runs in the background on login
+./bundle.sh                                   # wraps the binary in quill.app
+cp -R .build/release/quill.app /Applications/
+/Applications/quill.app/Contents/MacOS/quill install --launch-at-login   # optional
 ```
+
+The `.app` wrapper is what gives quill its own identity: notifications that
+carry its name and open the transcript when clicked, rather than arriving as
+anonymous banners. It is still one SwiftPM binary and no Xcode — the bundle is
+two folders around it.
 
 **Requires:** macOS 15+ (Core Audio process taps for system audio — no
 virtual device, no kernel extension). Apple Silicon recommended for

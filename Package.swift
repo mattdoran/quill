@@ -17,9 +17,9 @@ let package = Package(
             ],
             exclude: ["Info.plist"],
             linkerSettings: [
-                // Embed Info.plist into the binary so TCC can attribute the
-                // system-audio-capture permission to quill itself when it
-                // runs as a LaunchAgent (no .app bundle to carry a plist).
+                // Keeps `swift run` and the raw binary working: TCC can still
+                // attribute microphone and system-audio capture without the
+                // .app wrapper that bundle.sh builds for a real install.
                 .unsafeFlags([
                     "-Xlinker", "-sectcreate",
                     "-Xlinker", "__TEXT",
