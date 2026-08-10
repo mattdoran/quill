@@ -15,14 +15,15 @@ actor TranscriptionCoordinator {
         /// user sits in front of for minutes.
         case preparing
         case transcribing(session: String, queued: Int)
-        case failed(session: String)
+        /// Carries the directory so the menu can open its log and re-enqueue it.
+        case failed(session: String, dir: URL)
     }
 
     private var queue: [URL] = []
     private var draining = false
     private var engine: TranscriptionEngine?
     private var diarizer: DiarizationEngine?
-    private var lastFailure: String?
+    private var lastFailure: (name: String, dir: URL)?
     private var statusHandler: (@Sendable (Status) -> Void)?
 
     func setStatusHandler(_ handler: @escaping @Sendable (Status) -> Void) {
@@ -90,7 +91,7 @@ actor TranscriptionCoordinator {
                 runHook(for: dir)
             } catch {
                 log(dir, "transcription failed: \(error)")
-                lastFailure = SessionName.spoken(dir)
+                lastFailure = (SessionName.spoken(dir), dir)
                 notifyUser(
                     // Clicking opens the log, so saying "see transcribe.log"
                     // only spends a line telling the user to do what the
@@ -105,7 +106,7 @@ actor TranscriptionCoordinator {
         engine = nil
         await diarizer?.release()
         diarizer = nil
-        publish(lastFailure.map { .failed(session: $0) } ?? .idle)
+        publish(lastFailure.map { .failed(session: $0.name, dir: $0.dir) } ?? .idle)
         draining = false
         // An enqueue that landed between the loop exiting and the release
         // finishing would otherwise sit until the next enqueue.

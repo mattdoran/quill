@@ -88,6 +88,10 @@ final class AppController {
     private var session: RecordingSession?
     private var ticker: Timer?
 
+    /// The session whose transcription failed, so its log can be opened and
+    /// the job re-queued without quitting the app.
+    private var failedSession: URL?
+
     init(root: URL) {
         self.root = root
         menuBar.onToggle = { [weak self] in self?.toggle() }
@@ -95,6 +99,16 @@ final class AppController {
         menuBar.onQuit = { [weak self] in self?.shutdown() }
         menuBar.onOpenLastTranscript = { [weak self] in self?.openLastTranscript() }
         menuBar.hasTranscript = { [weak self] in self?.lastTranscript() != nil }
+        menuBar.onOpenFailureLog = { [weak self] in
+            guard let dir = self?.failedSession else { return }
+            NSWorkspace.shared.open(dir.appendingPathComponent("transcribe.log"))
+        }
+        menuBar.onRetryTranscription = { [weak self] in
+            guard let self, let dir = failedSession else { return }
+            failedSession = nil
+            menuBar.updateTranscription(nil)
+            Task { [transcription] in await transcription.enqueue(dir) }
+        }
         menuBar.update(recording: false, elapsed: nil)
 
         Task { [transcription, root] in
@@ -182,15 +196,19 @@ final class AppController {
     private func showTranscription(_ status: TranscriptionCoordinator.Status) {
         switch status {
         case .idle:
+            failedSession = nil
             menuBar.updateTranscription(nil)
         case .preparing:
+            failedSession = nil
             menuBar.updateTranscription("Preparing transcription model…")
         case .transcribing(let name, let queued):
+            failedSession = nil
             menuBar.updateTranscription(
                 queued > 0 ? "Transcribing \(name) — \(queued) queued" : "Transcribing \(name)"
             )
-        case .failed(let name):
-            menuBar.updateTranscription("Transcription failed — \(name)")
+        case .failed(let name, let dir):
+            failedSession = dir
+            menuBar.updateTranscription("Transcription failed — \(name)", failed: true)
         }
     }
 

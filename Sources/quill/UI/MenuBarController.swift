@@ -15,6 +15,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private let transcriptionLabel: NSMenuItem
     private let toggleItem: NSMenuItem
     private let lastTranscriptItem: NSMenuItem
+    private let retryItem: NSMenuItem
     private let micVoicesItem: NSMenuItem
     private let systemVoicesItem: NSMenuItem
     private let echoItem: NSMenuItem
@@ -24,6 +25,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     var onToggle: (() -> Void)?
     var onOpenFolder: (() -> Void)?
     var onOpenLastTranscript: (() -> Void)?
+    var onOpenFailureLog: (() -> Void)?
+    var onRetryTranscription: (() -> Void)?
     var onQuit: (() -> Void)?
 
     /// Whether a transcript exists to open, re-asked each time the menu opens
@@ -49,6 +52,14 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         transcriptionLabel.isEnabled = false
         transcriptionLabel.isHidden = true
         menu.addItem(transcriptionLabel)
+
+        retryItem = NSMenuItem(
+            title: "Retry Transcription",
+            action: #selector(retryClicked),
+            keyEquivalent: ""
+        )
+        retryItem.isHidden = true
+        menu.addItem(retryItem)
 
         lastTranscriptItem = NSMenuItem(
             title: "Open Last Transcript",
@@ -149,7 +160,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
         for item in [
             toggleItem, openFolder, quitItem, micVoicesItem, systemVoicesItem,
-            echoItem, transcribeItem, lastTranscriptItem, about,
+            echoItem, transcribeItem, lastTranscriptItem, about, retryItem,
+            transcriptionLabel,
         ] {
             item.target = self
         }
@@ -222,9 +234,16 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     /// Show transcription progress/failure as a status line in the menu; nil
     /// hides it. Independent of recording state — a new recording can run
     /// while the last one transcribes.
-    func updateTranscription(_ text: String?) {
-        transcriptionLabel.attributedTitle = Self.status(text ?? "")
+    /// A failure is a dead end unless you can act on it, so that line becomes
+    /// clickable and grows a Retry beneath it. Everything else is status.
+    func updateTranscription(_ text: String?, failed: Bool = false) {
+        transcriptionLabel.attributedTitle = Self.status(
+            text ?? "", color: failed ? .systemOrange : .labelColor
+        )
         transcriptionLabel.isHidden = text == nil
+        transcriptionLabel.isEnabled = failed
+        transcriptionLabel.action = failed ? #selector(failureLogClicked) : nil
+        retryItem.isHidden = !failed
     }
 
     /// Settings can change on disk while the menu is closed, so they are read
@@ -328,6 +347,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         NSApp.orderFrontStandardAboutPanel(nil)
     }
 
+    @objc private func failureLogClicked() { onOpenFailureLog?() }
+    @objc private func retryClicked() { onRetryTranscription?() }
     @objc private func toggleClicked() { onToggle?() }
     @objc private func openFolderClicked() { onOpenFolder?() }
     @objc private func openLastTranscriptClicked() { onOpenLastTranscript?() }

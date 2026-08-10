@@ -79,6 +79,21 @@ Working backlog. Notes marked **now** are the current state, not a decision.
       The menu already has a status line for transcription progress
       (`updateTranscription`), so there is somewhere to put it without new UI.
 
+## Detection quality
+
+- [ ] **The silence nudge measures level, not voice.** RMS above -50 dBFS
+      counts as somebody being there, so a fan, street noise, a keyboard or
+      music all reset the ten minutes. The failure mode is safe — it stays
+      quiet rather than nagging — but in a noisy room the nudge will never
+      fire, which is exactly the room where you forget to stop.
+      *Available:* FluidAudio already ships Silero VAD (`VadManager`, 16 kHz,
+      4096-sample chunks, `VadResult.isVoiceActive` plus a probability).
+      Cost: a third model to download, and continuous inference on live audio
+      for the whole meeting rather than a `max()` over samples.
+      Decide whether that trade is worth it before building it. A cheaper
+      middle option is a higher threshold plus requiring the level to *vary*,
+      since steady noise has far less variance than speech.
+
 ## Licensing
 
 - [ ] **Bundle the licences with the app.** Apache 2.0 (FluidAudio,
