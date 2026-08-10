@@ -12,6 +12,12 @@
     <string>quill</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.1</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>NSHumanReadableCopyright</key>
+    <string>Copyright (c) 2026 Andrew Jones, Matt Doran. MIT licensed.</string>
     <!-- Menu-bar only. setActivationPolicy(.accessory) does this at runtime
          too, but declaring it stops a Dock icon flashing up at launch. -->
     <key>LSUIElement</key>

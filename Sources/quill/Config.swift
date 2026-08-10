@@ -38,8 +38,9 @@ enum Config {
     }
 
     /// Whether finished recordings are transcribed automatically. Default on.
+    /// The menu writes to state.json, which wins where it has an opinion.
     static func transcriptionEnabled() -> Bool {
-        transcription()?["enabled"] as? Bool ?? true
+        State.transcriptionEnabled() ?? (transcription()?["enabled"] as? Bool ?? true)
     }
 
     /// Configured engine name. Only "parakeet" ships today; the coordinator
@@ -96,7 +97,7 @@ enum Config {
     /// and on headphones there's no echo to cancel anyway. Set true when
     /// recording meetings through the speakers.
     static func micVoiceProcessing() -> Bool {
-        load()?["mic_voice_processing"] as? Bool ?? false
+        State.micVoiceProcessing() ?? (load()?["mic_voice_processing"] as? Bool ?? false)
     }
 
     /// Flip diarization for one track and persist it, so a menu toggle survives

@@ -29,6 +29,24 @@ enum State {
         write(root)
     }
 
+    static func micVoiceProcessing() -> Bool? { load()["mic_voice_processing"] as? Bool }
+
+    static func setMicVoiceProcessing(_ enabled: Bool) {
+        set("mic_voice_processing", enabled)
+    }
+
+    static func transcriptionEnabled() -> Bool? { load()["transcription_enabled"] as? Bool }
+
+    static func setTranscriptionEnabled(_ enabled: Bool) {
+        set("transcription_enabled", enabled)
+    }
+
+    private static func set(_ key: String, _ value: Bool) {
+        var root = load()
+        root[key] = value
+        write(root)
+    }
+
     /// Unreadable state is discarded rather than reported: it is quill's own
     /// file, the values in it are re-derivable from the menu, and config.json
     /// still holds the defaults it falls back to.

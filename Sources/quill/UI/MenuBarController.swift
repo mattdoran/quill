@@ -3,48 +3,74 @@ import AppKit
 /// Status bar item in the top-right of the menu bar. Shows recording state at
 /// a glance and provides the only persistent control surface for the daemon
 /// (since we run as `.accessory` — no dock icon, no main window).
+///
+/// Wording and structure follow docs/ux.md: commands in title case, status
+/// lines in sentence case, and every setting explained by a tooltip rather
+/// than by a settings window.
 @MainActor
-final class MenuBarController {
+final class MenuBarController: NSObject, NSMenuDelegate {
     private let statusItem: NSStatusItem
     private let stateLabel: NSMenuItem
+    private let troubleLabel: NSMenuItem
     private let transcriptionLabel: NSMenuItem
     private let toggleItem: NSMenuItem
-    private let micSpeakersItem: NSMenuItem
-    private let systemSpeakersItem: NSMenuItem
+    private let lastTranscriptItem: NSMenuItem
+    private let micVoicesItem: NSMenuItem
+    private let systemVoicesItem: NSMenuItem
+    private let echoItem: NSMenuItem
+    private let transcribeItem: NSMenuItem
+    private let quitItem: NSMenuItem
 
     var onToggle: (() -> Void)?
     var onOpenFolder: (() -> Void)?
+    var onOpenLastTranscript: (() -> Void)?
     var onQuit: (() -> Void)?
 
-    init() {
+    /// Whether a transcript exists to open, re-asked each time the menu opens
+    /// rather than tracked, since transcription finishes on its own schedule.
+    var hasTranscript: (() -> Bool)?
+
+    override init() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
         let menu = NSMenu()
         menu.autoenablesItems = false
 
-        stateLabel = NSMenuItem(title: "idle", action: nil, keyEquivalent: "")
+        stateLabel = NSMenuItem(title: "Quill is idle", action: nil, keyEquivalent: "")
         stateLabel.isEnabled = false
         menu.addItem(stateLabel)
+
+        troubleLabel = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        troubleLabel.isEnabled = false
+        troubleLabel.isHidden = true
+        menu.addItem(troubleLabel)
 
         transcriptionLabel = NSMenuItem(title: "", action: nil, keyEquivalent: "")
         transcriptionLabel.isEnabled = false
         transcriptionLabel.isHidden = true
         menu.addItem(transcriptionLabel)
 
+        lastTranscriptItem = NSMenuItem(
+            title: "Open Last Transcript",
+            action: #selector(openLastTranscriptClicked),
+            keyEquivalent: ""
+        )
+        menu.addItem(lastTranscriptItem)
+
         menu.addItem(.separator())
 
-        // No key equivalents on these: a menu shortcut only fires while the
+        // No key equivalents except Quit: a menu shortcut only fires while the
         // menu is open, so advertising one promises a hotkey that cannot work
-        // from inside the meeting you are recording.
+        // from inside the meeting being recorded.
         toggleItem = NSMenuItem(
-            title: "Start recording",
+            title: "Start Recording",
             action: #selector(toggleClicked),
             keyEquivalent: ""
         )
         menu.addItem(toggleItem)
 
         let openFolder = NSMenuItem(
-            title: "Open recordings folder",
+            title: "Open Recordings Folder",
             action: #selector(openFolderClicked),
             keyEquivalent: ""
         )
@@ -54,40 +80,85 @@ final class MenuBarController {
 
         // The tracks are independent: a remote call wants the far side split,
         // an in-person meeting wants the room. Titles name the situation, since
-        // "mic" and "system" don't describe the choice being made. Both sit at
-        // the top level — a setting worth changing per meeting shouldn't cost a
-        // hover and a second click to reach or to read.
-        micSpeakersItem = NSMenuItem(
-            title: "Detect speakers in the room",
-            action: #selector(micSpeakersClicked),
+        // "microphone" and "system audio" don't describe the choice being made.
+        // Both sit at the top level — a setting worth changing per meeting
+        // shouldn't cost a hover and a second click to reach or to read.
+        micVoicesItem = NSMenuItem(
+            title: "Separate Voices in the Room",
+            action: #selector(micVoicesClicked),
             keyEquivalent: ""
         )
-        menu.addItem(micSpeakersItem)
+        micVoicesItem.toolTip = """
+            Labels each person on your microphone track separately, for \
+            in-person meetings. Downloads a second on-device model the first \
+            time.
+            """
+        menu.addItem(micVoicesItem)
 
-        systemSpeakersItem = NSMenuItem(
-            title: "Detect speakers on the call",
-            action: #selector(systemSpeakersClicked),
+        systemVoicesItem = NSMenuItem(
+            title: "Separate Voices on the Call",
+            action: #selector(systemVoicesClicked),
             keyEquivalent: ""
         )
-        menu.addItem(systemSpeakersItem)
+        systemVoicesItem.toolTip = """
+            Labels each person on the call separately, for group calls. \
+            Downloads a second on-device model the first time.
+            """
+        menu.addItem(systemVoicesItem)
+
+        echoItem = NSMenuItem(
+            title: "Cancel Echo from Speakers",
+            action: #selector(echoClicked),
+            keyEquivalent: ""
+        )
+        echoItem.toolTip = """
+            Stops meeting audio bleeding into your microphone when you are not \
+            wearing headphones. Slightly quietens other playback while \
+            recording. Applies to the next recording.
+            """
+        menu.addItem(echoItem)
+
+        transcribeItem = NSMenuItem(
+            title: "Transcribe After Recording",
+            action: #selector(transcribeClicked),
+            keyEquivalent: ""
+        )
+        transcribeItem.toolTip = """
+            Off means quill records only. Turning it back on transcribes the \
+            backlog the next time Quill starts.
+            """
+        menu.addItem(transcribeItem)
 
         menu.addItem(.separator())
 
-        let quit = NSMenuItem(
-            title: "Quit quill",
+        let about = NSMenuItem(
+            title: "About Quill",
+            action: #selector(aboutClicked),
+            keyEquivalent: ""
+        )
+        menu.addItem(about)
+
+        quitItem = NSMenuItem(
+            title: "Quit Quill",
             action: #selector(quitClicked),
             keyEquivalent: "q"
         )
-        menu.addItem(quit)
+        menu.addItem(quitItem)
+
+        super.init()
 
         for item in [
-            toggleItem, openFolder, quit, micSpeakersItem, systemSpeakersItem,
+            toggleItem, openFolder, quitItem, micVoicesItem, systemVoicesItem,
+            echoItem, transcribeItem, lastTranscriptItem, about,
         ] {
             item.target = self
         }
 
+        menu.delegate = self
         statusItem.menu = menu
-        refreshSpeakerDetectionState()
+        // Keeps the item where the user dragged it, across launches.
+        statusItem.autosaveName = "com.mattdoran.quill.status"
+        refreshSettings()
 
         if let button = statusItem.button {
             button.image = Self.featherImage()
@@ -115,11 +186,21 @@ final class MenuBarController {
     func update(
         recording: Bool, elapsed: String?, trouble: String? = nil, degraded: Bool = false
     ) {
-        stateLabel.title = recording
-            ? "● recording · \(elapsed ?? "0:00")\(trouble.map { " · \($0)" } ?? "")"
-            : "idle"
-        toggleItem.title = recording ? "Stop recording" : "Start recording"
-        statusItem.button?.title = recording ? " \(elapsed ?? "0:00")" : ""
+        let clock = elapsed ?? "0:00"
+        stateLabel.attributedTitle = Self.status(
+            recording ? "Recording — \(clock)" : "Quill is idle"
+        )
+        toggleItem.title = recording ? "Stop Recording" : "Start Recording"
+        // Naming the consequence beats a confirmation sheet from an app with
+        // no window to put one in front of.
+        quitItem.title = recording ? "Stop Recording and Quit" : "Quit Quill"
+        // Echo cancellation is applied when the mic graph is built, so a
+        // mid-recording change would silently not take effect.
+        echoItem.isEnabled = !recording
+        statusItem.button?.title = recording ? " \(clock)" : ""
+
+        troubleLabel.attributedTitle = Self.status(trouble ?? "", color: .systemOrange)
+        troubleLabel.isHidden = trouble == nil
 
         guard let button = statusItem.button else { return }
         switch (recording, degraded) {
@@ -130,26 +211,60 @@ final class MenuBarController {
         case (true, false):
             button.image = Self.symbol("record.circle.fill", "recording")
             button.contentTintColor = .systemRed
-            button.setAccessibilityTitle("Quill, recording, \(elapsed ?? "0:00")")
+            button.setAccessibilityTitle("Quill, recording, \(Self.spoken(clock))")
         case (true, true):
             button.image = Self.symbol("exclamationmark.triangle.fill", "capture problem")
             button.contentTintColor = .systemOrange
-            button.setAccessibilityTitle("Quill, capture problem, \(elapsed ?? "0:00")")
+            button.setAccessibilityTitle("Quill, capture problem, \(Self.spoken(clock))")
         }
+    }
+
+    /// Show transcription progress/failure as a status line in the menu; nil
+    /// hides it. Independent of recording state — a new recording can run
+    /// while the last one transcribes.
+    func updateTranscription(_ text: String?) {
+        transcriptionLabel.attributedTitle = Self.status(text ?? "")
+        transcriptionLabel.isHidden = text == nil
+    }
+
+    /// Settings can change on disk while the menu is closed, so they are read
+    /// back on open rather than only after a click.
+    func menuWillOpen(_ menu: NSMenu) {
+        refreshSettings()
+        lastTranscriptItem.isEnabled = hasTranscript?() ?? false
+    }
+
+    // MARK: -
+
+    /// Disabled items render grey, which would leave the line the user opened
+    /// the menu to read as the dimmest text in it.
+    private static func status(
+        _ text: String, color: NSColor = .labelColor
+    ) -> NSAttributedString {
+        NSAttributedString(string: text, attributes: [
+            .foregroundColor: color,
+            .font: NSFont.menuFont(ofSize: 0),
+        ])
+    }
+
+    /// VoiceOver reads "12:03" as a time of day; spell it out instead.
+    private static func spoken(_ clock: String) -> String {
+        let parts = clock.split(separator: ":").compactMap { Int($0) }
+        guard parts.count >= 2 else { return clock }
+        let minutes = parts[parts.count - 2]
+        let seconds = parts[parts.count - 1]
+        let hours = parts.count > 2 ? parts[0] : 0
+        var said: [String] = []
+        if hours > 0 { said.append("\(hours) hour\(hours == 1 ? "" : "s")") }
+        if minutes > 0 { said.append("\(minutes) minute\(minutes == 1 ? "" : "s")") }
+        said.append("\(seconds) second\(seconds == 1 ? "" : "s")")
+        return said.joined(separator: " ")
     }
 
     private static func symbol(_ name: String, _ description: String) -> NSImage? {
         let image = NSImage(systemSymbolName: name, accessibilityDescription: description)
         image?.isTemplate = true
         return image
-    }
-
-    /// Show transcription progress/failure as a second status line in the
-    /// menu; nil hides it. Independent of recording state — a new recording
-    /// can run while the last one transcribes.
-    func updateTranscription(_ text: String?) {
-        transcriptionLabel.title = text ?? ""
-        transcriptionLabel.isHidden = text == nil
     }
 
     // Inlined Lucide feather SVG. Keeping it in source means the executable
@@ -176,30 +291,45 @@ final class MenuBarController {
         return image
     }
 
-    /// Reads the checkmarks back from the config file, so the menu agrees with
-    /// a hand-edited config and not with whatever was last clicked.
-    private func refreshSpeakerDetectionState() {
-        micSpeakersItem.state =
-            Config.speakerDetection(track: "mic").enabled ? .on : .off
-        systemSpeakersItem.state =
-            Config.speakerDetection(track: "system").enabled ? .on : .off
+    /// Reads the checkmarks back from disk, so the menu agrees with what is
+    /// stored rather than with whatever was last clicked. State wins over
+    /// config wherever it has an opinion.
+    private func refreshSettings() {
+        micVoicesItem.state = Config.speakerDetection(track: "mic").enabled ? .on : .off
+        systemVoicesItem.state = Config.speakerDetection(track: "system").enabled ? .on : .off
+        echoItem.state = Config.micVoiceProcessing() ? .on : .off
+        transcribeItem.state = Config.transcriptionEnabled() ? .on : .off
     }
 
     /// Persists, then re-reads: a failed write leaves the checkmark where it
     /// was instead of showing a setting that isn't on disk.
-    private func setSpeakerDetection(track: String, from item: NSMenuItem) {
-        State.setSpeakerDetection(track: track, enabled: item.state != .on)
-        refreshSpeakerDetectionState()
+    @objc private func micVoicesClicked() {
+        State.setSpeakerDetection(track: "mic", enabled: micVoicesItem.state != .on)
+        refreshSettings()
+    }
+
+    @objc private func systemVoicesClicked() {
+        State.setSpeakerDetection(track: "system", enabled: systemVoicesItem.state != .on)
+        refreshSettings()
+    }
+
+    @objc private func echoClicked() {
+        State.setMicVoiceProcessing(echoItem.state != .on)
+        refreshSettings()
+    }
+
+    @objc private func transcribeClicked() {
+        State.setTranscriptionEnabled(transcribeItem.state != .on)
+        refreshSettings()
+    }
+
+    @objc private func aboutClicked() {
+        NSApp.activate(ignoringOtherApps: true)
+        NSApp.orderFrontStandardAboutPanel(nil)
     }
 
     @objc private func toggleClicked() { onToggle?() }
     @objc private func openFolderClicked() { onOpenFolder?() }
+    @objc private func openLastTranscriptClicked() { onOpenLastTranscript?() }
     @objc private func quitClicked() { onQuit?() }
-    @objc private func micSpeakersClicked() {
-        setSpeakerDetection(track: "mic", from: micSpeakersItem)
-    }
-
-    @objc private func systemSpeakersClicked() {
-        setSpeakerDetection(track: "system", from: systemSpeakersItem)
-    }
 }

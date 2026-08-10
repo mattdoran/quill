@@ -90,6 +90,8 @@ final class AppController {
         menuBar.onToggle = { [weak self] in self?.toggle() }
         menuBar.onOpenFolder = { [weak self] in self?.openFolder() }
         menuBar.onQuit = { [weak self] in self?.shutdown() }
+        menuBar.onOpenLastTranscript = { [weak self] in self?.openLastTranscript() }
+        menuBar.hasTranscript = { [weak self] in self?.lastTranscript() != nil }
         menuBar.update(recording: false, elapsed: nil)
 
         Task { [transcription, root] in
@@ -171,6 +173,25 @@ final class AppController {
             trouble: session.trouble,
             degraded: session.isDegraded
         )
+    }
+
+    /// Newest session holding a transcript. Re-derived from disk rather than
+    /// remembered, so it survives a restart and reflects a transcript that
+    /// finished while the menu was closed.
+    private func lastTranscript() -> URL? {
+        let sessions = (try? FileManager.default.contentsOfDirectory(
+            at: root, includingPropertiesForKeys: nil
+        )) ?? []
+        return sessions
+            .sorted { $0.lastPathComponent > $1.lastPathComponent }
+            .lazy
+            .map { $0.appendingPathComponent("transcript.md") }
+            .first { FileManager.default.fileExists(atPath: $0.path) }
+    }
+
+    private func openLastTranscript() {
+        guard let transcript = lastTranscript() else { return }
+        NSWorkspace.shared.open(transcript)
     }
 
     private func openFolder() {
