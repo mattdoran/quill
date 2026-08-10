@@ -23,7 +23,7 @@ notifications. Prescriptive. Where something is not built yet it is marked
 ## 2. Status item
 
 Set once at launch: `statusItem.autosaveName = "com.mattdoran.quill.status"`, so
-the item keeps the position the user dragged it to. *(Proposed.)*
+the item keeps the position the user dragged it to.
 
 | State | Glyph | Tint | Button title | Accessibility title |
 |---|---|---|---|---|
@@ -54,7 +54,7 @@ Title case on commands, sentence case on status lines. `✓` marks a checkmark,
 
 Status lines are disabled but must not be low-contrast: set `attributedTitle`
 with `.labelColor` (and `.systemOrange` for the trouble line). The one thing the
-user opened the menu to read cannot be the dimmest text in it. *(Proposed.)*
+user opened the menu to read cannot be the dimmest text in it.
 
 ### Idle
 
@@ -125,10 +125,12 @@ Quit Quill                                      ⌘Q
 ```
 
 While the models are downloading, the line reads
-`Preparing transcription model — 42%`. It must not read "transcribing": today
+`Preparing transcription model…`. The percentage is **Proposed**: it needs the
+prefetch to move off `AsrModels.downloadAndLoad`, which discards progress, onto
+`ModelHub.download`, which reports it. It must not read "transcribing": today
 `.transcribing` is published before the engine is prepared, so a 600 MB
 first-run download reads as transcription for minutes. Publish a `.preparing`
-state first. *(Proposed.)*
+state first.
 
 ### Transcription failed
 
@@ -143,7 +145,7 @@ Open Last Transcript
 The failure line is clickable, not decoration. If more than one failed, it reads
 `2 transcriptions failed` and opens the newest log. `Retry Transcription`
 re-enqueues; today the only recovery is quitting and relaunching so
-`resumePending` finds it, which is not a recovery story. *(Proposed.)*
+`resumePending` finds it, which is not a recovery story.
 
 ### Tooltips
 
@@ -169,7 +171,7 @@ a window. Verbatim:
   piece of work.
 - **Refresh on open.** Adopt `NSMenuDelegate` and re-read the checkmark state in
   `menuWillOpen(_:)`, so a config edited on disk is not contradicted by a stale
-  menu. *(Proposed.)*
+  menu.
 - **Persist, then re-read.** A toggle writes to disk and reads the value back, so
   a failed write leaves the checkmark where it was. Keep this.
 
@@ -183,8 +185,8 @@ event or a thing the user can act on within a minute.
 | 1 | Recording failed to start | `Recording failed` | `Quill couldn't start recording. Check Microphone and Screen & System Audio Recording permissions.` | — | — | Yes | Ships; **body is a change** |
 | 2 | Transcript written | `Transcript ready` | `2:32 PM meeting, 47 minutes` | — | `transcript.md` | Yes | Ships; **body is a change** |
 | 3 | Transcription failed | `Transcription failed` | `2:32 PM recording` | `Retry` | `transcribe.log` | Yes | Ships; **body and button are changes** |
-| 4 | A track down 30s continuously | *see below* | *see below* | — | — | Yes | **Proposed** |
-| 5 | Both tracks quiet 10 minutes | `Still recording` | `No one has spoken for 10 minutes. Is the meeting over?` | `Stop Recording` | — | Yes | **Proposed** |
+| 4 | A track down 30s continuously | *see below* | *see below* | — | — | Yes | Ships |
+| 5 | Every audible track quiet 10 minutes | `Still recording` | `No one has spoken for 10 minutes. Is the meeting over?` | `Stop Recording` | — | Yes | Ships |
 
 Changes to the three that ship: #1 currently interpolates a raw Swift error into
 a banner — the error belongs on stderr and in the log, not in front of a person
@@ -269,7 +271,7 @@ wrong is ten minutes of junk audio and about four seconds of transcription.
 | Model download starting or finishing | Menu line only. |
 | A track skipped as missing or empty during transcription | `transcribe.log`. |
 | Diarization failing | It degrades to the flat label and the transcript still exists. Log only. |
-| Anything at launch | Including the notification permission prompt, which should be requested on the first *stop*, seconds before the first notification fires — not at login. *(Proposed.)* |
+| Anything at launch | Including the notification permission prompt. It is asked the first time a recording starts: asking at the first *stop*, as originally written here, would miss the failed-to-start notification, which is the one a fresh install is most likely to need. |
 
 ## 5. Config
 
