@@ -66,7 +66,9 @@ done
 if [ -n "$SIGN_IDENTITY" ]; then
     # Hardened runtime and a secure timestamp are both required by notarization,
     # and harmless without it.
-    codesign --force --timestamp --options runtime --sign "$SIGN_IDENTITY" "$app"
+    codesign --force --timestamp --options runtime \
+        --entitlements "$root/Sources/quill/quill.entitlements" \
+        --sign "$SIGN_IDENTITY" "$app"
 else
     # Ad-hoc runs on this Mac only: Gatekeeper rejects it anywhere else, and the
     # code hash changes every build, so TCC re-prompts each time.

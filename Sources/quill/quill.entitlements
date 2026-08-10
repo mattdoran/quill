@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- The hardened runtime, which notarization requires, refuses microphone
+         access without this and hands back silence rather than an error.
+         System audio capture goes through a Core Audio process tap on the same
+         input path. -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+</dict>
+</plist>
