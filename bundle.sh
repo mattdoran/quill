@@ -48,6 +48,21 @@ cp "$binary" "$app/Contents/MacOS/quill"
 cp "$root/Sources/quill/Info.plist" "$app/Contents/Info.plist"
 cp "$root/Sources/quill/AppIcon.icns" "$app/Contents/Resources/AppIcon.icns"
 
+# Apache 2.0 requires its licence to travel with distributed binaries, and MIT
+# requires upstream's notice to travel too. Collected from the checkouts, since
+# that is the version actually linked.
+licenses="$app/Contents/Resources/Licenses"
+mkdir -p "$licenses"
+cp "$root/LICENSE" "$licenses/quill.txt"
+for dep in FluidAudio swift-argument-parser; do
+    for name in LICENSE LICENSE.txt; do
+        if [ -f "$root/.build/checkouts/$dep/$name" ]; then
+            cp "$root/.build/checkouts/$dep/$name" "$licenses/$dep.txt"
+            break
+        fi
+    done
+done
+
 if [ -n "$SIGN_IDENTITY" ]; then
     # Hardened runtime and a secure timestamp are both required by notarization,
     # and harmless without it.

@@ -99,6 +99,7 @@ final class AppController {
         menuBar.onQuit = { [weak self] in self?.shutdown() }
         menuBar.onOpenLastTranscript = { [weak self] in self?.openLastTranscript() }
         menuBar.hasTranscript = { [weak self] in self?.lastTranscript() != nil }
+        menuBar.recordingsPath = { [root] in root.path }
         menuBar.onOpenFailureLog = { [weak self] in
             guard let dir = self?.failedSession else { return }
             NSWorkspace.shared.open(dir.appendingPathComponent("transcribe.log"))
@@ -139,6 +140,7 @@ final class AppController {
     }
 
     private func startSession() {
+        Notifier.shared.requestAuthorizationOnce()
         do {
             let newSession = try RecordingSession(root: root)
             // No buttons: at thirty seconds the useful response is physical,

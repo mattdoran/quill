@@ -28,9 +28,10 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     var onStopRequested: (() -> Void)?
 
     private let bundled = Bundle.main.bundleURL.pathExtension == "app"
+    private var hasAsked = false
 
-    /// Ask once, at launch: a request raised alongside the first notification
-    /// would swallow that notification while the prompt is up.
+    /// Wire up delivery. Authorization is asked for separately, since a prompt
+    /// at login arrives before the user has done anything to explain it.
     func start() {
         guard bundled else { return }
         let center = UNUserNotificationCenter.current()
@@ -50,7 +51,16 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
                 intentIdentifiers: []
             )
         ])
-        center.requestAuthorization(options: [.alert, .sound]) { _, error in
+    }
+
+    /// Asked the first time the user starts a recording: they have just acted,
+    /// so the prompt has a reason, and every notification quill sends comes
+    /// after this point.
+    func requestAuthorizationOnce() {
+        guard bundled, !hasAsked else { return }
+        hasAsked = true
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) {
+            _, error in
             if let error {
                 FileHandle.standardError.write(Data(
                     "warning: notifications unavailable (\(error))\n".utf8

@@ -95,6 +95,11 @@ Optional, at `~/.config/quill/config.json`:
 }
 ```
 
+Settings you can reach from the menu are also written to `state.json` beside
+this file, and **state wins over config**: once you have clicked a menu item,
+hand-editing the matching key here has no effect until you delete it from
+`state.json`.
+
 - `recordings_dir` — where sessions land. Resolution order: `--out` flag >
   config > `~/Recordings`.
 - `transcription.enabled` — set `false` to just record.

@@ -20,6 +20,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private let systemVoicesItem: NSMenuItem
     private let echoItem: NSMenuItem
     private let transcribeItem: NSMenuItem
+    private let openFolderItem: NSMenuItem
     private let quitItem: NSMenuItem
 
     var onToggle: (() -> Void)?
@@ -32,6 +33,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     /// Whether a transcript exists to open, re-asked each time the menu opens
     /// rather than tracked, since transcription finishes on its own schedule.
     var hasTranscript: (() -> Bool)?
+
+    /// Where recordings land. Shown as a tooltip rather than a setting: it is
+    /// worth knowing and rarely worth changing.
+    var recordingsPath: (() -> String)?
 
     override init() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -80,12 +85,12 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         )
         menu.addItem(toggleItem)
 
-        let openFolder = NSMenuItem(
+        openFolderItem = NSMenuItem(
             title: "Open Recordings Folder",
             action: #selector(openFolderClicked),
             keyEquivalent: ""
         )
-        menu.addItem(openFolder)
+        menu.addItem(openFolderItem)
 
         menu.addItem(.separator())
 
@@ -159,7 +164,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         super.init()
 
         for item in [
-            toggleItem, openFolder, quitItem, micVoicesItem, systemVoicesItem,
+            toggleItem, openFolderItem, quitItem, micVoicesItem, systemVoicesItem,
             echoItem, transcribeItem, lastTranscriptItem, about, retryItem,
             transcriptionLabel,
         ] {
@@ -251,6 +256,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
         refreshSettings()
         lastTranscriptItem.isEnabled = hasTranscript?() ?? false
+        openFolderItem.toolTip = recordingsPath?()
     }
 
     // MARK: -
