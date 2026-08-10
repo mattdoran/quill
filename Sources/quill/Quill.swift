@@ -121,6 +121,12 @@ final class AppController {
     private func startSession() {
         do {
             let newSession = try RecordingSession(root: root)
+            // No buttons: at thirty seconds the useful response is physical,
+            // and "stop recording" is wrong advice while the other track is
+            // still good.
+            newSession.onTrackDead = { title, body in
+                notifyUser(title: title, body: body)
+            }
             try newSession.start()
             session = newSession
             FileHandle.standardError.write(Data("● recording → \(newSession.dir.path)\n".utf8))

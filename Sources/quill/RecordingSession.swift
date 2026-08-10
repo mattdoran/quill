@@ -19,6 +19,11 @@ final class RecordingSession {
     /// about a fault the session has already recovered from.
     var isDegraded: Bool { supervisors.contains { !$0.isHealthy } }
 
+    /// Raised once when a track has been down long enough that it is not
+    /// coming back on its own. Carries a title and body, since what to say
+    /// depends on which tracks are gone.
+    var onTrackDead: ((String, String) -> Void)?
+
     private var reported: Set<String> = []
 
     private let log: SessionLog
@@ -87,6 +92,7 @@ final class RecordingSession {
             MainActor.assumeIsolated {
                 guard let self else { return }
                 self.supervisors.forEach { $0.tick() }
+                self.reportDeadTracks()
             }
         }
     }
@@ -148,6 +154,39 @@ final class RecordingSession {
         CaptureSupervisor(capture: capture, log: log, startedAt: startedAt) {
             [weak self] message in
             self?.report(message)
+        }
+    }
+
+    /// A track that has been down past the threshold is announced once. Both
+    /// tracks down is one message rather than two, because the two arrive
+    /// together and say the same thing.
+    private func reportDeadTracks() {
+        let dead = supervisors.filter {
+            ($0.outage ?? 0) > CaptureSupervisor.deadThreshold && !$0.hasReportedDead
+        }
+        guard !dead.isEmpty else { return }
+        dead.forEach { $0.hasReportedDead = true }
+
+        let names = Set(dead.map(\.name))
+        let seconds = Int(CaptureSupervisor.deadThreshold)
+        if names.count > 1 {
+            onTrackDead?(
+                "Recording is empty",
+                "Neither track has captured anything for \(seconds) seconds. "
+                    + "Quill is still running."
+            )
+        } else if names.contains("mic") {
+            onTrackDead?(
+                "Microphone stopped",
+                "Still recording the call, but nothing from your mic for "
+                    + "\(seconds) seconds. Reconnect your input device."
+            )
+        } else {
+            onTrackDead?(
+                "System audio stopped",
+                "Still recording your mic, but nothing from the call for "
+                    + "\(seconds) seconds. Check the meeting app is still playing."
+            )
         }
     }
 

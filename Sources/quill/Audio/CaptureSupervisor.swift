@@ -69,12 +69,19 @@ final class CaptureSupervisor {
     /// them to ignore it.
     private static let troubleThreshold: TimeInterval = 3
 
+    /// A track still down this long has failed four rebuilds — backoff caps at
+    /// 15s by the sixth attempt — so it is not coming back on its own. Route
+    /// changes settle inside 5s and never reach this.
+    static let deadThreshold: TimeInterval = 30
+
     /// A device that has gone for good must not be hammered for the rest of the
     /// meeting: each system-track rebuild creates and destroys an aggregate
     /// device.
     private static func backoff(attempt: Int) -> TimeInterval {
         min(0.5 * pow(2, Double(attempt - 1)), 15)
     }
+
+    var name: String { capture.name }
 
     private var state: State = .stopped
 
@@ -95,6 +102,21 @@ final class CaptureSupervisor {
     private var lastEvidence: Date
     private var outageStartedAt: Date?
     private var troubleReported = false
+    private var deadReported = false
+
+    /// How long this track has been continuously unhealthy, or nil when it is
+    /// capturing. Read by the session to decide whether to say anything.
+    var outage: TimeInterval? {
+        guard let outageStartedAt, !isHealthy else { return nil }
+        return Date().timeIntervalSince(outageStartedAt)
+    }
+
+    /// Set once a track has been reported dead, so a track that stays dead is
+    /// not announced again.
+    var hasReportedDead: Bool {
+        get { deadReported }
+        set { deadReported = newValue }
+    }
 
     init(
         capture: Capture,
@@ -172,6 +194,7 @@ final class CaptureSupervisor {
         let outage = last.timeIntervalSince(outageStartedAt ?? last)
         lastEvidence = last
         outageStartedAt = nil
+        deadReported = false
         state = .capturing
         log.log(String(format: "%@: capture resumed after %.1fs", capture.name, outage))
         if outage > Self.troubleThreshold {
