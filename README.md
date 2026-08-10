@@ -43,7 +43,7 @@ transcription speed.
    automatically (the menu shows progress); a notification fires when the
    transcript is ready.
 
-Each session lands in `~/Recordings/<yyyy.MM.dd-HHmm>/`:
+Each session lands in `~/Music/Quill/<yyyy.MM.dd-HHmm>/`:
 
 | File | Contents |
 |---|---|
@@ -106,12 +106,20 @@ hand-editing the matching key here has no effect until you delete it from
 `state.json`.
 
 - `recordings_dir` — where sessions land. Resolution order: `--out` flag >
-  config > `~/Recordings`.
+  the folder picked in the menu > config > `~/Music/Quill`.
+
+  The default avoids `~/Documents`, `~/Desktop` and `~/Downloads` on purpose.
+  Those are TCC-protected, and a menu-bar app has no window for macOS to hang
+  the permission prompt on, so access is denied silently: the folder stays
+  writable while listing it returns nothing. If you want quill to save there
+  anyway, use **Change Recordings Folder…** in the menu rather than setting it
+  here — choosing a folder through the open panel is what grants access.
 - `transcription.enabled` — set `false` to just record.
-- `mic_voice_processing` — Apple's echo cancellation on the mic. Left unset it
-  follows the output device: on for the built-in speakers, off for anything
-  else, re-checked whenever the route changes. Set it here, or click the menu
-  item, to decide for yourself.
+- `mic_voice_processing` — Apple's echo cancellation on the mic (default off).
+  Useful when recording through speakers, where the far side otherwise bleeds
+  into the mic track and gets transcribed twice. The catch, measured: the voice
+  unit ducks system audio *into the recording*, costing about 8 dB on the
+  system track. That is usually a worse trade than the echo it removes.
   Set `true` when recording meetings through the speakers, so playback doesn't
   bleed into the mic track and get transcribed twice as "me". The trade: while
   the voice unit is live, macOS ducks other playback slightly (`.min` ducking

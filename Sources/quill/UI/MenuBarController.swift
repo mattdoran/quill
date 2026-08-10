@@ -26,6 +26,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     var onToggle: (() -> Void)?
     var onOpenFolder: (() -> Void)?
+    var onChangeFolder: (() -> Void)?
     var onOpenLastTranscript: (() -> Void)?
     var onOpenFailureLog: (() -> Void)?
     var onRetryTranscription: (() -> Void)?
@@ -93,6 +94,21 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         )
         menu.addItem(openFolderItem)
 
+        // Visible rather than hidden behind an option-click: choosing a folder
+        // through the open panel is also what grants access to a protected
+        // location, so it is the fix for a permission problem, not a
+        // preference for power users.
+        let changeFolder = NSMenuItem(
+            title: "Change Recordings Folder…",
+            action: #selector(changeFolderClicked),
+            keyEquivalent: ""
+        )
+        changeFolder.toolTip = """
+            Pick where recordings are saved. Choosing a folder here is also how \
+            macOS grants access to protected places like Documents.
+            """
+        menu.addItem(changeFolder)
+
         menu.addItem(.separator())
 
         // The tracks are independent: a remote call wants the far side split,
@@ -130,8 +146,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         )
         echoItem.toolTip = """
             Stops meeting audio bleeding into your microphone when you are not \
-            wearing headphones. Slightly quietens other playback while \
-            recording. Applies to the next recording.
+            wearing headphones. Costs about 8 dB on the system audio track, \
+            which is usually the worse trade. Applies to the next recording.
             """
         menu.addItem(echoItem)
 
@@ -176,7 +192,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         super.init()
 
         for item in [
-            toggleItem, openFolderItem, quitItem, micVoicesItem, systemVoicesItem,
+            toggleItem, openFolderItem, changeFolder, quitItem, micVoicesItem, systemVoicesItem,
             echoItem, transcribeItem, lastTranscriptItem, about, retryItem, loginItem,
             transcriptionLabel,
         ] {
@@ -378,6 +394,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     @objc private func retryClicked() { onRetryTranscription?() }
     @objc private func toggleClicked() { onToggle?() }
     @objc private func openFolderClicked() { onOpenFolder?() }
+    @objc private func changeFolderClicked() { onChangeFolder?() }
     @objc private func openLastTranscriptClicked() { onOpenLastTranscript?() }
     @objc private func quitClicked() { onQuit?() }
 }

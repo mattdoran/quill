@@ -41,6 +41,20 @@ enum State {
         set("transcription_enabled", enabled)
     }
 
+    /// Where the user pointed quill with the folder picker. Stored as a plain
+    /// path rather than a security-scoped bookmark: quill is not sandboxed, so
+    /// choosing a folder through the open panel grants access that persists.
+    static func recordingsDir() -> URL? {
+        guard let path = load()["recordings_dir"] as? String, !path.isEmpty else { return nil }
+        return URL(fileURLWithPath: path, isDirectory: true)
+    }
+
+    static func setRecordingsDir(_ url: URL) {
+        var root = load()
+        root["recordings_dir"] = url.path
+        write(root)
+    }
+
     private static func set(_ key: String, _ value: Bool) {
         var root = load()
         root[key] = value

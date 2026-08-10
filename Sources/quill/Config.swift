@@ -21,11 +21,19 @@ enum Config {
     static let path = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".config/quill/config.json")
 
+    /// ~/Music, because Documents, Desktop and Downloads are TCC-protected and
+    /// a menu-bar app has no window to hang the permission prompt on: the
+    /// request is denied silently and directory listings come back empty with
+    /// no error. Music is unprotected and is where Mac audio apps put generated
+    /// recordings.
     static let defaultRoot = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent("Recordings", isDirectory: true)
+        .appendingPathComponent("Music/Quill", isDirectory: true)
 
     /// The configured recordings root, or nil if no config file / no key.
+    /// A folder picked from the menu wins, since choosing it through the open
+    /// panel is also what grants access to a protected location.
     static func recordingsDir() -> URL? {
+        if let chosen = State.recordingsDir() { return chosen }
         guard let dir = load()?["recordings_dir"] as? String, !dir.isEmpty else { return nil }
         return URL(fileURLWithPath: (dir as NSString).expandingTildeInPath, isDirectory: true)
     }
@@ -96,18 +104,15 @@ enum Config {
     /// as "me". Default off — the live voice unit ducks all other playback,
     /// and on headphones there's no echo to cancel anyway. Set true when
     /// recording meetings through the speakers.
-    /// Defaults to whether anyone has clicked it, then to the config file,
-    /// then to whether sound is currently coming out of a loudspeaker. On
-    /// speakers the far side is picked up by the microphone and transcribed
-    /// twice, once as them and once as you; on headphones there is no echo to
-    /// cancel and the voice unit only ducks other playback for nothing.
+    /// Off unless asked for. The voice unit ducks system audio *into the
+    /// recording*, not only out of the speakers: measured at 7.8 dB quieter on
+    /// the system track, which carries the people being recorded. Losing that
+    /// costs more than the echo it removes from the mic track.
     ///
-    /// Re-read on every mic attach, so swapping headsets mid-meeting settles
-    /// on the right answer rather than the one that was true at the start.
+    /// Re-read on every mic attach, so a mid-meeting change settles on the
+    /// right answer rather than the one that was true at the start.
     static func micVoiceProcessing() -> Bool {
-        State.micVoiceProcessing()
-            ?? (load()?["mic_voice_processing"] as? Bool)
-            ?? AudioDevices.defaultOutputIsLoudspeaker()
+        State.micVoiceProcessing() ?? (load()?["mic_voice_processing"] as? Bool ?? false)
     }
 
     /// Flip diarization for one track and persist it, so a menu toggle survives

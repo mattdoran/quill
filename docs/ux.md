@@ -286,7 +286,7 @@ holds nothing until it holds something the menu cannot.**
 | Echo cancellation | Menu | Changes per meeting: headphones or speakers. Defaults to whether sound is currently coming out of the built-in speakers, and a click overrides that for good. Disabled while recording. |
 | Transcribe after recording | Menu | One line explains it. |
 | Open at Login | Menu | Via `SMAppService`. `install --launch-at-login` stays as a thin wrapper over the same call, so a fresh install can be set up without opening the app, and the two can never disagree. |
-| Recordings folder | Menu, read-only | The resolved path as the `Open Recordings Folder` tooltip. Changing it is rare enough for JSON. |
+| Recordings folder | Menu | The resolved path as the `Open Recordings Folder` tooltip, plus `Change Recordings Folder…`. Not hidden behind an option-click: picking a folder through the open panel is how macOS grants access to a protected location, so it is the fix for a permission failure, not a power-user preference. |
 | `transcription.engine` | JSON | One value ships. Not a setting yet. |
 | `on_stop` | JSON, permanently | It is a shell command. A shell command never gets a GUI field. |
 

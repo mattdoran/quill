@@ -74,6 +74,20 @@ enum DoctorReport {
                 remediation: "check permissions on the directory"
             )
         }
+        // Writable is not enough. Under TCC, Documents, Desktop and Downloads
+        // stay writable while listing them returns nothing, with no error, so a
+        // check that only writes would pass while the app cannot find its own
+        // recordings.
+        guard (try? FileManager.default.contentsOfDirectory(
+            at: root, includingPropertiesForKeys: nil
+        )) != nil else {
+            return Check(
+                name: "recordings folder",
+                status: .fail("can't list \(root.path) — macOS is blocking access"),
+                remediation: "pick the folder again with Change Recordings Folder… "
+                    + "in the menu, which is what grants access"
+            )
+        }
         return Check(name: "recordings folder", status: .ok, remediation: nil)
     }
 

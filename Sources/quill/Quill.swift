@@ -85,7 +85,7 @@ struct Doctor: ParsableCommand {
 /// ticker. All state transitions happen on the main actor.
 @MainActor
 final class AppController {
-    private let root: URL
+    private var root: URL
     private let menuBar = MenuBarController()
     private let transcription = TranscriptionCoordinator()
     private var session: RecordingSession?
@@ -102,7 +102,8 @@ final class AppController {
         menuBar.onQuit = { [weak self] in self?.shutdown() }
         menuBar.onOpenLastTranscript = { [weak self] in self?.openLastTranscript() }
         menuBar.hasTranscript = { [weak self] in self?.lastTranscript() != nil }
-        menuBar.recordingsPath = { [root] in root.path }
+        menuBar.recordingsPath = { [weak self] in self?.root.path ?? "" }
+        menuBar.onChangeFolder = { [weak self] in self?.changeFolder() }
         menuBar.onOpenFailureLog = { [weak self] in
             guard let dir = self?.failedSession else { return }
             NSWorkspace.shared.open(dir.appendingPathComponent("transcribe.log"))
@@ -144,6 +145,14 @@ final class AppController {
 
     private func startSession() {
         Notifier.shared.requestAuthorizationOnce()
+        guard canReachRoot() else {
+            notifyUser(
+                title: "Can't reach the recordings folder",
+                body: "macOS is blocking access to \(root.path). Use Change "
+                    + "Recordings Folder… in the menu to grant it."
+            )
+            return
+        }
         do {
             let newSession = try RecordingSession(root: root)
             // No buttons: at thirty seconds the useful response is physical,
@@ -244,6 +253,36 @@ final class AppController {
     private func openLastTranscript() {
         guard let transcript = lastTranscript() else { return }
         NSWorkspace.shared.open(transcript)
+    }
+
+    /// The open panel is not only a convenience: a folder chosen through it is
+    /// granted by macOS, which is the only way a menu-bar app can reach a
+    /// protected location. There is no window to hang a permission prompt on,
+    /// so an unreachable folder otherwise fails silently forever.
+    private func changeFolder() {
+        NSApp.activate(ignoringOtherApps: true)
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = root
+        panel.prompt = "Use Folder"
+        panel.message = "Where should Quill save recordings and transcripts?"
+        guard panel.runModal() == .OK, let chosen = panel.url else { return }
+        State.setRecordingsDir(chosen)
+        root = chosen
+        Task { [transcription] in await transcription.resumePending(root: chosen) }
+    }
+
+    /// A TCC-blocked folder stays writable while listing it returns nothing,
+    /// so this is the operation that actually tells you whether the app can
+    /// see its own recordings.
+    private func canReachRoot() -> Bool {
+        try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        return (try? FileManager.default.contentsOfDirectory(
+            at: root, includingPropertiesForKeys: nil
+        )) != nil
     }
 
     private func openFolder() {
