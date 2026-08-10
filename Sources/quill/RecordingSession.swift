@@ -96,9 +96,9 @@ final class RecordingSession {
         }
         supervisors = [micSupervisor, systemSupervisor]
 
-        ticker = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            // assumeIsolated traps if this ever fires off-main; scheduledTimer
-            // on the main run loop is the only thing making it safe.
+        let ticker = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+            // assumeIsolated traps if this ever fires off-main; the main run
+            // loop is the only thing making it safe.
             MainActor.assumeIsolated {
                 guard let self else { return }
                 self.supervisors.forEach { $0.tick() }
@@ -106,6 +106,8 @@ final class RecordingSession {
                 self.reportEveryoneGone()
             }
         }
+        scheduleInteractiveTimer(ticker)
+        self.ticker = ticker
     }
 
     /// Stop both tracks and write meta.json.

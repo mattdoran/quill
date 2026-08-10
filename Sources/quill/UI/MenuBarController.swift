@@ -21,7 +21,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private let echoItem: NSMenuItem
     private let transcribeItem: NSMenuItem
     private let openFolderItem: NSMenuItem
-    private let loginItem: NSMenuItem
+    private let changeFolderItem: NSMenuItem
     private let quitItem: NSMenuItem
 
     var onToggle: (() -> Void)?
@@ -89,13 +89,6 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         downloadModelsItem.isHidden = true
         menu.addItem(downloadModelsItem)
 
-        lastTranscriptItem = NSMenuItem(
-            title: "Open Last Transcript",
-            action: #selector(openLastTranscriptClicked),
-            keyEquivalent: ""
-        )
-        menu.addItem(lastTranscriptItem)
-
         menu.addItem(.separator())
 
         // No key equivalents except Quit: a menu shortcut only fires while the
@@ -108,6 +101,13 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         )
         menu.addItem(toggleItem)
 
+        lastTranscriptItem = NSMenuItem(
+            title: "Open Last Transcript",
+            action: #selector(openLastTranscriptClicked),
+            keyEquivalent: ""
+        )
+        menu.addItem(lastTranscriptItem)
+
         openFolderItem = NSMenuItem(
             title: "Open Recordings Folder",
             action: #selector(openFolderClicked),
@@ -115,20 +115,20 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         )
         menu.addItem(openFolderItem)
 
-        // Visible rather than hidden behind an option-click: choosing a folder
-        // through the open panel is also what grants access to a protected
-        // location, so it is the fix for a permission problem, not a
-        // preference for power users.
-        let changeFolder = NSMenuItem(
+        // Choosing a folder through the open panel is also what grants access
+        // to a protected location, so this appears beside the visible folder
+        // failure rather than occupying the operational menu permanently.
+        changeFolderItem = NSMenuItem(
             title: "Change Recordings Folder…",
             action: #selector(changeFolderClicked),
             keyEquivalent: ""
         )
-        changeFolder.toolTip = """
+        changeFolderItem.toolTip = """
             Pick where recordings are saved. Choosing a folder here is also how \
             macOS grants access to protected places like Documents.
             """
-        menu.addItem(changeFolder)
+        changeFolderItem.isHidden = true
+        menu.addItem(changeFolderItem)
 
         menu.addItem(.separator())
 
@@ -188,17 +188,6 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
 
-        loginItem = NSMenuItem(
-            title: "Open at Login",
-            action: #selector(loginItemClicked),
-            keyEquivalent: ""
-        )
-        loginItem.toolTip = """
-            Quill starts hidden in the menu bar when you log in. macOS also \
-            lists it under System Settings → General → Login Items.
-            """
-        menu.addItem(loginItem)
-
         let settings = NSMenuItem(
             title: "Settings…",
             action: #selector(settingsClicked),
@@ -223,8 +212,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         super.init()
 
         for item in [
-            toggleItem, openFolderItem, changeFolder, quitItem, micVoicesItem, systemVoicesItem,
-            echoItem, transcribeItem, lastTranscriptItem, about, retryItem, loginItem,
+            toggleItem, openFolderItem, changeFolderItem, quitItem, micVoicesItem,
+            systemVoicesItem,
+            echoItem, transcribeItem, lastTranscriptItem, about, retryItem,
             downloadModelsItem,
             transcriptionLabel,
             settings,
@@ -306,6 +296,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     /// see it.
     func showFolderProblem(_ hasProblem: Bool) {
         folderUnreadable = hasProblem
+        changeFolderItem.isHidden = !hasProblem
     }
 
     /// Shown only when quill needs the user to decide, which is why it is a
@@ -389,10 +380,6 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         // directly above them is the visible reason.
         micVoicesItem.isEnabled = transcribing
         systemVoicesItem.isEnabled = transcribing
-        // Asked of the system rather than remembered, so revoking it in
-        // System Settings is reflected here.
-        loginItem.state = LoginItem.isEnabled ? .on : .off
-        loginItem.isEnabled = LoginItem.isAvailable
     }
 
     /// Persists, then re-reads: a failed write leaves the checkmark where it
@@ -414,11 +401,6 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     @objc private func transcribeClicked() {
         Config.setTranscriptionEnabled(transcribeItem.state != .on)
-        refreshSettings()
-    }
-
-    @objc private func loginItemClicked() {
-        LoginItem.setEnabled(loginItem.state != .on)
         refreshSettings()
     }
 

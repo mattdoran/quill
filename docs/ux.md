@@ -15,9 +15,14 @@ everything else is what ships today.
 4. **Quill interrupts only when acting in the next minute changes the outcome.**
    Anything you would learn later from the transcript, the menu or a log is not
    a notification.
-5. **Per-meeting choices stay in the menu.** Persistent storage and model
-   management live in Settings, where their consequences fit.
-6. **One utility window, no workflows.** Settings is allowed. Wizards,
+5. **The dropdown runs Quill; Settings configures Quill.** Status, immediate
+   actions, recovery and choices made before a recording belong in the menu.
+   Launch behaviour, storage policy and downloaded resources belong in Settings.
+6. **A setting has one control surface.** A control does not appear in both
+   surfaces merely because it fits both sections. The menu may expose a
+   contextual recovery command for a Settings-owned value, but never a second
+   copy of the setting itself.
+7. **One utility window, no workflows.** Settings is allowed. Wizards,
    transcript viewers and recording windows are not.
 
 ## 2. Status item
@@ -60,18 +65,16 @@ than fought with a custom view.
 
 ```
 Quill is idle                                       ⟨disabled⟩
-Open Last Transcript
 ────────────────────────────────────────────
 Start Recording
+Open Last Transcript
 Open Recordings Folder
-Change Recordings Folder…
 ────────────────────────────────────────────
 Cancel Echo from Speakers
 Transcribe After Recording                       ✓
 Separate Voices in the Room                      ✓
 Separate Voices on the Call                      ✓
 ────────────────────────────────────────────
-Open at Login                                    ✓
 Settings…
 About Quill
 Quit Quill                                      ⌘Q
@@ -79,24 +82,23 @@ Quit Quill                                      ⌘Q
 
 `Open Last Transcript` is disabled when no session has a `transcript.md`.
 `Retry Transcription` and `Download Transcription Models` are hidden unless they
-apply, and appear in the status block at the top.
+apply, and appear in the status block at the top. `Change Recordings Folder…`
+appears below `Open Recordings Folder` only when Quill cannot read that folder.
 
 ### Recording
 
 ```
 Recording — 12:03                                   ⟨disabled⟩
-Open Last Transcript
 ────────────────────────────────────────────
 Stop Recording
+Open Last Transcript
 Open Recordings Folder
-Change Recordings Folder…
 ────────────────────────────────────────────
 Cancel Echo from Speakers
 Transcribe After Recording                       ✓
 Separate Voices in the Room                      ✓
 Separate Voices on the Call                      ✓
 ────────────────────────────────────────────
-Open at Login                                    ✓
 Settings…
 About Quill
 Stop Recording and Quit                         ⌘Q
@@ -108,8 +110,8 @@ is a job for the tooltip, not for a grey row.
 
 ### The settings block: ordering and greying
 
-Four checkboxes, one block, in **pipeline order**: capture, then whether to
-transcribe, then how to label the result.
+Four persistent next-recording controls, one block, in **pipeline order**:
+capture, then whether to transcribe, then how to label the result.
 
 | Order | Item | Why here |
 |---|---|---|
@@ -120,8 +122,9 @@ transcribe, then how to label the result.
 
 Decisions this settles:
 
-- **One block, not three.** All four answer the same question — what quill does
-  with *this* meeting — which is what separates them from `Open at Login` below.
+- **One block, not three.** All four answer the same question: what Quill should
+  do with the next recording. They persist until changed, but they are kept in
+  the operational surface because physical setup and meeting type change.
   Splitting them by which subsystem reads them is an implementation detail
   leaking into a menu.
 - **Pipeline order beats frequency order.** Frequency of change would put the two
@@ -158,9 +161,9 @@ Decisions this settles:
 ```
 Recording — 12:03                                   ⟨disabled⟩
 Mic capture lost 4s at 2:35 PM                      ⟨disabled, orange⟩
-Open Last Transcript
 ────────────────────────────────────────────
 Stop Recording
+Open Last Transcript
 …
 ```
 
@@ -172,6 +175,8 @@ first. It stays after recovery; the icon does not.
 ```
 Quill is idle                                       ⟨disabled⟩
 Transcribing 2:14 PM recording — 1 queued           ⟨disabled⟩
+────────────────────────────────────────────
+Start Recording
 Open Last Transcript
 …
 Quit Quill                                      ⌘Q
@@ -187,6 +192,8 @@ While models are downloading, the line reads
 Quill is idle                                       ⟨disabled⟩
 Transcription failed — 2:14 PM recording            ⟨enabled, opens transcribe.log⟩
 Retry Transcription
+────────────────────────────────────────────
+Start Recording
 Open Last Transcript
 …
 ```
@@ -207,7 +214,6 @@ Menu tooltips explain controls without opening Settings. Verbatim:
 | Separate Voices on the Call  | `Labels each person on the call separately, for group calls. Downloads a second on-device model the first time.` |
 | Cancel Echo from Speakers | `Stops meeting audio bleeding into your microphone when you are not wearing headphones. Costs about 8 dB on the system audio track, which is usually the worse trade. Applies to the next recording.` |
 | Transcribe After Recording | `Off means quill records only. Turning it back on transcribes the backlog the next time Quill starts.` |
-| Open at Login | `Quill starts hidden in the menu bar when you log in. macOS also lists it under System Settings → General → Login Items.` |
 | Stop Recording and Quit | `Ends the current recording. Transcription resumes the next time Quill starts.` |
 | Quit Quill *(while transcribing)* | `Transcription resumes the next time Quill starts.` |
 
@@ -323,34 +329,34 @@ wrong is ten minutes of junk audio and about four seconds of transcription.
 
 ## 5. Config
 
-Three surfaces, with one job each: **the menu holds choices made between
-meetings; Settings holds persistent storage and models; JSON holds code-facing
-configuration.**
+Three surfaces, with one job each: **the menu operates Quill; Settings
+administers Quill; JSON holds code-facing configuration.** Menu controls may
+persist, but their placement is determined by when someone needs them, not by
+which subsystem reads the value.
 
 | Setting | Home | Why |
 |---|---|---|
-| Separate voices, mic | Menu | Changes per meeting: in-person or not. |
-| Separate voices, system | Menu | Changes per meeting: group call or 1:1. |
-| Echo cancellation | Menu + Settings | The fix for recording a room through loudspeakers. Defaults **off**: measurement put the cost at 7.8 dB on the recorded system track. Never greyed; a mid-recording click applies to the next recording. |
-| Transcribe after recording | Menu + Settings | One line explains it, and it gates the two Separate Voices toggles, which grey out when it is off. |
-| Open at Login | Menu | Via `SMAppService`. `install --launch-at-login` stays as a thin wrapper over the same call, so a fresh install can be set up without opening the app, and the two can never disagree. |
-| Recordings folder | Menu + Settings | The menu remains the fix for a permission failure; Settings presents the persistent location. |
+| Separate voices, mic | Menu | Chosen from the meeting context: in-person or not. |
+| Separate voices, system | Menu | Chosen from the meeting context: group call or 1:1. |
+| Echo cancellation | Menu | A situational capture choice for loudspeakers versus headphones. Defaults **off**: measurement put the cost at 7.8 dB on the recorded system track. A mid-recording click applies to the next recording. |
+| Transcribe after recording | Menu | An operational switch used before a recording. It persists and gates the two Separate Voices toggles. A second label in Settings made one value look like two behaviours. |
+| Open at login | Settings | Durable application lifecycle behaviour, backed by `SMAppService`, not a meeting control. `install --launch-at-login` remains a thin wrapper over the same call. |
+| Recordings folder | Settings + conditional menu recovery | Settings owns the persistent location. `Change Recordings Folder…` appears in the menu only when folder access is broken, because choosing through the panel is also the permission repair. |
 | Audio retention | Settings | The choice can irreversibly delete source audio and needs explanatory copy plus confirmation. |
-| `transcription.engine` | Settings + JSON | One engine ships, so the control reports Parakeet and remains disabled. |
+| `transcription.engine` | Static Settings text + JSON | One engine ships. Settings reports Parakeet as information; it does not present a disabled fake choice. |
+| Transcription models | Settings + conditional menu recovery | Settings reports the engine, expected or installed size, and Download / Remove. A download command appears in the menu only when automatic download is blocked or fails. |
 | `on_stop` | JSON, permanently | It is a shell command. A shell command never gets a GUI field. |
 
-The Settings window contains exactly five things:
+The Settings window is three administrative groups:
 
-1. Recordings folder (path, with a Change… button)
-2. Audio retention (keep indefinitely / keep 30 days / delete after transcription)
-3. Transcription: on/off, engine
-4. Echo cancellation
-5. Models: status, size, Download / Remove
+1. **General:** Open at login; recordings folder path and Change…
+2. **Storage:** source-audio retention (keep indefinitely / keep 30 days /
+   delete after transcription)
+3. **Transcription:** static engine identity; model status and expected or
+   installed size; Download / Remove
 
-Everything in the menu that is per-meeting stays there. Echo cancellation and
-transcription appear in both surfaces because they belong beside related
-controls in each. All values share one file at
-`~/Library/Application Support/Quill/config.json`.
+Echo cancellation and voice separation remain in the menu only. All values
+share one file at `~/Library/Application Support/Quill/config.json`.
 
 ### Audio retention
 
@@ -374,7 +380,8 @@ must terminate before cleanup touches that session's audio.
 
 | Kind | Case | Examples |
 |---|---|---|
-| Commands and checkboxes | Title case | `Start Recording`, `Open Last Transcript`, `Transcribe After Recording`, `Quit Quill` |
+| Menu commands and checkboxes | Title case | `Start Recording`, `Open Last Transcript`, `Transcribe After Recording`, `Quit Quill` |
+| Settings labels and checkboxes | Sentence case | `Open at login`, `Source audio` |
 | Status lines | Sentence case | `Quill is idle`, `Recording — 12:03`, `Mic capture lost 4s at 2:35 PM` |
 | Notification titles | Sentence case | `Transcript ready`, `Microphone stopped` |
 | The app's name | `Quill` in the UI, `quill` for the binary and the command | |

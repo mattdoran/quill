@@ -130,13 +130,15 @@ final class AppController {
         menuBar.update(recording: false, elapsed: nil)
 
         AudioRetention.clean(root: root)
-        retentionTimer = Timer.scheduledTimer(withTimeInterval: 24 * 60 * 60, repeats: true) {
+        let retentionTimer = Timer(timeInterval: 24 * 60 * 60, repeats: true) {
             [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
                 AudioRetention.clean(root: self.root)
             }
         }
+        scheduleInteractiveTimer(retentionTimer)
+        self.retentionTimer = retentionTimer
 
         menuBar.onDownloadModels = { [weak self] in
             guard let self else { return }
@@ -223,9 +225,11 @@ final class AppController {
         }
 
         menuBar.update(recording: true, elapsed: "0:00")
-        ticker = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+        let ticker = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
         }
+        scheduleInteractiveTimer(ticker)
+        self.ticker = ticker
     }
 
     private func stopSession() {

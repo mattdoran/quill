@@ -2,6 +2,37 @@
 
 Dated product and architecture decisions. Newest first.
 
+## 2026-08-11: One transcription toggle, in the menu
+
+**Decision:** `Transcribe After Recording` lives in the operational menu only.
+Settings reports the transcription engine and manages its models but does not
+repeat the toggle.
+
+**Why:** The duplicated Settings label, `Transcribe recordings automatically`,
+immediately read as a second behaviour, possibly live transcription. Both
+controls wrote the same persistent value. The exception was justified from the
+information architecture without testing the resulting language as one product.
+
+**Consequence:** Persistent does not mean Settings-owned. A control belongs
+where the decision is made; this one is made before a recording.
+
+## 2026-08-11: Separate operation from administration
+
+**Decision:** The menu operates Quill: status, recording actions, immediate
+recovery and choices made from meeting context. Settings administers Quill:
+launch behaviour, storage policy and downloaded resources. Duplication requires
+an operational reason rather than membership in two plausible groups.
+
+**Why:** The previous split exposed durable launch behaviour in the operational
+menu, duplicated echo cancellation without adding capability, and presented a
+disabled one-option engine picker. It mixed frequency, persistence and subsystem
+ownership until neither surface had a coherent job.
+
+**Consequence:** Open at login lives in Settings; echo cancellation lives in the
+menu; transcription remains the one shared default; folder changing appears in
+the menu only as access recovery; Parakeet is static information until another
+engine actually ships.
+
 ## 2026-08-10: Keep source audio unless the user chooses deletion
 
 **Decision:** Keep both CAF tracks indefinitely by default. Settings offers

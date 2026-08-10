@@ -31,10 +31,10 @@ carry its name and open the transcript when clicked, rather than arriving as
 anonymous banners. It is still one SwiftPM binary and no Xcode — the bundle is
 two folders around it.
 
-Open at Login is enabled on the first bundled launch. It registers as a normal
-login item, so you can change it from the menu or in System Settings → General
-→ Login Items. Startup is tied to where the app lives, so move it before the
-first launch rather than afterwards.
+Open at login is enabled on the first bundled launch. It registers as a normal
+login item, so you can change it in Quill Settings or in System Settings →
+General → Login Items. Startup is tied to where the app lives, so move it before
+the first launch rather than afterwards.
 
 **Requires:** macOS 15+ (Core Audio process taps for system audio — no
 virtual device, no kernel extension). Apple Silicon recommended for
@@ -113,14 +113,15 @@ The menu and Settings window write to this same file. Hand-edited keys such as
 application home for isolated development and tests.
 
 - `recordings_dir` — where sessions land. Resolution order: `--out` flag >
-  the folder picked in the menu > config > `~/Music/Quill`.
+  the folder picked in Settings > config > `~/Music/Quill`.
 
   The default avoids `~/Documents`, `~/Desktop` and `~/Downloads` on purpose.
   Those are TCC-protected, and a menu-bar app has no window for macOS to hang
   the permission prompt on, so access is denied silently: the folder stays
   writable while listing it returns nothing. If you want quill to save there
-  anyway, use **Change Recordings Folder…** in the menu rather than setting it
-  here — choosing a folder through the open panel is what grants access.
+  anyway, use **Change…** beside the folder in Settings rather than setting it
+  here. Choosing through the open panel is what grants access. If access later
+  breaks, **Change Recordings Folder…** also appears in the menu as recovery.
 - `transcription.enabled` — set `false` to just record.
 - `audio_retention`: `indefinitely` (the default), `30_days`, or
   `after_transcription`. Deletion only applies after `transcript.json` exists.
@@ -147,7 +148,7 @@ application home for isolated development and tests.
 quill                        # run the menu-bar daemon (^C to quit)
 quill run --out <dir>        # custom recordings root (default ~/Music/Quill)
 quill doctor                 # check permissions, recordings folder, models
-quill install --launch-at-login   # same as the menu's Open at Login
+quill install --launch-at-login   # same as Settings → Open at login
 quill install --uninstall
 ```
 

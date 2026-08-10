@@ -10,13 +10,8 @@ final class SettingsWindowController: NSWindowController {
 
     private let pathLabel = NSTextField(labelWithString: "")
     private let retention = NSPopUpButton()
-    private let transcribe = NSButton(
-        checkboxWithTitle: "Transcribe after recording",
-        target: nil,
-        action: nil
-    )
-    private let echo = NSButton(
-        checkboxWithTitle: "Cancel echo from speakers",
+    private let openAtLogin = NSButton(
+        checkboxWithTitle: "Open at login",
         target: nil,
         action: nil
     )
@@ -25,7 +20,7 @@ final class SettingsWindowController: NSWindowController {
 
     init() {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 560, height: 390),
+            contentRect: NSRect(x: 0, y: 0, width: 560, height: 300),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -51,8 +46,8 @@ final class SettingsWindowController: NSWindowController {
         pathLabel.stringValue = path
         pathLabel.toolTip = path
         retention.selectItem(withTitle: Config.audioRetention().title)
-        transcribe.state = Config.transcriptionEnabled() ? .on : .off
-        echo.state = Config.micVoiceProcessing() ? .on : .off
+        openAtLogin.state = LoginItem.isEnabled ? .on : .off
+        openAtLogin.isEnabled = LoginItem.isAvailable
         refreshModel()
     }
 
@@ -93,35 +88,27 @@ final class SettingsWindowController: NSWindowController {
             target: self,
             action: #selector(changeFolderClicked)
         )
-        stack.addArrangedSubview(section("Recordings"))
+        stack.addArrangedSubview(section("General"))
+        openAtLogin.target = self
+        openAtLogin.action = #selector(loginChanged)
+        stack.addArrangedSubview(row(label: "", controls: [openAtLogin]))
         stack.addArrangedSubview(row(label: "Folder", controls: [pathLabel, change]))
 
+        stack.addArrangedSubview(separator())
+        stack.addArrangedSubview(section("Storage"))
         retention.addItems(withTitles: Config.AudioRetention.allCases.map(\.title))
         retention.target = self
         retention.action = #selector(retentionChanged)
-        stack.addArrangedSubview(row(label: "Audio", controls: [retention]))
-
-        echo.target = self
-        echo.action = #selector(echoChanged)
-        echo.toolTip = "Use when recording through loudspeakers. Costs about 8 dB on system audio."
-        stack.addArrangedSubview(row(label: "", controls: [echo]))
+        stack.addArrangedSubview(row(label: "Source audio", controls: [retention]))
 
         stack.addArrangedSubview(separator())
         stack.addArrangedSubview(section("Transcription"))
-        transcribe.target = self
-        transcribe.action = #selector(transcriptionChanged)
-        stack.addArrangedSubview(row(label: "", controls: [transcribe]))
-
-        let engine = NSPopUpButton()
-        engine.addItem(withTitle: "Parakeet TDT 0.6B v2")
-        engine.isEnabled = false
+        let engine = NSTextField(labelWithString: "Parakeet TDT 0.6B v2")
         stack.addArrangedSubview(row(label: "Engine", controls: [engine]))
 
-        stack.addArrangedSubview(separator())
-        stack.addArrangedSubview(section("Models"))
         modelButton.target = self
         modelButton.action = #selector(modelClicked)
-        stack.addArrangedSubview(row(label: "Transcription", controls: [modelStatus, modelButton]))
+        stack.addArrangedSubview(row(label: "Models", controls: [modelStatus, modelButton]))
     }
 
     private func section(_ title: String) -> NSTextField {
@@ -156,7 +143,7 @@ final class SettingsWindowController: NSWindowController {
             modelStatus.stringValue = "Downloaded (\(formatter.string(fromByteCount: ModelDownload.cachedBytes)))"
             modelButton.title = "Remove…"
         } else {
-            modelStatus.stringValue = "Not downloaded"
+            modelStatus.stringValue = "Not downloaded (about 600 MB)"
             modelButton.title = "Download"
         }
         modelButton.isEnabled = true
@@ -197,12 +184,9 @@ final class SettingsWindowController: NSWindowController {
         onRetentionChanged?()
     }
 
-    @objc private func transcriptionChanged() {
-        Config.setTranscriptionEnabled(transcribe.state == .on)
-    }
-
-    @objc private func echoChanged() {
-        Config.setMicVoiceProcessing(echo.state == .on)
+    @objc private func loginChanged() {
+        LoginItem.setEnabled(openAtLogin.state == .on)
+        refresh()
     }
 
     @objc private func modelClicked() {
