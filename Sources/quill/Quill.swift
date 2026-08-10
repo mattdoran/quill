@@ -45,6 +45,9 @@ struct Run: ParsableCommand {
 
         Notifier.shared.start()
         let controller = AppController(root: root)
+        Notifier.shared.onStopRequested = { [weak controller] in
+            controller?.stopFromNotification()
+        }
 
         let sigint = DispatchSource.makeSignalSource(signal: SIGINT, queue: .main)
         sigint.setEventHandler {
@@ -104,6 +107,9 @@ final class AppController {
         }
     }
 
+    /// Stop from the Stop Recording button on a notification.
+    func stopFromNotification() { stopSession() }
+
     /// Stop any live session cleanly (finalizing files) and exit.
     func shutdown() {
         stopSession()
@@ -126,6 +132,13 @@ final class AppController {
             // still good.
             newSession.onTrackDead = { title, body in
                 notifyUser(title: title, body: body)
+            }
+            newSession.onEveryoneGone = {
+                notifyUser(
+                    title: "Still recording",
+                    body: "No one has spoken for 10 minutes. Is the meeting over?",
+                    stopButton: true
+                )
             }
             try newSession.start()
             session = newSession

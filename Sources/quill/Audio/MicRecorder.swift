@@ -36,6 +36,8 @@ final class MicRecorder: Capture {
     var firstBufferAt: Date? { writer?.firstBufferAt }
     var gaps: [TrackWriter.Gap] { writer?.gaps ?? [] }
     var duration: TimeInterval { writer?.duration ?? 0 }
+    var lastAudibleAt: Date? { writer?.lastAudibleAt }
+    var hasEverBeenAudible: Bool { writer?.hasEverBeenAudible ?? false }
 
     var onInvalidated: ((String) -> Void)?
 

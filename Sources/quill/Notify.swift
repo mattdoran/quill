@@ -3,8 +3,10 @@ import Foundation
 import UserNotifications
 
 /// Post a user-facing notification. Clicking it opens `opens`.
-func notifyUser(title: String, body: String, opens: URL? = nil) {
-    Task { @MainActor in Notifier.shared.post(title: title, body: body, opens: opens) }
+func notifyUser(title: String, body: String, opens: URL? = nil, stopButton: Bool = false) {
+    Task { @MainActor in
+        Notifier.shared.post(title: title, body: body, opens: opens, stopButton: stopButton)
+    }
 }
 
 /// Notifications go through UserNotifications when running from quill.app, and
@@ -18,6 +20,12 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     static let shared = Notifier()
 
     private nonisolated static let openKey = "opens"
+    private nonisolated static let stopAction = "STOP_RECORDING"
+    private nonisolated static let stopCategory = "RECORDING"
+
+    /// Invoked when the user takes the Stop Recording action on a
+    /// notification. Set by whoever owns the session.
+    var onStopRequested: (() -> Void)?
 
     private let bundled = Bundle.main.bundleURL.pathExtension == "app"
 
@@ -27,6 +35,21 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         guard bundled else { return }
         let center = UNUserNotificationCenter.current()
         center.delegate = self
+        // A notification asking whether the meeting is over needs a way to act
+        // on the answer; without the button it is only nagging.
+        center.setNotificationCategories([
+            UNNotificationCategory(
+                identifier: Self.stopCategory,
+                actions: [
+                    UNNotificationAction(
+                        identifier: Self.stopAction,
+                        title: "Stop Recording",
+                        options: []
+                    )
+                ],
+                intentIdentifiers: []
+            )
+        ])
         center.requestAuthorization(options: [.alert, .sound]) { _, error in
             if let error {
                 FileHandle.standardError.write(Data(
@@ -36,7 +59,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         }
     }
 
-    func post(title: String, body: String, opens: URL?) {
+    func post(title: String, body: String, opens: URL?, stopButton: Bool = false) {
         guard bundled else {
             postViaOSAScript(title: title, body: body)
             return
@@ -44,6 +67,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
+        if stopButton { content.categoryIdentifier = Self.stopCategory }
         if let opens { content.userInfo = [Self.openKey: opens.path] }
         UNUserNotificationCenter.current().add(
             UNNotificationRequest(
@@ -57,8 +81,12 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
-        if let path = response.notification.request.content.userInfo[Self.openKey] as? String {
-            Task { @MainActor in
+        let action = response.actionIdentifier
+        let path = response.notification.request.content.userInfo[Self.openKey] as? String
+        Task { @MainActor in
+            if action == Self.stopAction {
+                Notifier.shared.onStopRequested?()
+            } else if let path {
                 NSWorkspace.shared.open(URL(fileURLWithPath: path))
             }
         }

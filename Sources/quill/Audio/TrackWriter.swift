@@ -34,6 +34,11 @@ final class TrackWriter: @unchecked Sendable {
     /// Long enough that a quiet stretch of a meeting is not an alarm.
     private static let silenceThreshold: TimeInterval = 60
 
+    /// RMS below this counts as nobody being there. Not zero: a live
+    /// microphone in a silent room still has a noise floor, so zero would only
+    /// ever mean a dead route. -50 dBFS.
+    private static let audibleFloor: Double = 0.00316
+
     /// Only meaningful where the device has a noise floor. A live mic delivers
     /// non-zero samples even in a silent room, so exact zeroes mean a dead
     /// route; a system tap delivers exact zeroes whenever nothing is playing.
@@ -66,6 +71,8 @@ final class TrackWriter: @unchecked Sendable {
     private var _gaps: [Gap] = []
     private var silentSince: Date?
     private var silenceReported = false
+    private var _lastAudibleAt: Date?
+    private var _hasEverBeenAudible = false
 
     init(
         url: URL, format: AVAudioFormat, name: String, log: SessionLog, watchSilence: Bool
@@ -119,6 +126,21 @@ final class TrackWriter: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return _gaps
+    }
+
+    /// When this track last carried something audible, and whether it ever
+    /// has. An in-person meeting never plays anything, so a system track that
+    /// has never been audible is not evidence that a meeting ended.
+    var lastAudibleAt: Date? {
+        lock.lock()
+        defer { lock.unlock() }
+        return _lastAudibleAt
+    }
+
+    var hasEverBeenAudible: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return _hasEverBeenAudible
     }
 
     /// Called on a capture thread, which must not block: this copies the
@@ -304,20 +326,42 @@ final class TrackWriter: @unchecked Sendable {
         ))
     }
 
-    /// A route can be rebuilt successfully and still deliver nothing but
-    /// zeroes. No error is raised for that, so peak is watched instead.
+    /// Two different questions get asked of the same buffer, and conflating
+    /// them is a trap:
+    ///
+    ///  - Is this route dead? Exact zeroes on a mic mean the graph is
+    ///    delivering nothing and needs rebuilding. Only asked where a noise
+    ///    floor is expected, so never of the system tap, where exact zeroes
+    ///    just mean nothing is playing.
+    ///  - Is anyone there? Answered against a level floor rather than zero,
+    ///    for both tracks, and only ever reported. Wiring this one to a
+    ///    rebuild would tear the system tap down every time playback pauses.
     private func trackSilenceLocked(_ buffer: AVAudioPCMBuffer, at now: Date) {
-        guard watchSilence else { return }
         var peak: Float = 0
+        var sumOfSquares: Double = 0
+        var count = 0
         for raw in UnsafeMutableAudioBufferListPointer(
             UnsafeMutablePointer(mutating: buffer.audioBufferList)
         ) {
             guard let data = raw.mData else { continue }
             let samples = data.assumingMemoryBound(to: Float.self)
             for i in 0..<Int(raw.mDataByteSize) / MemoryLayout<Float>.size {
-                peak = max(peak, abs(samples[i]))
+                let sample = samples[i]
+                peak = max(peak, abs(sample))
+                sumOfSquares += Double(sample) * Double(sample)
+                count += 1
             }
         }
+
+        if count > 0 {
+            let rms = (sumOfSquares / Double(count)).squareRoot()
+            if rms > Self.audibleFloor {
+                _lastAudibleAt = now
+                _hasEverBeenAudible = true
+            }
+        }
+
+        guard watchSilence else { return }
         guard peak == 0 else {
             if silenceReported {
                 log.log("\(name): audio returned")

@@ -24,7 +24,17 @@ final class RecordingSession {
     /// depends on which tracks are gone.
     var onTrackDead: ((String, String) -> Void)?
 
+    /// Raised once when every track that has ever carried audio has been quiet
+    /// long enough that the meeting is probably over and nobody stopped the
+    /// recording.
+    var onEveryoneGone: (() -> Void)?
+
+    /// A legitimately quiet stretch runs a minute or three. Nobody speaking
+    /// and nothing playing for this long is not a meeting in progress.
+    private static let quietBeforeNudge: TimeInterval = 600
+
     private var reported: Set<String> = []
+    private var nudged = false
 
     private let log: SessionLog
     private let mic = MicRecorder()
@@ -93,6 +103,7 @@ final class RecordingSession {
                 guard let self else { return }
                 self.supervisors.forEach { $0.tick() }
                 self.reportDeadTracks()
+                self.reportEveryoneGone()
             }
         }
     }
@@ -188,6 +199,24 @@ final class RecordingSession {
                     + "\(seconds) seconds. Check the meeting app is still playing."
             )
         }
+    }
+
+    /// Nobody has spoken and nothing has played for long enough that the
+    /// meeting has almost certainly ended.
+    ///
+    /// Only tracks that have ever been audible count. An in-person meeting
+    /// plays nothing, so counting the system track would fire this ten minutes
+    /// into a real meeting. If neither track has ever been audible, capture is
+    /// broken rather than finished, which is `reportDeadTracks`' business.
+    private func reportEveryoneGone() {
+        guard !nudged, !isDegraded else { return }
+        let heard = [mic.lastAudibleAt, system.lastAudibleAt].compactMap { $0 }
+        guard mic.hasEverBeenAudible || system.hasEverBeenAudible, let latest = heard.max()
+        else { return }
+        guard Date().timeIntervalSince(latest) > Self.quietBeforeNudge else { return }
+        nudged = true
+        log.log("session: quiet for \(Int(Self.quietBeforeNudge / 60)) minutes — asking")
+        onEveryoneGone?()
     }
 
     /// Accumulates, since both tracks broken must not read as one.
