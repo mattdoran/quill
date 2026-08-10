@@ -11,6 +11,37 @@ enum AudioDevices {
         name(of: defaultDevice(kAudioHardwarePropertyDefaultOutputDevice))
     }
 
+    /// Whether sound is currently coming out of a loudspeaker rather than
+    /// something on the listener's head. Only true for the built-in speakers:
+    /// a Bluetooth or USB device could be either, and guessing wrong there
+    /// costs more than leaving echo cancellation off.
+    static func defaultOutputIsLoudspeaker() -> Bool {
+        let device = defaultDevice(kAudioHardwarePropertyDefaultOutputDevice)
+        guard device != AudioObjectID(kAudioObjectUnknown),
+            property(device, kAudioDevicePropertyTransportType)
+                == kAudioDeviceTransportTypeBuiltIn
+        else { return false }
+        // The headphone jack is built-in too; only its data source says so.
+        let headphones: UInt32 = 0x6864_706E  // 'hdpn'
+        return property(
+            device, kAudioDevicePropertyDataSource, scope: kAudioObjectPropertyScopeOutput
+        ) != headphones
+    }
+
+    private static func property(
+        _ device: AudioObjectID,
+        _ selector: AudioObjectPropertySelector,
+        scope: AudioObjectPropertyScope = kAudioObjectPropertyScopeGlobal
+    ) -> UInt32 {
+        var address = AudioObjectPropertyAddress(
+            mSelector: selector, mScope: scope, mElement: kAudioObjectPropertyElementMain
+        )
+        var value: UInt32 = 0
+        var size = UInt32(MemoryLayout<UInt32>.size)
+        AudioObjectGetPropertyData(device, &address, 0, nil, &size, &value)
+        return value
+    }
+
     /// Calls `onChange` on the main queue whenever the system's default device
     /// for `selector` changes, for as long as the listener is held.
     private final class Listener {

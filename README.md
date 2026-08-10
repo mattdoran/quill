@@ -108,7 +108,10 @@ hand-editing the matching key here has no effect until you delete it from
 - `recordings_dir` — where sessions land. Resolution order: `--out` flag >
   config > `~/Recordings`.
 - `transcription.enabled` — set `false` to just record.
-- `mic_voice_processing` — Apple's echo cancellation on the mic (default off).
+- `mic_voice_processing` — Apple's echo cancellation on the mic. Left unset it
+  follows the output device: on for the built-in speakers, off for anything
+  else, re-checked whenever the route changes. Set it here, or click the menu
+  item, to decide for yourself.
   Set `true` when recording meetings through the speakers, so playback doesn't
   bleed into the mic track and get transcribed twice as "me". The trade: while
   the voice unit is live, macOS ducks other playback slightly (`.min` ducking

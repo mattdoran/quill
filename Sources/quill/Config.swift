@@ -96,8 +96,18 @@ enum Config {
     /// as "me". Default off — the live voice unit ducks all other playback,
     /// and on headphones there's no echo to cancel anyway. Set true when
     /// recording meetings through the speakers.
+    /// Defaults to whether anyone has clicked it, then to the config file,
+    /// then to whether sound is currently coming out of a loudspeaker. On
+    /// speakers the far side is picked up by the microphone and transcribed
+    /// twice, once as them and once as you; on headphones there is no echo to
+    /// cancel and the voice unit only ducks other playback for nothing.
+    ///
+    /// Re-read on every mic attach, so swapping headsets mid-meeting settles
+    /// on the right answer rather than the one that was true at the start.
     static func micVoiceProcessing() -> Bool {
-        State.micVoiceProcessing() ?? (load()?["mic_voice_processing"] as? Bool ?? false)
+        State.micVoiceProcessing()
+            ?? (load()?["mic_voice_processing"] as? Bool)
+            ?? AudioDevices.defaultOutputIsLoudspeaker()
     }
 
     /// Flip diarization for one track and persist it, so a menu toggle survives

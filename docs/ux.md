@@ -283,7 +283,7 @@ holds nothing until it holds something the menu cannot.**
 |---|---|---|
 | Separate voices, mic | Menu | Changes per meeting: in-person or not. |
 | Separate voices, system | Menu | Changes per meeting: group call or 1:1. |
-| Echo cancellation | Menu | Changes per meeting: headphones or speakers. Disabled while recording. |
+| Echo cancellation | Menu | Changes per meeting: headphones or speakers. Defaults to whether sound is currently coming out of the built-in speakers, and a click overrides that for good. Disabled while recording. |
 | Transcribe after recording | Menu | One line explains it. |
 | Open at Login | Menu | Via `SMAppService`. `install --launch-at-login` stays as a thin wrapper over the same call, so a fresh install can be set up without opening the app, and the two can never disagree. |
 | Recordings folder | Menu, read-only | The resolved path as the `Open Recordings Folder` tooltip. Changing it is rare enough for JSON. |

@@ -47,9 +47,10 @@ final class MicRecorder: Capture {
     private var log: SessionLog?
     private var configurationObserver: NSObjectProtocol?
 
-    /// Cleared for the rest of the session once a voice-processing graph is
-    /// caught delivering silence, so rebuilds stop trying it.
-    private var voiceProcessingAllowed = Config.micVoiceProcessing()
+    /// Set for the rest of the session once a voice-processing graph is caught
+    /// delivering silence, so rebuilds stop trying it. Kept apart from the
+    /// setting, which is re-read on each attach.
+    private var voiceProcessingFailed = false
 
     /// Use a .caf extension: CAF needs no finalization pass, so a crash loses
     /// nothing already written.
@@ -74,7 +75,7 @@ final class MicRecorder: Capture {
         engine = AVAudioEngine()
         let input = engine.inputNode
 
-        var voice = voiceProcessingAllowed
+        var voice = !voiceProcessingFailed && Config.micVoiceProcessing()
         if voice {
             do {
                 try input.setVoiceProcessingEnabled(true)
@@ -159,7 +160,7 @@ final class MicRecorder: Capture {
         let probe = VoiceLivenessProbe(sampleRate: deviceRate) { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
-                self.voiceProcessingAllowed = false
+                self.voiceProcessingFailed = true
                 self.onInvalidated?("voice processing delivered silence")
             }
         }
