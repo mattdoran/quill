@@ -14,6 +14,7 @@ let package = Package(
             dependencies: [
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
                 .product(name: "FluidAudio", package: "FluidAudio"),
+                "WebRTCAudio",
             ],
             exclude: ["AppIcon.icns", "AppIcon.svg", "Info.plist", "quill.entitlements"],
             linkerSettings: [
@@ -28,5 +29,32 @@ let package = Package(
                 ]),
             ]
         ),
-    ]
+        .target(
+            name: "WebRTCAudio",
+            publicHeadersPath: "include",
+            cSettings: [
+                .headerSearchPath("webrtc_audio"),
+                .headerSearchPath("webrtc_audio/audio_processing"),
+                .headerSearchPath("webrtc_audio/audio_processing/logging"),
+                .headerSearchPath("webrtc_audio/abseil"),
+                .define("WEBRTC_POSIX"),
+                .define("WEBRTC_MAC"),
+                .unsafeFlags(["-include", "compat_includes.h"]),
+            ],
+            cxxSettings: [
+                .headerSearchPath("webrtc_audio"),
+                .headerSearchPath("webrtc_audio/audio_processing"),
+                .headerSearchPath("webrtc_audio/audio_processing/logging"),
+                .headerSearchPath("webrtc_audio/abseil"),
+                .define("WEBRTC_POSIX"),
+                .define("WEBRTC_MAC"),
+                .unsafeFlags([
+                    "-include", "compat_includes.h",
+                    "-Wno-deprecated-builtins", "-Wno-deprecated-declarations",
+                    "-Wno-unused-variable",
+                ]),
+            ]
+        ),
+    ],
+    cxxLanguageStandard: .cxx17
 )

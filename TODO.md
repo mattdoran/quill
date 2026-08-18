@@ -7,11 +7,6 @@ Work that remains. Product and architecture decisions live in
 
 - [ ] **Review the installed menu and Settings window visually.** Both build and
       launch, but the status item is not exposed to the available UI automation.
-- [ ] **Measure the slow voice-processing attach.** One observed mic graph took
-      4.2 seconds to deliver its first buffer with echo cancellation enabled.
-      Alignment remains correct, but the opening seconds contain only system
-      audio. Reproduce before changing it.
-
 ## Transcription
 
 - [ ] **Add WhisperKit large-v3-turbo as a fallback and re-transcription

@@ -2,6 +2,25 @@
 
 Dated product and architecture decisions. Newest first.
 
+## 2026-08-17: Cancel speaker playback after capture
+
+**Decision:** Capture raw microphone and system audio, then use the system track
+as WebRTC AEC3's reference to produce a retained `mic-cleaned.caf`. Transcribe
+the cleaned microphone track and raw system track. Fall back to raw microphone
+audio if cancellation fails.
+
+**Why:** The microphone physically records clear laptop-speaker playback, so the
+same remote speech is transcribed from both tracks. Apple's live voice-processing
+unit removes it but ducks the captured system track by about 8 dB and has
+produced silent or slow-starting microphone graphs. Offline AEC3 removed the
+duplicate speech in the recorded fixture without changing capture.
+
+**Consequence:** Raw CAFs remain authoritative and unchanged. The cleaned track
+is published by atomic rename, survives with the transcript under raw-audio
+retention policies, and can be regenerated while both raw tracks exist. The old
+`Cancel Echo from Speakers` control and `mic_voice_processing` behaviour are
+removed; an existing config key is harmless and ignored.
+
 ## 2026-08-11: One transcription toggle, in the menu
 
 **Decision:** `Transcribe After Recording` lives in the operational menu only.

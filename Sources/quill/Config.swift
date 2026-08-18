@@ -82,14 +82,6 @@ enum Config {
         writeReporting(root)
     }
 
-    static func micVoiceProcessing() -> Bool {
-        load()["mic_voice_processing"] as? Bool ?? false
-    }
-
-    static func setMicVoiceProcessing(_ enabled: Bool) {
-        set("mic_voice_processing", enabled)
-    }
-
     enum AudioRetention: String, CaseIterable {
         case indefinitely
         case thirtyDays = "30_days"

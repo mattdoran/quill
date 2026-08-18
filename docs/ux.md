@@ -74,7 +74,6 @@ Start Recording
 Open Last Transcript
 Open Recordings Folder
 ────────────────────────────────────────────
-Cancel Echo from Speakers
 Transcribe After Recording                       ✓
 Separate Voices in the Room                      ✓
 Separate Voices on the Call                      ✓
@@ -98,7 +97,6 @@ Stop Recording
 Open Last Transcript
 Open Recordings Folder
 ────────────────────────────────────────────
-Cancel Echo from Speakers
 Transcribe After Recording                       ✓
 Separate Voices in the Room                      ✓
 Separate Voices on the Call                      ✓
@@ -119,19 +117,18 @@ is a job for the tooltip, not for a grey row.
 
 ### The settings block: ordering and greying
 
-Four persistent next-recording controls, one block, in **pipeline order**:
-capture, then whether to transcribe, then how to label the result.
+Three persistent controls, one block: whether to transcribe, then how to label
+the result.
 
 | Order | Item | Why here |
 |---|---|---|
-| 1 | `Cancel Echo from Speakers` | Changes what gets recorded; everything below only changes what happens to the recording afterwards. It is also the only one that still matters when the rest are off. |
-| 2 | `Transcribe After Recording` | The master switch for the two below. A setting cannot sit underneath the thing that gates it. |
-| 3 | `Separate Voices in the Room` | Depends on 2; greys out with it. |
-| 4 | `Separate Voices on the Call` | Its pair, adjacent, differing only in the last two words on purpose. |
+| 1 | `Transcribe After Recording` | The master switch for the two below. A setting cannot sit underneath the thing that gates it. |
+| 2 | `Separate Voices in the Room` | Depends on 1; greys out with it. |
+| 3 | `Separate Voices on the Call` | Its pair, adjacent, differing only in the last two words on purpose. |
 
 Decisions this settles:
 
-- **One block, not three.** All four answer the same question: what Quill should
+- **One block, not three.** All three answer the same question: what Quill should
   do with the next recording. They persist until changed, but they are kept in
   the operational surface because physical setup and meeting type change.
   Splitting them by which subsystem reads them is an implementation detail
@@ -144,26 +141,17 @@ Decisions this settles:
   is off.** They configure a pipeline that will not run. The rule that makes this
   safe: **grey an item only when the cause is visible in the same menu.** An
   unchecked master one line above is visible. A tooltip is not.
-- **`Cancel Echo from Speakers` is never greyed.** It is read when the mic graph
-  is built, so a mid-recording click applies to the next recording — which is
-  exactly what its tooltip says. Disabling it produced a grey row with its
-  reason hidden in a hover, i.e. a dead end. Enabled, the worst case is a
-  setting that lands one meeting later.
 - **Parallel construction on the pair stays.** They are a matched choice on two
   tracks; the shared prefix is the signal that they are a pair, and adjacency
   does the disambiguating. Front-loading the difference would read worse and
   break the pairing.
 - **No section headers.** `NSMenuItem.sectionHeader(title:)` exists on macOS 14+
-  and is not warranted for four items already fenced by separators. Any honest
+  and is not warranted for three items already fenced by separators. Any honest
   header text is either redundant with the position or vague, and headers on a
   fifteen-item menu make it look like the preferences pane this app refuses to
   have. Indentation under the master (`NSMenuItem.indentationLevel`) was
   considered and dropped: greying the dependants already carries the
   relationship, so the indent adds layout risk for nothing.
-- **Nothing is dropped.** `Cancel Echo from Speakers` is the only candidate — it
-  defaults off and costs about 8 dB on the system track — but it is the single
-  fix for recording a room through loudspeakers, and JSON-only means nobody
-  finds it.
 
 ### Recording, degraded
 
@@ -221,7 +209,6 @@ Menu tooltips explain controls without opening Settings. Verbatim:
 | Change Recordings Folder… | `Pick where recordings are saved. Choosing a folder here is also how macOS grants access to protected places like Documents.` |
 | Separate Voices in the Room  | `Labels each person on your microphone track separately, for in-person meetings. Downloads a second on-device model the first time.` |
 | Separate Voices on the Call  | `Labels each person on the call separately, for group calls. Downloads a second on-device model the first time.` |
-| Cancel Echo from Speakers | `Stops meeting audio bleeding into your microphone when you are not wearing headphones. Costs about 8 dB on the system audio track, which is usually the worse trade. Applies to the next recording.` |
 | Transcribe After Recording | `Off means quill records only. Turning it back on transcribes the backlog the next time Quill starts.` |
 | Stop Recording and Quit | `Ends the current recording. Transcription resumes the next time Quill starts.` |
 | Quit Quill *(while transcribing)* | `Transcription resumes the next time Quill starts.` |

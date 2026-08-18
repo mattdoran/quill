@@ -47,11 +47,6 @@ final class MicRecorder: Capture {
     private var log: SessionLog?
     private var configurationObserver: NSObjectProtocol?
 
-    /// Set for the rest of the session once a voice-processing graph is caught
-    /// delivering silence, so rebuilds stop trying it. Kept apart from the
-    /// setting, which is re-read on each attach.
-    private var voiceProcessingFailed = false
-
     /// Use a .caf extension: CAF needs no finalization pass, so a crash loses
     /// nothing already written.
     func prepare(writingTo url: URL, log: SessionLog) throws {
@@ -75,36 +70,17 @@ final class MicRecorder: Capture {
         engine = AVAudioEngine()
         let input = engine.inputNode
 
-        var voice = !voiceProcessingFailed && Config.micVoiceProcessing()
-        if voice {
-            do {
-                try input.setVoiceProcessingEnabled(true)
-                // The live voice unit makes macOS treat the session like a
-                // call and duck all other audio — meetings played through the
-                // speakers would get quieter the moment recording starts.
-                input.voiceProcessingOtherAudioDuckingConfiguration =
-                    .init(enableAdvancedDucking: false, duckingLevel: .min)
-            } catch {
-                log?.warn("mic: voice processing unavailable (\(error)) — recording raw")
-                voice = false
-            }
-        }
-
         let inputFormat = input.outputFormat(forBus: 0)
         guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
             throw RecorderError.formatUnsupported(inputFormat)
         }
 
-        if voice {
-            try attachVoiceTap(on: input, deviceRate: inputFormat.sampleRate, writer: writer)
-        } else {
-            // @Sendable required: the tap runs on the render thread, and
-            // inherited main-actor isolation traps the process there.
-            input.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) {
-                @Sendable [weak writer, liveness] buffer, _ in
-                liveness.mark()
-                writer?.write(buffer)
-            }
+        // @Sendable required: the tap runs on the render thread, and inherited
+        // main-actor isolation traps the process there.
+        input.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) {
+            @Sendable [weak writer, liveness] buffer, _ in
+            liveness.mark()
+            writer?.write(buffer)
         }
 
         engine.prepare()
@@ -118,7 +94,7 @@ final class MicRecorder: Capture {
 
         log?.log(
             "mic: attached — device=\(AudioDevices.defaultInputName()) "
-                + "voiceProcessing=\(input.isVoiceProcessingEnabled) input=\(inputFormat.short)"
+                + "input=\(inputFormat.short)"
         )
     }
 
@@ -137,41 +113,6 @@ final class MicRecorder: Capture {
 
     // MARK: -
 
-    /// VoiceProcessingIO is a duplex unit, not an input effect: it needs a
-    /// rendered output path and one explicit mono client format on both sides,
-    /// or it delivers zeroed buffers (rca-001). The mixer has no sources —
-    /// nothing is monitored or played — its connection exists solely to give
-    /// the unit a formatted output path.
-    private func attachVoiceTap(
-        on input: AVAudioInputNode, deviceRate: Double, writer: TrackWriter
-    ) throws {
-        guard let format = AVAudioFormat(
-            commonFormat: .pcmFormatFloat32,
-            sampleRate: deviceRate,
-            channels: 1,
-            interleaved: false
-        ) else {
-            throw RecorderError.formatUnsupported(input.outputFormat(forBus: 0))
-        }
-        engine.connect(engine.mainMixerNode, to: engine.outputNode, format: format)
-
-        // Some routes build this graph successfully and still yield digital
-        // zeroes, recoverable only by capturing raw.
-        let probe = VoiceLivenessProbe(sampleRate: deviceRate) { [weak self] in
-            Task { @MainActor in
-                guard let self else { return }
-                self.voiceProcessingFailed = true
-                self.onInvalidated?("voice processing delivered silence")
-            }
-        }
-        input.installTap(onBus: 0, bufferSize: 4096, format: format) {
-            @Sendable [weak writer, liveness] buffer, _ in
-            liveness.mark()
-            guard probe.accept(buffer) else { return }
-            writer?.write(buffer)
-        }
-    }
-
     /// A route change stops the engine and discards its taps, reporting nothing
     /// through the tap itself.
     private func observeConfigurationChange() {
@@ -184,33 +125,5 @@ final class MicRecorder: Capture {
             // above is the only thing making it safe.
             MainActor.assumeIsolated { self?.onInvalidated?("route changed") }
         }
-    }
-}
-
-private final class VoiceLivenessProbe: @unchecked Sendable {
-    private let deadline: Int
-    private let onSilent: @Sendable () -> Void
-    private var frames = 0
-    private var peak: Float = 0
-    private var settled = false
-
-    init(sampleRate: Double, onSilent: @escaping @Sendable () -> Void) {
-        deadline = Int(sampleRate)
-        self.onSilent = onSilent
-    }
-
-    /// False once the graph is judged dead, so nothing more is appended before
-    /// the rebuild.
-    func accept(_ buffer: AVAudioPCMBuffer) -> Bool {
-        guard !settled else { return true }
-        if let samples = buffer.floatChannelData?[0] {
-            for i in 0..<Int(buffer.frameLength) { peak = max(peak, abs(samples[i])) }
-        }
-        frames += Int(buffer.frameLength)
-        guard frames >= deadline else { return true }
-        settled = true
-        guard peak == 0 else { return true }
-        onSilent()
-        return false
     }
 }

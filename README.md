@@ -57,6 +57,7 @@ Each session lands in `~/Music/Quill/<yyyy.MM.dd-HHmm>/`:
 |---|---|
 | `mic.caf` | your side (default input device, AAC) |
 | `system.caf` | everything the Mac played — the other side of the call (AAC) |
+| `mic-cleaned.caf` | microphone audio with correlated speaker playback removed (AAC) |
 | `meta.json` | start/end timestamps, duration, per-track start offsets, and per-track capture health |
 | `session.log` | devices, formats and every capture interruption during the recording |
 | `transcript.json` | canonical transcript — engine provenance + timed, speaker-tagged segments |
@@ -85,12 +86,17 @@ Core ML port, roughly 20 seconds per hour of audio on Apple Silicon. Models
 (~600 MB) download after the first unmetered launch; progress appears in the
 menu and Settings. `quill doctor` reports whether they are ready.
 
-Each track is transcribed separately, shifted by its start offset so both
-share one clock, and merged by timestamp. Jobs run in a serial queue — you can
-start a new recording while the last one transcribes. Unfinished jobs resume
-on next launch (the filesystem is the queue: a session with `meta.json` but no
-`transcript.json` is pending). Failures append to the session's
-`transcribe.log` and never block later jobs.
+Before transcription, WebRTC AEC3 uses `system.caf` as a reference to remove
+correlated speaker playback from the microphone. The result is retained as
+`mic-cleaned.caf`; both raw tracks remain unchanged. If cancellation fails,
+the failure is logged and transcription falls back to raw `mic.caf`.
+
+The cleaned microphone and raw system tracks are transcribed separately,
+shifted by their start offsets so both share one clock, and merged by
+timestamp. Jobs run in a serial queue — you can start a new recording while
+the last one transcribes. Unfinished jobs resume on next launch (the filesystem
+is the queue: a session with `meta.json` but no `transcript.json` is pending).
+Failures append to the session's `transcribe.log` and never block later jobs.
 
 The engine sits behind a small protocol; a Whisper engine (WhisperKit
 large-v3-turbo) is planned as the fallback / re-transcription option.
@@ -125,18 +131,8 @@ application home for isolated development and tests.
 - `transcription.enabled` — set `false` to just record.
 - `audio_retention`: `indefinitely` (the default), `30_days`, or
   `after_transcription`. Deletion only applies after `transcript.json` exists.
-  It removes both CAF tracks, so the transcript can no longer be verified or
-  regenerated with a different model.
-- `mic_voice_processing` — Apple's echo cancellation on the mic (default off).
-  Useful when recording through speakers, where the far side otherwise bleeds
-  into the mic track and gets transcribed twice. The catch, measured: the voice
-  unit ducks system audio *into the recording*, costing about 8 dB on the
-  system track. That is usually a worse trade than the echo it removes.
-  Set `true` when recording meetings through the speakers, so playback doesn't
-  bleed into the mic track and get transcribed twice as "me". The trade: while
-  the voice unit is live, macOS ducks other playback slightly (`.min` ducking
-  is configured, but it can't be zeroed). On headphones there's no echo to
-  cancel, so raw capture is the better default.
+  It removes the two raw capture tracks but retains `mic-cleaned.caf`. The
+  original cancellation cannot then be reproduced or tuned.
 - `on_stop` — shell command spawned with the session directory as its
   argument, **after the transcript is written** (or right after recording if
   transcription is disabled). Wire it to whatever comes next: summarization,
@@ -160,6 +156,7 @@ quill install --uninstall
 - **AVAudioEngine** — mic capture
 - **AVAudioFile** — streaming AAC encode into CAF
 - **FluidAudio / Parakeet** — on-device Core ML transcription
+- **WebRTC AEC3** — post-recording acoustic echo cancellation
 - **NSStatusItem + AppKit**: menu-bar controls and a small Settings window
 
 ## Gotchas

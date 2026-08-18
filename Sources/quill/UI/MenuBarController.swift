@@ -18,7 +18,6 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private let downloadModelsItem: NSMenuItem
     private let micVoicesItem: NSMenuItem
     private let systemVoicesItem: NSMenuItem
-    private let echoItem: NSMenuItem
     private let transcribeItem: NSMenuItem
     private let openFolderItem: NSMenuItem
     private let changeFolderItem: NSMenuItem
@@ -132,21 +131,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
 
-        echoItem = NSMenuItem(
-            title: "Cancel Echo from Speakers",
-            action: #selector(echoClicked),
-            keyEquivalent: ""
-        )
-        echoItem.toolTip = """
-            Stops meeting audio bleeding into your microphone when you are not \
-            wearing headphones. Costs about 8 dB on the system audio track, \
-            which is usually the worse trade. Applies to the next recording.
-            """
-        menu.addItem(echoItem)
-
-        // Ordered by the pipeline: what gets captured, then whether it is
-        // transcribed, then how the transcript is labelled. Transcription is
-        // the master switch for the two below it, so it cannot sit under them.
+        // Transcription is the master switch for the two settings below it, so
+        // it cannot sit under them.
         transcribeItem = NSMenuItem(
             title: "Transcribe After Recording",
             action: #selector(transcribeClicked),
@@ -214,7 +200,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         for item in [
             toggleItem, openFolderItem, changeFolderItem, quitItem, micVoicesItem,
             systemVoicesItem,
-            echoItem, transcribeItem, lastTranscriptItem, about, retryItem,
+            transcribeItem, lastTranscriptItem, about, retryItem,
             downloadModelsItem,
             transcriptionLabel,
             settings,
@@ -277,12 +263,14 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             button.contentTintColor = nil
             button.setAccessibilityTitle("Quill, idle")
         case (true, false):
-            button.image = Self.symbol("record.circle.fill", "recording")
-            button.contentTintColor = .systemRed
+            button.image = Self.coloredSymbol("record.circle.fill", "recording", .systemRed)
+            button.contentTintColor = nil
             button.setAccessibilityTitle("Quill, recording, \(Self.spoken(clock))")
         case (true, true):
-            button.image = Self.symbol("exclamationmark.triangle.fill", "capture problem")
-            button.contentTintColor = .systemOrange
+            button.image = Self.coloredSymbol(
+                "exclamationmark.triangle.fill", "capture problem", .systemOrange
+            )
+            button.contentTintColor = nil
             button.setAccessibilityTitle("Quill, capture problem, \(Self.spoken(clock))")
         }
     }
@@ -360,6 +348,16 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         return image
     }
 
+    private static func coloredSymbol(
+        _ name: String, _ description: String, _ color: NSColor
+    ) -> NSImage? {
+        let configuration = NSImage.SymbolConfiguration(paletteColors: [color])
+        let image = NSImage(systemSymbolName: name, accessibilityDescription: description)?
+            .withSymbolConfiguration(configuration)
+        image?.isTemplate = false
+        return image
+    }
+
     // Inlined Lucide feather SVG. Keeping it in source means the executable
     // has no separate resource bundle to install alongside it — true
     // single-binary.
@@ -389,7 +387,6 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private func refreshSettings() {
         micVoicesItem.state = Config.speakerDetection(track: "mic").enabled ? .on : .off
         systemVoicesItem.state = Config.speakerDetection(track: "system").enabled ? .on : .off
-        echoItem.state = Config.micVoiceProcessing() ? .on : .off
         let transcribing = Config.transcriptionEnabled()
         transcribeItem.state = transcribing ? .on : .off
         // Both only affect a transcript, so with transcription off they are
@@ -408,11 +405,6 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     @objc private func systemVoicesClicked() {
         Config.setSpeakerDetection(track: "system", enabled: systemVoicesItem.state != .on)
-        refreshSettings()
-    }
-
-    @objc private func echoClicked() {
-        Config.setMicVoiceProcessing(echoItem.state != .on)
         refreshSettings()
     }
 

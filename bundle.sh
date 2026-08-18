@@ -72,6 +72,11 @@ for dep in FluidAudio swift-argument-parser; do
         fi
     done
 done
+cp "$root/VendorLicenses/WebRTC/pywebrtc-audio-LICENSE" \
+    "$licenses/pywebrtc-audio.txt"
+cp "$root/VendorLicenses/WebRTC/LICENSE" "$licenses/WebRTC.txt"
+cp "$root/VendorLicenses/WebRTC/PATENTS" "$licenses/WebRTC-PATENTS.txt"
+cp "$root/VendorLicenses/WebRTC/AUTHORS" "$licenses/WebRTC-AUTHORS.txt"
 
 if [ -n "$SIGN_IDENTITY" ]; then
     # Hardened runtime and a secure timestamp are both required by notarization,

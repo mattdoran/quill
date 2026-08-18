@@ -121,15 +121,43 @@ actor TranscriptionCoordinator {
         let engine = try await preparedEngine()
         publish(.transcribing(session: session, queued: queue.count))
 
+        var cleanedMic: URL?
+        if
+            let mic = meta.tracks.first(where: { $0.kind == "mic" }),
+            let system = meta.tracks.first(where: { $0.kind == "system" })
+        {
+            let micAudio = dir.appendingPathComponent(mic.file)
+            let systemAudio = dir.appendingPathComponent(system.file)
+            if
+                FileManager.default.fileExists(atPath: micAudio.path),
+                FileManager.default.fileExists(atPath: systemAudio.path)
+            {
+                do {
+                    log(dir, "cleaning speaker playback from \(mic.file) (AEC3)")
+                    cleanedMic = try EchoCancellation.clean(
+                        mic: micAudio,
+                        micOffsetMs: mic.offsetMs,
+                        system: systemAudio,
+                        systemOffsetMs: system.offsetMs,
+                        in: dir
+                    )
+                    log(dir, "cleaned microphone written to \(EchoCancellation.outputName)")
+                } catch {
+                    log(dir, "echo cancellation failed, using \(mic.file): \(error)")
+                }
+            }
+        }
+
         var merged: [Transcript.Segment] = []
         var diarizedModel: String?
         for track in meta.tracks {
-            let audio = dir.appendingPathComponent(track.file)
+            let source = dir.appendingPathComponent(track.file)
+            let audio = track.kind == "mic" ? cleanedMic ?? source : source
             guard FileManager.default.fileExists(atPath: audio.path) else {
                 log(dir, "skipping missing track \(track.file)")
                 continue
             }
-            log(dir, "transcribing \(track.file) (\(engine.name))")
+            log(dir, "transcribing \(audio.lastPathComponent) (\(engine.name))")
             // One bad track (empty, truncated) shouldn't cost us the other's
             // transcript — log it and keep going.
             let segments: [TranscriptSegment]

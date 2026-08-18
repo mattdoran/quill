@@ -35,7 +35,7 @@ struct RetentionHarness {
     ) throws -> URL {
         let session = root.appendingPathComponent(name, isDirectory: true)
         try FileManager.default.createDirectory(at: session, withIntermediateDirectories: true)
-        for track in ["mic.caf", "system.caf"] {
+        for track in ["mic.caf", "system.caf", "mic-cleaned.caf"] {
             try Data(track.utf8).write(to: session.appendingPathComponent(track))
         }
         if let transcriptAge {
@@ -70,6 +70,10 @@ struct RetentionHarness {
                     atPath: session.appendingPathComponent(track).path
                 ) {
                 throw Failure("expected \(session.lastPathComponent)/\(track) to be deleted")
+            }
+            let cleaned = session.appendingPathComponent("mic-cleaned.caf")
+            if !FileManager.default.fileExists(atPath: cleaned.path) {
+                throw Failure("expected \(session.lastPathComponent)/mic-cleaned.caf to remain")
             }
         }
     }
