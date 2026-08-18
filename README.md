@@ -15,6 +15,7 @@ Starting a fresh session? Read these in order:
 | `README.md` | Install, run and configure Quill. |
 | `docs/ux.md` | The current product and UI design. |
 | `docs/decisions.md` | Settled decisions and their reasons. |
+| `docs/open-questions.md` | Possible product paths that still need investigation or a decision. |
 | `TODO.md` | Work that remains. |
 
 ## Install

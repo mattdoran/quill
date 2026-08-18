@@ -8,7 +8,8 @@ is not in play.
 1. `README.md` for build, run and distribution commands.
 2. `docs/ux.md` for the current product and UI design.
 3. `docs/decisions.md` for settled choices and their reasons.
-4. `TODO.md` for work that remains.
+4. `docs/open-questions.md` for possible product paths not yet decided.
+5. `TODO.md` for work that remains.
 
 ## Constraints and gotchas
 
