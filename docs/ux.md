@@ -334,7 +334,6 @@ which subsystem reads the value.
 |---|---|---|
 | Separate voices, mic | Menu | Chosen from the meeting context: in-person or not. |
 | Separate voices, system | Menu | Chosen from the meeting context: group call or 1:1. |
-| Echo cancellation | Menu | A situational capture choice for loudspeakers versus headphones. Defaults **off**: measurement put the cost at 7.8 dB on the recorded system track. A mid-recording click applies to the next recording. |
 | Transcribe after recording | Menu | An operational switch used before a recording. It persists and gates the two Separate Voices toggles. A second label in Settings made one value look like two behaviours. |
 | Open at login | Settings | Durable application lifecycle behaviour, backed by `SMAppService`, not a meeting control. `install --launch-at-login` remains a thin wrapper over the same call. |
 | Recordings folder | Settings + conditional menu recovery | Settings owns the persistent location. `Change Recordings Folder…` appears in the menu only when folder access is broken, because choosing through the panel is also the permission repair. |
@@ -351,8 +350,8 @@ The Settings window is three administrative groups:
 3. **Transcription:** static engine identity; model status and expected or
    installed size; Download / Remove
 
-Echo cancellation and voice separation remain in the menu only. All values
-share one file at `~/Library/Application Support/Quill/config.json`.
+Voice separation remains in the menu only. All values share one file at
+`~/Library/Application Support/Quill/config.json`.
 
 ### Audio retention
 

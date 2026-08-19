@@ -3,10 +3,10 @@
 Possible product paths that need investigation or a design decision. Nothing in
 this file is committed roadmap or current behaviour.
 
-## Start and stop around the meeting
+## Meeting-aware start and stop
 
-Could Quill offer to record when a meeting starts, and stop when it ends,
-without recording automatically?
+Should Quill offer to start recording when a meeting begins and stop when it
+ends, while leaving the decision to record with the person?
 
 Granola provides a useful reference model:
 
@@ -18,11 +18,6 @@ Granola provides a useful reference model:
   Granola uses to recognise that event is not yet known.
 - Silence can remain a fallback when there is no clean call-end signal.
 
-Quill should investigate which public macOS signals reveal that a call app has
-started or stopped using the microphone, including whether the responsible app
-can be identified reliably for native apps and browser calls. Audio activity
-alone is not enough to distinguish a meeting from unrelated playback.
-
 Questions:
 
 - Is calendar access worth the permission and product scope it introduces?
@@ -32,15 +27,18 @@ Questions:
 - What false-positive rate does call detection produce in normal use?
 - Should the existing ten-minute silence nudge remain as the final fallback?
 
+Next evidence needed: identify public macOS signals for native and browser call
+starts and stops, then measure their false-positive rate in normal use. Audio
+activity alone cannot distinguish a meeting from unrelated playback.
+
 ## Per-recording meeting profile
 
-The current two `Separate Voices` controls expose track-processing choices and
-persist globally. They are read when transcription runs, so a later change can
-also affect a recording already waiting in the queue.
+The current two `Separate Voices` controls persist globally and are read when
+transcription runs. A later change can therefore affect a recording already in
+the queue.
 
-A recording should instead snapshot its chosen processing profile in
-`meta.json`. The prompt should ask one question in terms of the physical
-meeting, then derive the track settings:
+Should each recording instead snapshot a processing profile in `meta.json`?
+One prompt framed around the physical meeting could derive both track settings:
 
 | Choice | Microphone track | System track |
 |---|---|---|
@@ -49,10 +47,9 @@ meeting, then derive the track settings:
 | People in both | separate local speakers | separate remote speakers |
 
 The labels need testing. `On the call`, `In the room`, and `Both` may be clearer
-than naming meeting types such as remote and hybrid. The prompt should not ask
-how many people are at both ends unless that distinction changes a useful
-outcome. A single remote speaker does not need diarisation, but asking for that
-detail may cost more comprehension than the avoided processing is worth.
+than meeting-type labels such as remote and hybrid. Asking how many people are
+at both ends may cost more comprehension than the avoided diarisation work is
+worth.
 
 Questions:
 
@@ -67,47 +64,15 @@ Questions:
 
 ## Live recording indicator
 
-Consider a Granola-style draggable indicator visible while another app is in
-front. Its purpose is immediate confidence and access, not a second recording
-window.
+Should Quill add a Granola-style draggable indicator while another app is in
+front? Its purpose would be immediate confidence and access, not a second
+workflow surface.
 
-The smallest useful surface may contain elapsed time, live capture activity and
-a stop control. Clicking it could reveal the live transcript or return to a
-larger meeting surface if one exists. This would require revisiting the current
-decision that Quill has no recording windows, while retaining the menu-bar item
-as the canonical status.
+The smallest useful surface may contain elapsed time and a stop control. This
+would require revisiting the current decision that Quill has no recording
+windows while retaining the menu-bar item as canonical status.
 
 Questions:
 
-- Does the indicator show one combined activity signal or separate microphone
-  and system signals?
 - Is it always visible while recording, or optional after first use?
 - Can it remain unobtrusive across full-screen apps and multiple displays?
-
-## Live transcript and questions during a meeting
-
-Live transcription is useful in its own right, not only as a capture-health
-indicator. It allows someone to verify recent words, recover something they
-missed, search the conversation, and ask questions against what has happened so
-far.
-
-Quill's current pipeline is offline: completed tracks are echo-cleaned,
-transcribed separately, optionally diarised, and merged. A live path would be
-provisional and separate from the canonical final transcript. The final pass
-should still run from the completed recordings so it can use offline echo
-cancellation and diarisation.
-
-A bounded experiment could transcribe rolling chunks, retain a recent live
-window, and answer questions only from that provisional text. It should measure
-latency, model and battery cost, correction churn, and how understandable the
-two tracks are before offline cleanup.
-
-Questions:
-
-- Does the installed Parakeet/FluidAudio version support a genuine streaming
-  decoder, or would Quill need chunked file transcription or another engine?
-- How much transcript history should be held during the meeting?
-- Can local question answering be useful enough without introducing a cloud
-  service or a second large model?
-- What UI contains the transcript and question input without turning Quill into
-  a full meeting workspace?

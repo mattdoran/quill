@@ -27,6 +27,18 @@ swift build -c release
 ./build-dmg.sh                                # optional distributable image
 ```
 
+For a distributable release, notarize the reviewed app before building the
+image around it:
+
+```sh
+swift build -c release
+./bundle.sh --notarize
+./build-dmg.sh
+```
+
+See `signing.conf.example` for the one-time Developer ID and notarization
+credential setup. The finished image is `.build/release/Quill-<version>.dmg`.
+
 The `.app` wrapper is what gives quill its own identity: notifications that
 carry its name and open the transcript when clicked, rather than arriving as
 anonymous banners. It is still one SwiftPM binary and no Xcode — the bundle is
