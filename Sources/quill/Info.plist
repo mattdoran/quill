@@ -1,30 +1,30 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
-<dict>
-    <key>CFBundleIdentifier</key>
-    <string>com.mattdoran.quill</string>
-    <key>CFBundleName</key>
-    <string>Quill</string>
-    <key>CFBundleIconFile</key>
-    <string>AppIcon</string>
-    <key>CFBundleExecutable</key>
-    <string>quill</string>
-    <key>CFBundlePackageType</key>
-    <string>APPL</string>
-    <key>CFBundleShortVersionString</key>
-    <string>0.1</string>
-    <key>CFBundleVersion</key>
-    <string>1</string>
-    <key>NSHumanReadableCopyright</key>
-    <string>Copyright (c) 2026 Andrew Jones, Matt Doran. MIT licensed.</string>
-    <!-- Menu-bar only. setActivationPolicy(.accessory) does this at runtime
+    <dict>
+        <key>CFBundleIdentifier</key>
+        <string>com.mattdoran.quill</string>
+        <key>CFBundleName</key>
+        <string>Quill</string>
+        <key>CFBundleIconFile</key>
+        <string>AppIcon</string>
+        <key>CFBundleExecutable</key>
+        <string>quill</string>
+        <key>CFBundlePackageType</key>
+        <string>APPL</string>
+        <key>CFBundleShortVersionString</key>
+        <string>0.2</string>
+        <key>CFBundleVersion</key>
+        <string>1</string>
+        <key>NSHumanReadableCopyright</key>
+        <string>Copyright (c) 2026 Andrew Jones, Matt Doran. MIT licensed.</string>
+        <!-- Menu-bar only. setActivationPolicy(.accessory) does this at runtime
          too, but declaring it stops a Dock icon flashing up at launch. -->
-    <key>LSUIElement</key>
-    <true/>
-    <key>NSMicrophoneUsageDescription</key>
-    <string>quill records your microphone during meetings so you can transcribe them later. Audio never leaves this Mac.</string>
-    <key>NSAudioCaptureUsageDescription</key>
-    <string>quill records system audio (the other side of your meetings) so you can transcribe them later. Audio never leaves this Mac.</string>
-</dict>
+        <key>LSUIElement</key>
+        <true/>
+        <key>NSMicrophoneUsageDescription</key>
+        <string>quill records your microphone during meetings so you can transcribe them later. Audio never leaves this Mac.</string>
+        <key>NSAudioCaptureUsageDescription</key>
+        <string>quill records system audio (the other side of your meetings) so you can transcribe them later. Audio never leaves this Mac.</string>
+    </dict>
 </plist>
