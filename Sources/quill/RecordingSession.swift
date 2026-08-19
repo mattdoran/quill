@@ -8,6 +8,7 @@ import Foundation
 final class RecordingSession {
     let dir: URL
     let startedAt = Date()
+    private(set) var meetingProfile: MeetingProfile
 
     /// Set the first time a track is interrupted and never cleared: the
     /// recording can no longer be assumed complete, even though capture came
@@ -52,7 +53,8 @@ final class RecordingSession {
 
     /// Create the session folder under `root` (yyyy.MM.dd-HHmm, suffixed on
     /// collision) without starting capture yet.
-    init(root: URL) throws {
+    init(root: URL, meetingProfile: MeetingProfile) throws {
+        self.meetingProfile = meetingProfile
         let base = Self.folderFormat.string(from: startedAt)
         var candidate = root.appendingPathComponent(base, isDirectory: true)
         var n = 2
@@ -63,6 +65,11 @@ final class RecordingSession {
         try FileManager.default.createDirectory(at: candidate, withIntermediateDirectories: true)
         dir = candidate
         log = SessionLog(dir: candidate)
+    }
+
+    func updateMeetingProfile(_ profile: MeetingProfile) {
+        meetingProfile = profile
+        log.log("meeting profile changed to \(profile.rawValue)")
     }
 
     /// Start both tracks. If the mic fails after the system tap started, the
@@ -132,6 +139,7 @@ final class RecordingSession {
             "started": iso.string(from: startedAt),
             "ended": iso.string(from: ended),
             "duration_seconds": Int(ended.timeIntervalSince(startedAt)),
+            "meeting_profile": meetingProfile.rawValue,
             "files": ["mic": "mic.caf", "system": "system.caf"],
             "start_offset_ms": [
                 "mic": Int(micStart.timeIntervalSince(earliest) * 1000),
@@ -146,11 +154,17 @@ final class RecordingSession {
                 ),
             ],
         ]
-        if let data = try? JSONSerialization.data(
-            withJSONObject: meta,
-            options: [.prettyPrinted, .sortedKeys]
-        ) {
-            try? data.write(to: dir.appendingPathComponent("meta.json"))
+        do {
+            let data = try JSONSerialization.data(
+                withJSONObject: meta,
+                options: [.prettyPrinted, .sortedKeys]
+            )
+            try data.write(
+                to: dir.appendingPathComponent("meta.json"),
+                options: .atomic
+            )
+        } catch {
+            log.warn("couldn't publish meta.json: \(error)")
         }
 
         log.log(String(

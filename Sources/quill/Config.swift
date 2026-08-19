@@ -58,8 +58,60 @@ enum Config {
         let sharedLabel: String
     }
 
+    static func meetingProfile() -> MeetingProfile {
+        let root = load()
+        if
+            let rawValue = root["meeting_profile"] as? String,
+            let profile = MeetingProfile(rawValue: rawValue)
+        {
+            return profile
+        }
+
+        let mic = legacySpeakerDetection(track: "mic", root: root).enabled
+        let system = legacySpeakerDetection(track: "system", root: root).enabled
+        switch (mic, system) {
+        case (true, true): return .both
+        case (true, false): return .inTheRoom
+        case (false, true): return .onTheCall
+        case (false, false): return .neither
+        }
+    }
+
+    static func setMeetingProfile(_ profile: MeetingProfile) {
+        var root = load()
+        root["meeting_profile"] = profile.rawValue
+
+        var voices = (root["separate_voices"] ?? root["detect_speakers"])
+            as? [String: Any] ?? [:]
+        for track in ["mic", "system"] {
+            var settings = voices[track] as? [String: Any] ?? [:]
+            settings["enabled"] = profile.voiceSettings(for: track).separatesVoices
+            voices[track] = settings
+        }
+        root["separate_voices"] = voices
+        root["detect_speakers"] = nil
+        writeReporting(root)
+    }
+
     static func speakerDetection(track: String) -> SpeakerDetection {
         let root = load()
+        if
+            let rawValue = root["meeting_profile"] as? String,
+            let profile = MeetingProfile(rawValue: rawValue)
+        {
+            let settings = profile.voiceSettings(for: track)
+            return SpeakerDetection(
+                enabled: settings.separatesVoices,
+                soloLabel: settings.soloLabel,
+                sharedLabel: settings.sharedLabel
+            )
+        }
+        return legacySpeakerDetection(track: track, root: root)
+    }
+
+    private static func legacySpeakerDetection(
+        track: String, root: [String: Any]
+    ) -> SpeakerDetection {
         let group = (root["separate_voices"] ?? root["detect_speakers"]) as? [String: Any]
         let settings = group?[track] as? [String: Any]
         let isMic = track == "mic"
@@ -68,18 +120,6 @@ enum Config {
             soloLabel: isMic ? "me" : "them",
             sharedLabel: isMic ? "room" : "them"
         )
-    }
-
-    static func setSpeakerDetection(track: String, enabled: Bool) {
-        var root = load()
-        var voices = (root["separate_voices"] ?? root["detect_speakers"])
-            as? [String: Any] ?? [:]
-        var settings = voices[track] as? [String: Any] ?? [:]
-        settings["enabled"] = enabled
-        voices[track] = settings
-        root["separate_voices"] = voices
-        root["detect_speakers"] = nil
-        writeReporting(root)
     }
 
     enum AudioRetention: String, CaseIterable {

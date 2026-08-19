@@ -16,12 +16,13 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private let lastTranscriptItem: NSMenuItem
     private let retryItem: NSMenuItem
     private let downloadModelsItem: NSMenuItem
-    private let micVoicesItem: NSMenuItem
-    private let systemVoicesItem: NSMenuItem
+    private let meetingProfileItem: NSMenuItem
+    private var meetingProfileItems: [MeetingProfile: NSMenuItem] = [:]
     private let transcribeItem: NSMenuItem
     private let openFolderItem: NSMenuItem
     private let changeFolderItem: NSMenuItem
     private let quitItem: NSMenuItem
+    private var recordingMeetingProfile: MeetingProfile?
 
     var onToggle: (() -> Void)?
     var onOpenFolder: (() -> Void)?
@@ -31,6 +32,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     var onRetryTranscription: (() -> Void)?
     var onDownloadModels: (() -> Void)?
     var onSettings: (() -> Void)?
+    var onMeetingProfileChanged: ((MeetingProfile) -> Void)?
     var onQuit: (() -> Void)?
 
     /// Whether a transcript exists to open, re-asked each time the menu opens
@@ -144,33 +146,25 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             """
         menu.addItem(transcribeItem)
 
-        // The tracks are independent: a remote call wants the far side split,
-        // an in-person meeting wants the room. Titles name the situation, since
-        // "microphone" and "system audio" don't describe the choice being made.
-        // The shared prefix is deliberate: they are a matched pair, and being
-        // adjacent is what tells them apart.
-        micVoicesItem = NSMenuItem(
-            title: "Separate Voices in the Room",
-            action: #selector(micVoicesClicked),
+        meetingProfileItem = NSMenuItem(
+            title: "Multiple People",
+            action: nil,
             keyEquivalent: ""
         )
-        micVoicesItem.toolTip = """
-            Labels each person on your microphone track separately, for \
-            in-person meetings. Downloads a second on-device model the first \
-            time.
-            """
-        menu.addItem(micVoicesItem)
-
-        systemVoicesItem = NSMenuItem(
-            title: "Separate Voices on the Call",
-            action: #selector(systemVoicesClicked),
-            keyEquivalent: ""
-        )
-        systemVoicesItem.toolTip = """
-            Labels each person on the call separately, for group calls. \
-            Downloads a second on-device model the first time.
-            """
-        menu.addItem(systemVoicesItem)
+        let profileMenu = NSMenu()
+        for profile in MeetingProfile.allCases {
+            let item = NSMenuItem(
+                title: profile.title,
+                action: #selector(meetingProfileClicked(_:)),
+                keyEquivalent: ""
+            )
+            item.representedObject = profile.rawValue
+            profileMenu.addItem(item)
+            meetingProfileItems[profile] = item
+        }
+        meetingProfileItem.submenu = profileMenu
+        meetingProfileItem.toolTip = "Where are there multiple people in this meeting?"
+        menu.addItem(meetingProfileItem)
 
         menu.addItem(.separator())
 
@@ -198,13 +192,15 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         super.init()
 
         for item in [
-            toggleItem, openFolderItem, changeFolderItem, quitItem, micVoicesItem,
-            systemVoicesItem,
+            toggleItem, openFolderItem, changeFolderItem, quitItem,
             transcribeItem, lastTranscriptItem, about, retryItem,
             downloadModelsItem,
             transcriptionLabel,
             settings,
         ] {
+            item.target = self
+        }
+        for item in meetingProfileItems.values {
             item.target = self
         }
 
@@ -273,6 +269,11 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             button.contentTintColor = nil
             button.setAccessibilityTitle("Quill, capture problem, \(Self.spoken(clock))")
         }
+    }
+
+    func updateMeetingProfile(_ profile: MeetingProfile?) {
+        recordingMeetingProfile = profile
+        refreshSettings()
     }
 
     func updateStarting() {
@@ -385,26 +386,21 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     /// Reads the checkmarks back from disk, so the menu agrees with what is
     /// stored rather than with whatever was last clicked.
     private func refreshSettings() {
-        micVoicesItem.state = Config.speakerDetection(track: "mic").enabled ? .on : .off
-        systemVoicesItem.state = Config.speakerDetection(track: "system").enabled ? .on : .off
+        let profile = recordingMeetingProfile ?? Config.meetingProfile()
+        meetingProfileItem.title = "Multiple People: \(profile.title)"
+        for (candidate, item) in meetingProfileItems {
+            item.state = candidate == profile ? .on : .off
+        }
         let transcribing = Config.transcriptionEnabled()
         transcribeItem.state = transcribing ? .on : .off
-        // Both only affect a transcript, so with transcription off they are
-        // settings for something that will not run. The unchecked master
-        // directly above them is the visible reason.
-        micVoicesItem.isEnabled = transcribing
-        systemVoicesItem.isEnabled = transcribing
     }
 
-    /// Persists, then re-reads: a failed write leaves the checkmark where it
-    /// was instead of showing a setting that isn't on disk.
-    @objc private func micVoicesClicked() {
-        Config.setSpeakerDetection(track: "mic", enabled: micVoicesItem.state != .on)
-        refreshSettings()
-    }
-
-    @objc private func systemVoicesClicked() {
-        Config.setSpeakerDetection(track: "system", enabled: systemVoicesItem.state != .on)
+    @objc private func meetingProfileClicked(_ sender: NSMenuItem) {
+        guard
+            let rawValue = sender.representedObject as? String,
+            let profile = MeetingProfile(rawValue: rawValue)
+        else { return }
+        onMeetingProfileChanged?(profile)
         refreshSettings()
     }
 

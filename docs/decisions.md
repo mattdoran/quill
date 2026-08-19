@@ -59,15 +59,19 @@ and asynchronous completion after the companion has gone.
 
 Detected calling apps default to the `On the call` profile. Recording starts
 immediately when `Record` is pressed; choosing a profile never blocks capture.
-The three user-facing profiles are `On the call`, `In the room` and `Both`.
+The four user-facing profiles under `Multiple People` are `Neither`, `On the
+call`, `In the room` and `Both`.
 Quill always captures both tracks, snapshots the chosen processing profile in
-the recording metadata, and allows correction while recording.
+the recording metadata, and allows correction while recording. An idle menu
+change updates the manual-recording default; a live correction affects only the
+current session.
 
 **Why:** A custom banner alone would duplicate macOS while taking ownership of
 window levels, Spaces, displays, focus, accessibility and dismissal. A single
 surface earns that cost by preserving context and controls throughout the live
-meeting. Physical descriptions of where people are avoid the jargon and
-ambiguity of `Hybrid` and `diarization`.
+meeting. Asking where multiple people are avoids the jargon and ambiguity of
+`Hybrid` and `diarization`, while `Neither` preserves one-to-one calls without
+unnecessary voice separation.
 
 **Consequence:** The companion remains visible through stopping and brief
 transcription. It can become `Transcript ready` with an `Open` action if that

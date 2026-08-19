@@ -75,8 +75,7 @@ Open Last Transcript
 Open Recordings Folder
 ────────────────────────────────────────────
 Transcribe After Recording                       ✓
-Separate Voices in the Room                      ✓
-Separate Voices on the Call                      ✓
+Multiple People: On the call                     ›
 ────────────────────────────────────────────
 Settings…
 About Quill
@@ -98,8 +97,7 @@ Open Last Transcript
 Open Recordings Folder
 ────────────────────────────────────────────
 Transcribe After Recording                       ✓
-Separate Voices in the Room                      ✓
-Separate Voices on the Call                      ✓
+Multiple People: On the call                     ›
 ────────────────────────────────────────────
 Settings…
 About Quill
@@ -117,34 +115,27 @@ is a job for the tooltip, not for a grey row.
 
 ### The settings block: ordering and greying
 
-Three persistent controls, one block: whether to transcribe, then how to label
-the result.
+Two persistent controls, one block: whether to transcribe, then where multiple
+people are for the next recording.
 
 | Order | Item | Why here |
 |---|---|---|
-| 1 | `Transcribe After Recording` | The master switch for the two below. A setting cannot sit underneath the thing that gates it. |
-| 2 | `Separate Voices in the Room` | Depends on 1; greys out with it. |
-| 3 | `Separate Voices on the Call` | Its pair, adjacent, differing only in the last two words on purpose. |
+| 1 | `Transcribe After Recording` | Controls whether queued processing runs. |
+| 2 | `Multiple People` | Submenu: `Neither`, `On the call`, `In the room`, `Both`. Snapshotted into the recording and changeable while recording. |
 
 Decisions this settles:
 
-- **One block, not three.** All three answer the same question: what Quill should
+- **One block, not separate settings.** Both answer what Quill should
   do with the next recording. They persist until changed, but they are kept in
   the operational surface because physical setup and meeting type change.
   Splitting them by which subsystem reads them is an implementation detail
   leaking into a menu.
-- **Pipeline order beats frequency order.** Frequency of change would put the two
-  Separate Voices toggles first, which is roughly what shipped. It loses because
-  it puts a dependent setting above its master, and no amount of frequency
-  justifies that.
-- **The two `Separate Voices` items grey out when `Transcribe After Recording`
-  is off.** They configure a pipeline that will not run. The rule that makes this
-  safe: **grey an item only when the cause is visible in the same menu.** An
-  unchecked master one line above is visible. A tooltip is not.
-- **Parallel construction on the pair stays.** They are a matched choice on two
-  tracks; the shared prefix is the signal that they are a pair, and adjacency
-  does the disambiguating. Front-loading the difference would read worse and
-  break the pairing.
+- **The profile remains enabled when transcription is off.** It belongs to the
+  recording and may be used if queued transcription is enabled later. Greying
+  it would prevent an accurate snapshot for no operational reason.
+- **One question replaces two implementation toggles.** `Multiple People`
+  directly controls which captured tracks need voice separation. `Neither`
+  preserves the common one-to-one case without running diarization needlessly.
 - **No section headers.** `NSMenuItem.sectionHeader(title:)` exists on macOS 14+
   and is not warranted for three items already fenced by separators. Any honest
   header text is either redundant with the position or vague, and headers on a
@@ -207,8 +198,7 @@ Menu tooltips explain controls without opening Settings. Verbatim:
 |---|---|
 | Open Recordings Folder | *(the resolved path, e.g.)* `/Users/matt/Recordings` |
 | Change Recordings Folder… | `Pick where recordings are saved. Choosing a folder here is also how macOS grants access to protected places like Documents.` |
-| Separate Voices in the Room  | `Labels each person on your microphone track separately, for in-person meetings. Downloads a second on-device model the first time.` |
-| Separate Voices on the Call  | `Labels each person on the call separately, for group calls. Downloads a second on-device model the first time.` |
+| Multiple People | `Where are there multiple people in this meeting?` |
 | Transcribe After Recording | `Off means quill records only. Turning it back on transcribes the backlog the next time Quill starts.` |
 | Stop Recording and Quit | `Ends the current recording. Transcription resumes the next time Quill starts.` |
 | Quit Quill *(while transcribing)* | `Transcription resumes the next time Quill starts.` |
@@ -356,9 +346,8 @@ which subsystem reads the value.
 
 | Setting | Home | Why |
 |---|---|---|
-| Separate voices, mic | Menu | Chosen from the meeting context: in-person or not. |
-| Separate voices, system | Menu | Chosen from the meeting context: group call or 1:1. |
-| Transcribe after recording | Menu | An operational switch used before a recording. It persists and gates the two Separate Voices toggles. A second label in Settings made one value look like two behaviours. |
+| Meeting profile | Menu and meeting companion | `Multiple People`: `Neither`, `On the call`, `In the room`, or `Both`. It is snapshotted per recording. |
+| Transcribe after recording | Menu | An operational switch used before a recording. A second label in Settings made one value look like two behaviours. |
 | Open at login | Settings | Durable application lifecycle behaviour, backed by `SMAppService`, not a meeting control. `install --launch-at-login` remains a thin wrapper over the same call. |
 | Recordings folder | Settings + conditional menu recovery | Settings owns the persistent location. `Change Recordings Folder…` appears in the menu only when folder access is broken, because choosing through the panel is also the permission repair. |
 | Audio retention | Settings | The choice can irreversibly delete source audio and needs explanatory copy plus confirmation. |
@@ -374,7 +363,8 @@ The Settings window is three administrative groups:
 3. **Transcription:** static engine identity; model status and expected or
    installed size; Download / Remove
 
-Voice separation remains in the menu only. All values share one file at
+The profile remains in the menu until the meeting companion ships, then appears
+in both because both are operational surfaces for the same live recording. All values share one file at
 `~/Library/Application Support/Quill/config.json`.
 
 ### Audio retention
@@ -444,8 +434,7 @@ not the file.
 ## 7. Planned end-to-end meeting workflow
 
 This section is the agreed target beyond 0.2. The current product still uses
-native start and stop notifications, persistent voice-separation toggles and
-CAF files after capture.
+native start and stop notifications and CAF files after capture.
 
 ### Meeting companion
 
@@ -472,10 +461,12 @@ surface for asynchronous events; the companion owns only the live meeting.
 
 ### Meeting profile
 
-The profile asks where the people are, not whether to run diarization:
+The profile asks where there are multiple people, not whether to run
+diarization:
 
 | Choice | Microphone track | Call track |
 |---|---|---|
+| `Neither` | Treat as one local voice | Treat as one call voice |
 | `On the call` | Treat as one local voice | Separate remote voices |
 | `In the room` | Separate local voices | Treat as one call voice |
 | `Both` | Separate local voices | Separate remote voices |
@@ -486,7 +477,9 @@ It never blocks capture. Quill always records both tracks because a meeting can
 change shape; the profile controls post-processing only. The selected profile
 is copied into that recording's `meta.json`, so a later global setting cannot
 change queued work. Sessions created before profiles exist retain the legacy
-per-track processing behaviour; Quill does not bulk-rewrite their metadata.
+per-track processing behaviour; Quill does not bulk-rewrite their metadata. A
+change while idle updates the manual-recording default. A correction during a
+recording changes only that session and does not silently replace the default.
 
 ### Finished session audio
 

@@ -104,6 +104,7 @@ final class AppController {
     private var promptedCallToken: UUID?
     private var startingCallApplication: CallApplication?
     private var startingCallToken: UUID?
+    private var startingMeetingProfile: MeetingProfile?
     private var recordingCallApplication: CallApplication?
     private var recordingCallToken: UUID?
     private var ticker: Timer?
@@ -161,6 +162,16 @@ final class AppController {
             Task { [models] in await models.fetchIfNeeded(force: true) }
         }
         menuBar.onSettings = { [weak self] in self?.showSettings() }
+        menuBar.onMeetingProfileChanged = { [weak self] profile in
+            guard let self else { return }
+            if let session {
+                session.updateMeetingProfile(profile)
+                menuBar.updateMeetingProfile(profile)
+            } else {
+                Config.setMeetingProfile(profile)
+                menuBar.updateMeetingProfile(nil)
+            }
+        }
 
         Task { [models] in
             await models.setStatusHandler { status in
@@ -202,7 +213,7 @@ final class AppController {
         else { return }
         promptedCallApplication = nil
         promptedCallToken = nil
-        startSession(boundTo: application, token: UUID())
+        startSession(boundTo: application, token: UUID(), profile: .onTheCall)
     }
 
     func stopDetectedCall(recordingToken: String) {
@@ -227,15 +238,18 @@ final class AppController {
         if session == nil {
             promptedCallApplication = nil
             promptedCallToken = nil
-            startSession(boundTo: nil, token: nil)
+            startSession(boundTo: nil, token: nil, profile: Config.meetingProfile())
         } else {
             stopSession()
         }
     }
 
-    private func startSession(boundTo application: CallApplication?, token: UUID?) {
+    private func startSession(
+        boundTo application: CallApplication?, token: UUID?, profile: MeetingProfile
+    ) {
         startingCallApplication = application
         startingCallToken = token
+        startingMeetingProfile = profile
         isStarting = true
         menuBar.updateStarting()
         // Let the NSMenu action return and AppKit paint the acknowledgement
@@ -252,6 +266,7 @@ final class AppController {
             isStarting = false
             startingCallApplication = nil
             startingCallToken = nil
+            startingMeetingProfile = nil
             refreshMenuStatus()
             notifyUser(
                 title: "Can't reach the recordings folder",
@@ -261,7 +276,8 @@ final class AppController {
             return
         }
         do {
-            let newSession = try RecordingSession(root: root)
+            let profile = startingMeetingProfile ?? .onTheCall
+            let newSession = try RecordingSession(root: root, meetingProfile: profile)
             // No buttons: at thirty seconds the useful response is physical,
             // and "stop recording" is wrong advice while the other track is
             // still good.
@@ -277,6 +293,7 @@ final class AppController {
             }
             try newSession.start()
             session = newSession
+            menuBar.updateMeetingProfile(profile)
             recordingCallApplication = startingCallApplication
             recordingCallToken = startingCallToken
             FileHandle.standardError.write(Data("● recording → \(newSession.dir.path)\n".utf8))
@@ -285,6 +302,7 @@ final class AppController {
             isStarting = false
             startingCallApplication = nil
             startingCallToken = nil
+            startingMeetingProfile = nil
             refreshMenuStatus()
             // The raw error goes to stderr and the log. What reaches someone
             // about to start a meeting is the thing they can act on.
@@ -301,6 +319,7 @@ final class AppController {
         isStarting = false
         startingCallApplication = nil
         startingCallToken = nil
+        startingMeetingProfile = nil
         refreshMenuStatus()
         let ticker = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
@@ -322,6 +341,7 @@ final class AppController {
         ticker?.invalidate()
         ticker = nil
         menuBar.update(recording: false, elapsed: nil)
+        menuBar.updateMeetingProfile(nil)
 
         let dir = session.dir
         Task { [transcription] in await transcription.enqueue(dir) }

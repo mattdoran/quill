@@ -168,7 +168,8 @@ actor TranscriptionCoordinator {
                 continue
             }
             let (speakers, split) = await labels(
-                for: segments, track: track, audio: audio, dir: dir
+                for: segments, track: track, profile: meta.meetingProfile,
+                audio: audio, dir: dir
             )
             if split {
                 diarizedModel = diarizer?.model
@@ -209,11 +210,22 @@ actor TranscriptionCoordinator {
     private func labels(
         for segments: [TranscriptSegment],
         track: SessionMeta.Track,
+        profile: MeetingProfile?,
         audio: URL,
         dir: URL
     ) async -> (labels: [String], split: Bool) {
-        let settings = Config.speakerDetection(track: track.kind)
-        guard settings.enabled, !segments.isEmpty else {
+        let settings: VoiceSettings
+        if let profile {
+            settings = profile.voiceSettings(for: track.kind)
+        } else {
+            let legacy = Config.speakerDetection(track: track.kind)
+            settings = VoiceSettings(
+                separatesVoices: legacy.enabled,
+                soloLabel: legacy.soloLabel,
+                sharedLabel: legacy.sharedLabel
+            )
+        }
+        guard settings.separatesVoices, !segments.isEmpty else {
             return (segments.map { _ in settings.soloLabel }, false)
         }
         do {
@@ -306,6 +318,7 @@ private struct SessionMeta {
     }
 
     let tracks: [Track]
+    let meetingProfile: MeetingProfile?
 
     enum MetaError: Error, CustomStringConvertible {
         case unreadable(URL)
@@ -335,7 +348,9 @@ private struct SessionMeta {
         if let system = files["system"] {
             tracks.append(Track(file: system, offsetMs: offsets["system"] ?? 0, kind: "system"))
         }
-        return SessionMeta(tracks: tracks)
+        let meetingProfile = (json["meeting_profile"] as? String)
+            .flatMap(MeetingProfile.init(rawValue:))
+        return SessionMeta(tracks: tracks, meetingProfile: meetingProfile)
     }
 }
 
