@@ -26,6 +26,47 @@ struct PreviewVoices: ParsableCommand {
             try Data().write(to: source.appendingPathComponent("Microphone.m4a"))
             try Data().write(to: source.appendingPathComponent("Call.m4a"))
 
+            @MainActor func render(_ suffix: String) throws {
+                for (name, appearance) in [
+                    ("light", NSAppearance.Name.aqua), ("dark", .darkAqua),
+                ] {
+                    let controller = try VoiceReviewWindowController(
+                        session: session,
+                        isRecording: { false },
+                        separateSpeakers: {},
+                        appearance: NSAppearance(named: appearance)
+                    )
+                    guard let view = controller.window?.contentView else { continue }
+                    view.layoutSubtreeIfNeeded()
+                    guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds)
+                    else { continue }
+                    view.cacheDisplay(in: view.bounds, to: bitmap)
+                    guard let png = bitmap.representation(using: .png, properties: [:])
+                    else { continue }
+                    try png.write(to: output.appendingPathComponent("\(name)-\(suffix).png"))
+                }
+            }
+
+            let basicVoices = [
+                "mic:1": TranscriptDocument.Voice(
+                    source: "mic", audio_file: "Source Audio/Microphone.m4a",
+                    machine_label: "In the room", name: nil,
+                    samples: [.init(start_ms: 12_000, end_ms: 17_000)]
+                ),
+                "system:1": TranscriptDocument.Voice(
+                    source: "system", audio_file: "Source Audio/Call.m4a",
+                    machine_label: "On the call", name: nil,
+                    samples: [.init(start_ms: 7_000, end_ms: 13_000)]
+                ),
+            ]
+            try TranscriptStore(session: session).write(TranscriptDocument(
+                schema_version: 1,
+                engine: "parakeet", model: "tdt-0.6b-v3", diarizer: nil,
+                created_at: "2026-08-19T12:00:00Z", voices: basicVoices,
+                segments: []
+            ))
+            try render("review-speakers")
+
             let voices = [
                 "mic:1": TranscriptDocument.Voice(
                     source: "mic", audio_file: "Source Audio/Microphone.m4a",
@@ -59,21 +100,7 @@ struct PreviewVoices: ParsableCommand {
                 segments: []
             )
             try TranscriptStore(session: session).write(transcript)
-
-            for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
-                let selectedAppearance = NSAppearance(named: appearance)
-                let controller = try VoiceReviewWindowController(
-                    session: session,
-                    isRecording: { false },
-                    appearance: selectedAppearance
-                )
-                guard let view = controller.window?.contentView else { continue }
-                view.layoutSubtreeIfNeeded()
-                guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { continue }
-                view.cacheDisplay(in: view.bounds, to: bitmap)
-                guard let png = bitmap.representation(using: .png, properties: [:]) else { continue }
-                try png.write(to: output.appendingPathComponent("\(name)-identify-voices.png"))
-            }
+            try render("identify-voices")
         }
     }
 }

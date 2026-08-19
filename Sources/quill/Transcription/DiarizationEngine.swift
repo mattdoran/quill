@@ -97,9 +97,7 @@ actor DiarizationEngine {
     ) -> [String] {
         guard !spans.isEmpty else { return segments.map { _ in solo } }
 
-        let dominant = segments.map { segment in
-            Self.dominantSpeaker(from: segment.start, to: segment.end, spans: spans)
-        }
+        let dominant = assignments(for: segments, spans: spans)
 
         var ordinal: [Int: Int] = [:]
         for speaker in dominant {
@@ -112,6 +110,14 @@ actor DiarizationEngine {
         return dominant.map { speaker in
             guard let speaker, let n = ordinal[speaker] else { return shared }
             return "\(shared) \(n)"
+        }
+    }
+
+    static func assignments(
+        for segments: [TranscriptSegment], spans: [Span]
+    ) -> [Int?] {
+        segments.map { segment in
+            Self.dominantSpeaker(from: segment.start, to: segment.end, spans: spans)
         }
     }
 

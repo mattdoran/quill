@@ -11,7 +11,7 @@ enum AudioRetention {
     }
 
     static func clean(session: URL, now: Date = Date()) {
-        let transcript = session.appendingPathComponent("transcript.json")
+        let transcript = SessionFiles.transcriptJSON(session)
         guard FileManager.default.fileExists(atPath: transcript.path) else { return }
 
         switch Config.audioRetention() {
@@ -26,7 +26,7 @@ enum AudioRetention {
         }
 
         for name in [
-            "mic.caf", "system.caf", "mic-cleaned.caf", "Source Audio",
+            "Source Audio",
         ] {
             let audio = session.appendingPathComponent(name)
             guard FileManager.default.fileExists(atPath: audio.path) else { continue }
@@ -54,7 +54,7 @@ enum AudioRetention {
 
     private static func log(_ session: URL, _ message: String) {
         let line = "\(ISO8601DateFormatter().string(from: Date())) \(message)\n"
-        let url = session.appendingPathComponent("transcribe.log")
+        let url = SessionFiles.transcriptionLog(session)
         if let handle = FileHandle(forWritingAtPath: url.path) {
             handle.seekToEndOfFile()
             handle.write(Data(line.utf8))

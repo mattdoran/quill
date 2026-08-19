@@ -5,18 +5,8 @@ struct MeetingCompanionState: Equatable, Sendable {
         case hidden
         case detected(application: CallApplication, token: UUID)
         case starting(application: CallApplication?)
-        case recording(
-            application: CallApplication?,
-            elapsed: String,
-            profile: MeetingProfile,
-            voiceControlVisible: Bool
-        )
-        case possibleEnd(
-            application: CallApplication,
-            elapsed: String,
-            profile: MeetingProfile,
-            voiceControlVisible: Bool
-        )
+        case recording(application: CallApplication?, elapsed: String)
+        case possibleEnd(application: CallApplication, elapsed: String)
         case finalizing
         case processing
         case ready(transcript: URL)
@@ -27,12 +17,12 @@ struct MeetingCompanionState: Equatable, Sendable {
         case callDetected(CallApplication, token: UUID)
         case callEnded(CallApplication)
         case callRecovered(CallApplication)
+        case keepRecording
         case startRequested(CallApplication?)
-        case recordingStarted(CallApplication?, profile: MeetingProfile)
+        case recordingStarted(CallApplication?)
         case elapsed(String)
-        case profileChanged(MeetingProfile)
         case stopRequested
-        case finalizationFinished(transcriptionEnabled: Bool)
+        case finalizationFinished
         case transcriptReady(URL)
         case failed(String)
         case dismissed
@@ -60,103 +50,54 @@ struct MeetingCompanionState: Equatable, Sendable {
             switch phase {
             case .detected(let detected, _) where detected == application:
                 phase = .hidden
-            case .recording(let bound, let elapsed, let profile, let visible)
+            case .recording(let bound, let elapsed)
                 where bound == application:
-                phase = .possibleEnd(
-                    application: application,
-                    elapsed: elapsed,
-                    profile: profile,
-                    voiceControlVisible: visible
-                )
+                phase = .possibleEnd(application: application, elapsed: elapsed)
             default:
                 if
-                    case .recording(let bound, let elapsed, let profile, let visible) =
+                    case .recording(let bound, let elapsed) =
                         dismissedLivePhase,
                     bound == application
                 {
-                    dismissedLivePhase = .possibleEnd(
-                        application: application,
-                        elapsed: elapsed,
-                        profile: profile,
-                        voiceControlVisible: visible
-                    )
+                    dismissedLivePhase = .possibleEnd(application: application, elapsed: elapsed)
                 }
             }
 
         case .callRecovered(let application):
             if
-                case .possibleEnd(let bound, let elapsed, let profile, let visible) = phase,
+                case .possibleEnd(let bound, let elapsed) = phase,
                 bound == application
             {
-                phase = .recording(
-                    application: application,
-                    elapsed: elapsed,
-                    profile: profile,
-                    voiceControlVisible: visible
-                )
+                phase = .recording(application: application, elapsed: elapsed)
             } else if
-                case .possibleEnd(let bound, let elapsed, let profile, let visible) =
+                case .possibleEnd(let bound, let elapsed) =
                     dismissedLivePhase,
                 bound == application
             {
-                dismissedLivePhase = .recording(
-                    application: application,
-                    elapsed: elapsed,
-                    profile: profile,
-                    voiceControlVisible: visible
-                )
+                dismissedLivePhase = .recording(application: application, elapsed: elapsed)
             }
+
+        case .keepRecording:
+            guard
+                case .possibleEnd(let application, let elapsed) = phase
+            else { return }
+            phase = .recording(application: application, elapsed: elapsed)
 
         case .startRequested(let application):
             wasDismissedDuringSession = false
             phase = .starting(application: application)
 
-        case .recordingStarted(let application, let profile):
-            phase = .recording(
-                application: application,
-                elapsed: "0:00",
-                profile: profile,
-                voiceControlVisible: profile != .neither
-            )
+        case .recordingStarted(let application):
+            phase = .recording(application: application, elapsed: "0:00")
 
         case .elapsed(let elapsed):
             switch phase {
-            case .recording(let application, _, let profile, let visible):
-                phase = .recording(
-                    application: application,
-                    elapsed: elapsed,
-                    profile: profile,
-                    voiceControlVisible: visible
-                )
-            case .possibleEnd(let application, _, let profile, let visible):
-                phase = .possibleEnd(
-                    application: application,
-                    elapsed: elapsed,
-                    profile: profile,
-                    voiceControlVisible: visible
-                )
+            case .recording(let application, _):
+                phase = .recording(application: application, elapsed: elapsed)
+            case .possibleEnd(let application, _):
+                phase = .possibleEnd(application: application, elapsed: elapsed)
             default:
                 dismissedLivePhase = dismissedLivePhase?.updatingElapsed(elapsed)
-            }
-
-        case .profileChanged(let profile):
-            switch phase {
-            case .recording(let application, let elapsed, _, _):
-                phase = .recording(
-                    application: application,
-                    elapsed: elapsed,
-                    profile: profile,
-                    voiceControlVisible: true
-                )
-            case .possibleEnd(let application, let elapsed, _, _):
-                phase = .possibleEnd(
-                    application: application,
-                    elapsed: elapsed,
-                    profile: profile,
-                    voiceControlVisible: true
-                )
-            default:
-                dismissedLivePhase = dismissedLivePhase?.updatingProfile(profile)
             }
 
         case .stopRequested:
@@ -167,9 +108,9 @@ struct MeetingCompanionState: Equatable, Sendable {
             guard phase.isLiveRecording else { return }
             phase = .finalizing
 
-        case .finalizationFinished(let transcriptionEnabled):
+        case .finalizationFinished:
             guard case .finalizing = phase else { return }
-            phase = transcriptionEnabled ? .processing : .hidden
+            phase = .processing
 
         case .transcriptReady(let transcript):
             guard !wasDismissedDuringSession else { return }
@@ -219,41 +160,10 @@ private extension MeetingCompanionState.Phase {
 
     func updatingElapsed(_ elapsed: String) -> Self {
         switch self {
-        case .recording(let application, _, let profile, let visible):
-            .recording(
-                application: application,
-                elapsed: elapsed,
-                profile: profile,
-                voiceControlVisible: visible
-            )
-        case .possibleEnd(let application, _, let profile, let visible):
-            .possibleEnd(
-                application: application,
-                elapsed: elapsed,
-                profile: profile,
-                voiceControlVisible: visible
-            )
-        default:
-            self
-        }
-    }
-
-    func updatingProfile(_ profile: MeetingProfile) -> Self {
-        switch self {
-        case .recording(let application, let elapsed, _, _):
-            .recording(
-                application: application,
-                elapsed: elapsed,
-                profile: profile,
-                voiceControlVisible: true
-            )
-        case .possibleEnd(let application, let elapsed, _, _):
-            .possibleEnd(
-                application: application,
-                elapsed: elapsed,
-                profile: profile,
-                voiceControlVisible: true
-            )
+        case .recording(let application, _):
+            .recording(application: application, elapsed: elapsed)
+        case .possibleEnd(let application, _):
+            .possibleEnd(application: application, elapsed: elapsed)
         default:
             self
         }

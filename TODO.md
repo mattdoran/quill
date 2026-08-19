@@ -28,10 +28,9 @@ Work that remains. Product and architecture decisions live in
       recording, recovered-end, stopping, short processing and ready states.
       Verify non-activation, full-screen Spaces, multiple displays, VoiceOver
       and the ten-second handoff before replacing native call prompts.
-- [x] **Snapshot optional voice separation per recording.** Use `Off`, `On the
-      call`, `In the room` and `Both`; selection never
-      blocks recording, both tracks are always captured, and queued processing
-      reads the profile from `meta.json`.
+- [x] **Move speaker separation into transcript review.** Recording and initial
+      transcription have no meeting profile. Optional review diarises both
+      retained source tracks without rerunning speech recognition.
 - [x] **Finish stopped recordings as M4A.** Prove packet-preserving
       CAF-to-M4A conversion with Apple media APIs. Publish `Meeting Audio.m4a`
       plus separate source tracks only after duration verification, update

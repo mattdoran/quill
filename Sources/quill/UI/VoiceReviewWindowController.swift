@@ -15,6 +15,12 @@ private final class VoiceReviewRootView: NSView {
 
 @MainActor
 final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate {
+    private enum SeparationState {
+        case idle
+        case separating
+        case failed(String)
+    }
+
     private struct Row {
         let voiceID: String
         let field: NSTextField
@@ -23,7 +29,9 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate {
     private let session: URL
     private var transcript: TranscriptDocument
     private let isRecording: () -> Bool
+    private let separateSpeakers: () async throws -> Void
     private var rows: [Row] = []
+    private var separationState = SeparationState.idle
     private var player: AVAudioPlayer?
     private var stopTimer: Timer?
     private var nextSampleIndex: [String: Int] = [:]
@@ -35,20 +43,25 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate {
     init(
         session: URL,
         isRecording: @escaping () -> Bool,
+        separateSpeakers: @escaping () async throws -> Void,
         appearance: NSAppearance? = nil
     ) throws {
         self.session = session
         self.transcript = try TranscriptStore(session: session).read()
         self.isRecording = isRecording
+        self.separateSpeakers = separateSpeakers
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 540, height: 540),
+            contentRect: NSRect(
+                x: 0, y: 0, width: 540,
+                height: transcript.diarizer == nil ? 230 : 540
+            ),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
         )
         window.appearance = appearance
-        window.title = "Identify Voices"
+        window.title = "Review Speakers"
         window.isReleasedWhenClosed = false
         super.init(window: window)
         window.delegate = self
@@ -67,7 +80,14 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) { stopPlayback() }
 
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        if case .separating = separationState { return false }
+        return true
+    }
+
     private func buildContent() -> NSView {
+        rows = []
+        guard transcript.diarizer != nil else { return buildSeparationContent() }
         let root = VoiceReviewRootView()
 
         let title = NSTextField(labelWithString: transcript.unidentifiedVoiceIDs.isEmpty
@@ -127,6 +147,140 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate {
             buttons.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -22),
         ])
         return root
+    }
+
+    private func buildSeparationContent() -> NSView {
+        let root = VoiceReviewRootView()
+        let title = NSTextField(labelWithString: "Review Speakers")
+        title.font = .systemFont(ofSize: 22, weight: .semibold)
+        let sessionLabel = NSTextField(labelWithString: SessionName.dated(session))
+        sessionLabel.textColor = .secondaryLabelColor
+
+        let status: NSTextField
+        let detail: NSTextField
+        let primary: NSButton?
+        switch separationState {
+        case .idle:
+            status = NSTextField(labelWithString: "Separate individual speakers?")
+            detail = NSTextField(wrappingLabelWithString: sourceAudioAvailable
+                ? "Quill currently groups everyone in the room together and everyone on the call together."
+                : "Source audio is no longer available, so this transcript cannot be reprocessed."
+            )
+            let button = NSButton(
+                title: "Separate Speakers",
+                target: self,
+                action: #selector(separateClicked)
+            )
+            button.bezelStyle = .rounded
+            button.keyEquivalent = "\r"
+            button.isEnabled = sourceAudioAvailable
+            button.toolTip = sourceAudioAvailable ? nil
+                : "Source audio is no longer available"
+            primary = button
+        case .separating:
+            status = NSTextField(labelWithString: "Separating speakers…")
+            detail = NSTextField(wrappingLabelWithString:
+                "This may take a few minutes. Keep this window open while Quill analyses the recording."
+            )
+            primary = nil
+        case .failed(let message):
+            status = NSTextField(labelWithString: "Couldn’t separate speakers")
+            detail = NSTextField(wrappingLabelWithString:
+                "Your existing transcript is unchanged.\n\(message)"
+            )
+            let button = NSButton(title: "Retry", target: self, action: #selector(separateClicked))
+            button.bezelStyle = .rounded
+            primary = button
+        }
+        status.font = .systemFont(ofSize: 15, weight: .semibold)
+        detail.textColor = .secondaryLabelColor
+
+        let close = NSButton(title: "Close", target: self, action: #selector(cancelClicked))
+        close.keyEquivalent = "\u{1b}"
+        if case .separating = separationState { close.isEnabled = false }
+        let buttons = NSStackView(views: [close] + (primary.map { [$0] } ?? []))
+        buttons.orientation = .horizontal
+        buttons.spacing = 8
+
+        let statusRow: NSStackView
+        if case .separating = separationState {
+            let spinner = NSProgressIndicator()
+            spinner.style = .spinning
+            spinner.controlSize = .small
+            spinner.startAnimation(nil)
+            statusRow = NSStackView(views: [spinner, status])
+            statusRow.spacing = 8
+            statusRow.alignment = .centerY
+        } else {
+            statusRow = NSStackView(views: [status])
+        }
+        let content = NSStackView(views: [statusRow, detail])
+        content.orientation = .vertical
+        content.alignment = .leading
+        content.spacing = 8
+
+        for view in [title, sessionLabel, content, buttons] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            root.addSubview(view)
+        }
+        NSLayoutConstraint.activate([
+            title.topAnchor.constraint(equalTo: root.topAnchor, constant: 26),
+            title.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 28),
+            title.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -28),
+            sessionLabel.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 6),
+            sessionLabel.leadingAnchor.constraint(equalTo: title.leadingAnchor),
+            content.topAnchor.constraint(equalTo: sessionLabel.bottomAnchor, constant: 22),
+            content.leadingAnchor.constraint(equalTo: title.leadingAnchor),
+            content.trailingAnchor.constraint(equalTo: title.trailingAnchor),
+            buttons.trailingAnchor.constraint(equalTo: title.trailingAnchor),
+            buttons.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -22),
+        ])
+        return root
+    }
+
+    private var sourceAudioAvailable: Bool {
+        !transcript.voices.isEmpty && transcript.voices.values.allSatisfy {
+            sourceURL(for: $0) != nil
+        }
+    }
+
+    private func refreshContent() {
+        let isSeparating: Bool
+        if case .separating = separationState { isSeparating = true } else { isSeparating = false }
+        window?.standardWindowButton(.closeButton)?.isEnabled = !isSeparating
+        window?.setContentSize(NSSize(
+            width: 540,
+            height: transcript.diarizer == nil ? 230 : 540
+        ))
+        window?.contentView = buildContent()
+    }
+
+    @objc private func separateClicked() {
+        guard sourceAudioAvailable else { return }
+        if isRecording() {
+            let alert = NSAlert()
+            alert.messageText = "Finish the recording first"
+            alert.informativeText =
+                "Speaker analysis will be available when the current recording ends."
+            alert.runModal()
+            return
+        }
+
+        separationState = .separating
+        refreshContent()
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await separateSpeakers()
+                transcript = try TranscriptStore(session: session).read()
+                separationState = .idle
+                refreshContent()
+                rows.first?.field.window?.makeFirstResponder(rows.first?.field)
+            } catch {
+                separationState = .failed(error.localizedDescription)
+                if window?.isVisible == true { refreshContent() }
+            }
+        }
     }
 
     private func makeRow(id: String, voice: TranscriptDocument.Voice) -> NSView {

@@ -5,7 +5,7 @@ struct TranscriptDocument: Codable, Sendable {
 
     struct Segment: Codable, Sendable {
         var speaker: String
-        let voice_id: String?
+        var voice_id: String?
         let start_ms: Int
         let end_ms: Int
         let text: String
@@ -47,17 +47,6 @@ struct TranscriptDocument: Codable, Sendable {
             .filter { $0.value.name?.nilIfBlank == nil }
             .map(\.key)
             .sorted(by: Self.voiceOrder)
-    }
-
-    static func voiceIDs(
-        labels: [String], source: String, split: Bool, sharedLabel: String
-    ) -> [String: String] {
-        guard split else { return [:] }
-        var ids: [String: String] = [:]
-        for label in labels where label != sharedLabel && ids[label] == nil {
-            ids[label] = "\(source):\(ids.count + 1)"
-        }
-        return ids
     }
 
     mutating func applyVoiceNames(_ names: [String: String]) throws {
@@ -120,8 +109,8 @@ struct TranscriptStore {
 
     let session: URL
 
-    var jsonURL: URL { session.appendingPathComponent("transcript.json") }
-    var markdownURL: URL { session.appendingPathComponent("transcript.md") }
+    var jsonURL: URL { SessionFiles.transcriptJSON(session) }
+    var markdownURL: URL { SessionFiles.transcriptMarkdown(session) }
 
     func read() throws -> TranscriptDocument {
         try JSONDecoder().decode(TranscriptDocument.self, from: Data(contentsOf: jsonURL))
@@ -131,8 +120,9 @@ struct TranscriptStore {
         guard document.schema_version == TranscriptDocument.currentSchemaVersion else {
             throw StoreError.unsupportedSchema
         }
+        _ = try SessionFiles.prepare(session)
         let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         let oldJSON = try? Data(contentsOf: jsonURL)
         let oldMarkdown = try? Data(contentsOf: markdownURL)
         do {

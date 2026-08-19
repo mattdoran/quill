@@ -8,26 +8,31 @@ import Testing
         let session = try temporarySession()
         defer { try? FileManager.default.removeItem(at: session) }
 
-        let microphone = session.appendingPathComponent("mic.caf")
-        let call = session.appendingPathComponent("system.caf")
+        let microphone = SessionFiles.internalFile("mic.caf", in: session)
+        let call = SessionFiles.internalFile("system.caf", in: session)
         try writeAAC(to: microphone, channels: 1, seconds: 0.6, frequency: 330)
         try writeAAC(to: call, channels: 2, seconds: 0.5, frequency: 660)
         let microphoneLength = try AVAudioFile(forReading: microphone).length
         let callLength = try AVAudioFile(forReading: call).length
         try writeJSON(
             metadata(microphoneOffset: 0, callOffset: 100),
-            to: session.appendingPathComponent("meta.json")
+            to: SessionFiles.metadata(session)
         )
 
         try await AudioFinalizer.shared.finalize(session: session)
         try await AudioFinalizer.shared.finalize(session: session)
 
-        let published = try readJSON(session.appendingPathComponent("meta.json"))
+        let published = try readJSON(SessionFiles.metadata(session))
         let files = try #require(published["files"] as? [String: String])
         #expect(files["mic"] == AudioFinalizer.microphonePath)
         #expect(files["system"] == AudioFinalizer.callPath)
         #expect(files["meeting"] == AudioFinalizer.meetingAudioPath)
         #expect(published["audio_state"] as? String == "finalized")
+        let metadataText = try String(
+            contentsOf: SessionFiles.metadata(session),
+            encoding: .utf8
+        )
+        #expect(!metadataText.contains("\\/"))
         #expect(!FileManager.default.fileExists(atPath: microphone.path))
         #expect(!FileManager.default.fileExists(atPath: call.path))
 
@@ -37,6 +42,11 @@ import Testing
         #expect(try AVAudioFile(forReading: finalMicrophone).length == microphoneLength)
         #expect(try AVAudioFile(forReading: finalCall).length == callLength)
         #expect(try AVAudioFile(forReading: meeting).length > 0)
+        let rootItems = try FileManager.default.contentsOfDirectory(
+            at: session,
+            includingPropertiesForKeys: nil
+        ).map(\.lastPathComponent).sorted()
+        #expect(rootItems == [".quill", "Meeting Audio.m4a", "Source Audio"])
     }
 
     @Test func interruptedCaptureJournalRecoversBeforeFinalization() async throws {
@@ -44,7 +54,7 @@ import Testing
         defer { try? FileManager.default.removeItem(at: session) }
 
         try writeAAC(
-            to: session.appendingPathComponent("mic.caf"),
+            to: SessionFiles.internalFile("mic.caf", in: session),
             channels: 1,
             seconds: 0.4,
             frequency: 440
@@ -52,22 +62,24 @@ import Testing
         try writeJSON(
             [
                 "started": "2026-08-19T00:00:00Z",
-                "meeting_profile": "neither",
-                "files": ["mic": "mic.caf", "system": "system.caf"],
+                "files": [
+                    "mic": SessionFiles.internalPath("mic.caf"),
+                    "system": SessionFiles.internalPath("system.caf"),
+                ],
                 "start_offset_ms": ["mic": 0, "system": 0],
             ],
-            to: session.appendingPathComponent(RecordingSession.captureJournalName)
+            to: SessionFiles.captureJournal(session)
         )
 
         try await AudioFinalizer.shared.finalize(session: session)
 
-        let published = try readJSON(session.appendingPathComponent("meta.json"))
+        let published = try readJSON(SessionFiles.metadata(session))
         #expect(published["recovered_after_interruption"] as? Bool == true)
         let tracks = try #require(published["tracks"] as? [String: [String: Any]])
         #expect(tracks["mic"]?["gaps_known"] as? Bool == false)
         #expect(
             !FileManager.default.fileExists(
-                atPath: session.appendingPathComponent(RecordingSession.captureJournalName).path
+                atPath: SessionFiles.captureJournal(session).path
             )
         )
     }
@@ -76,11 +88,11 @@ import Testing
         let session = try temporarySession()
         defer { try? FileManager.default.removeItem(at: session) }
 
-        let microphone = session.appendingPathComponent("mic.caf")
+        let microphone = SessionFiles.internalFile("mic.caf", in: session)
         try Data("not audio".utf8).write(to: microphone)
         var json = metadata(microphoneOffset: 0, callOffset: 0)
-        json["files"] = ["mic": "mic.caf"]
-        try writeJSON(json, to: session.appendingPathComponent("meta.json"))
+        json["files"] = ["mic": SessionFiles.internalPath("mic.caf")]
+        try writeJSON(json, to: SessionFiles.metadata(session))
 
         var failed = false
         do {
@@ -91,9 +103,9 @@ import Testing
 
         #expect(failed)
         #expect(FileManager.default.fileExists(atPath: microphone.path))
-        let preserved = try readJSON(session.appendingPathComponent("meta.json"))
+        let preserved = try readJSON(SessionFiles.metadata(session))
         let files = try #require(preserved["files"] as? [String: String])
-        #expect(files["mic"] == "mic.caf")
+        #expect(files["mic"] == SessionFiles.internalPath("mic.caf"))
         #expect(preserved["audio_state"] == nil)
     }
 
@@ -103,6 +115,7 @@ import Testing
             isDirectory: true
         )
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        _ = try SessionFiles.prepare(root)
         return root
     }
 
@@ -111,12 +124,14 @@ import Testing
             "started": "2026-08-19T00:00:00Z",
             "ended": "2026-08-19T00:00:01Z",
             "duration_seconds": 1,
-            "meeting_profile": "neither",
-            "files": ["mic": "mic.caf", "system": "system.caf"],
+            "files": [
+                "mic": SessionFiles.internalPath("mic.caf"),
+                "system": SessionFiles.internalPath("system.caf"),
+            ],
             "start_offset_ms": ["mic": microphoneOffset, "system": callOffset],
             "tracks": [
-                "mic": ["file": "mic.caf", "gaps": []],
-                "system": ["file": "system.caf", "gaps": []],
+                "mic": ["file": SessionFiles.internalPath("mic.caf"), "gaps": []],
+                "system": ["file": SessionFiles.internalPath("system.caf"), "gaps": []],
             ],
         ]
     }

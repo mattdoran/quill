@@ -84,11 +84,11 @@ Each session lands in `~/Music/Quill/<yyyy.MM.dd-HHmm>/`:
 | `Source Audio/Microphone.m4a` | your side (default input device, AAC) |
 | `Source Audio/Call.m4a` | everything the Mac played - the other side of the call (AAC) |
 | `Source Audio/Microphone Cleaned.m4a` | microphone audio with correlated speaker playback removed (AAC) |
-| `meta.json` | start/end timestamps, duration, per-track start offsets, and per-track capture health |
-| `session.log` | devices, formats and every capture interruption during the recording |
-| `transcript.json` | canonical transcript — engine provenance + timed, speaker-tagged segments |
 | `transcript.md` | the same transcript rendered for reading |
-| `transcribe.log` | transcription progress/errors for this session |
+
+Quill keeps recovery data, metadata, canonical transcript JSON and logs inside
+the hidden `.quill/` directory. Finder therefore presents only the files a
+person is likely to open or share.
 
 Two source tracks on purpose: speech models do better on clean single-source
 audio, and microphone-vs-call gives useful separation without a
@@ -96,18 +96,18 @@ speaker-identification model. Quill records AAC into CAF while capture is live,
 so audio already written survives an interruption, then safely remuxes it into
 familiar M4A files after stop. An interrupted session is recovered on launch.
 
-Voice separation is optional and stays out of the recording flow by default.
-Choose **Separate Voices** in the menu for group calls, rooms, or both. When a
-track is actually split into several voices, **Identify Voices in Last
-Transcript…** plays short source-audio samples and applies the names you enter
-throughout both `transcript.json` and `transcript.md`.
+Quill first writes a useful transcript that distinguishes the room from the
+call. **Review Speakers in Last Transcript…** can then analyse both retained
+source tracks, separate individual speakers and play short samples for naming
+them. This optional work happens after transcription and never complicates
+recording.
 
 macOS changes audio devices out from under a live recording — a headset
 connecting takes the default input and output at once, and switching Bluetooth
 off stops the system tap dead. Both tracks are rebuilt on the new device and the
 outage is padded with silence, so the two tracks keep describing one timeline.
-Each track's `tracks.<name>` entry in `meta.json` carries `duration_seconds`
-against `captured_seconds` and the gaps between them; `session.log` says what
+Each track's `tracks.<name>` entry in `.quill/meta.json` carries `duration_seconds`
+against `captured_seconds` and the gaps between them; `.quill/session.log` says what
 happened.
 
 ## Transcription
@@ -128,8 +128,9 @@ The cleaned microphone and raw system tracks are transcribed separately,
 shifted by their start offsets so both share one clock, and merged by
 timestamp. Jobs run in a serial queue — you can start a new recording while
 the last one transcribes. Unfinished jobs resume on next launch (the filesystem
-is the queue: a session with `meta.json` but no `transcript.json` is pending).
-Failures append to the session's `transcribe.log` and never block later jobs.
+is the queue: a session with `.quill/meta.json` but no
+`.quill/transcript.json` is pending). Failures append to
+`.quill/transcribe.log` and never block later jobs.
 
 The engine sits behind a small protocol; a Whisper engine (WhisperKit
 large-v3-turbo) is planned as the fallback / re-transcription option.
@@ -141,7 +142,7 @@ At `~/Library/Application Support/Quill/config.json`:
 ```json
 {
   "recordings_dir": "~/Music/Quill",
-  "transcription": { "enabled": true, "engine": "parakeet" },
+  "transcription": { "engine": "parakeet" },
   "audio_retention": "indefinitely",
   "on_stop": "my-hook"
 }
@@ -161,15 +162,13 @@ application home for isolated development and tests.
   anyway, use **Change…** beside the folder in Settings rather than setting it
   here. Choosing through the open panel is what grants access. If access later
   breaks, **Change Recordings Folder…** also appears in the menu as recovery.
-- `transcription.enabled` — set `false` to just record.
 - `audio_retention`: `indefinitely` (the default), `30_days`, or
-  `after_transcription`. Deletion only applies after `transcript.json` exists.
+  `after_transcription`. Deletion only applies after `.quill/transcript.json` exists.
   It removes `Source Audio/` but retains `Meeting Audio.m4a`. The transcript
   cannot then be reprocessed and voice samples are unavailable.
 - `on_stop` — shell command spawned with the session directory as its
-  argument, **after the transcript is written** (or right after recording if
-  transcription is disabled). Wire it to whatever comes next: summarization,
-  filing, indexing.
+  argument after the transcript is written. Wire it to whatever comes next:
+  summarization, filing, indexing.
 
 ## CLI
 

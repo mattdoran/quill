@@ -18,13 +18,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private let identifyVoicesItem: NSMenuItem
     private let retryItem: NSMenuItem
     private let downloadModelsItem: NSMenuItem
-    private let meetingProfileItem: NSMenuItem
-    private var meetingProfileItems: [MeetingProfile: NSMenuItem] = [:]
-    private let transcribeItem: NSMenuItem
     private let openFolderItem: NSMenuItem
     private let changeFolderItem: NSMenuItem
     private let quitItem: NSMenuItem
-    private var recordingMeetingProfile: MeetingProfile?
     private var isRecording = false
     private var companionVisible = false
 
@@ -38,14 +34,12 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     var onRetryTranscription: (() -> Void)?
     var onDownloadModels: (() -> Void)?
     var onSettings: (() -> Void)?
-    var onMeetingProfileChanged: ((MeetingProfile) -> Void)?
     var onQuit: (() -> Void)?
 
     /// Whether a transcript exists to open, re-asked each time the menu opens
     /// rather than tracked, since transcription finishes on its own schedule.
     var hasTranscript: (() -> Bool)?
     var hasVoiceReview: (() -> Bool)?
-    var voiceReviewComplete: (() -> Bool)?
 
     /// Reported in the state line rather than as its own row: it is a
     /// condition, not a command, and Change Recordings Folder… below is the
@@ -126,7 +120,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menu.addItem(lastTranscriptItem)
 
         identifyVoicesItem = NSMenuItem(
-            title: "Identify Voices in Last Transcript…",
+            title: "Review Speakers in Last Transcript…",
             action: #selector(identifyVoicesClicked),
             keyEquivalent: ""
         )
@@ -156,42 +150,6 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
 
-        // Transcription is the master switch for the two settings below it, so
-        // it cannot sit under them.
-        transcribeItem = NSMenuItem(
-            title: "Transcribe After Recording",
-            action: #selector(transcribeClicked),
-            keyEquivalent: ""
-        )
-        transcribeItem.toolTip = """
-            Off means quill records only. Turning it back on transcribes the \
-            backlog the next time Quill starts.
-            """
-        menu.addItem(transcribeItem)
-
-        meetingProfileItem = NSMenuItem(
-            title: "Separate Voices",
-            action: nil,
-            keyEquivalent: ""
-        )
-        let profileMenu = NSMenu()
-        for profile in MeetingProfile.allCases {
-            let item = NSMenuItem(
-                title: profile.title,
-                action: #selector(meetingProfileClicked(_:)),
-                keyEquivalent: ""
-            )
-            item.representedObject = profile.rawValue
-            profileMenu.addItem(item)
-            meetingProfileItems[profile] = item
-        }
-        meetingProfileItem.submenu = profileMenu
-        meetingProfileItem.toolTip =
-            "Choose where Quill should label people separately in the transcript."
-        menu.addItem(meetingProfileItem)
-
-        menu.addItem(.separator())
-
         let settings = NSMenuItem(
             title: "Settings…",
             action: #selector(settingsClicked),
@@ -217,17 +175,13 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
         for item in [
             toggleItem, showControlsItem, openFolderItem, changeFolderItem, quitItem,
-            transcribeItem, lastTranscriptItem, identifyVoicesItem, about, retryItem,
+            lastTranscriptItem, identifyVoicesItem, about, retryItem,
             downloadModelsItem,
             transcriptionLabel,
             settings,
         ] {
             item.target = self
         }
-        for item in meetingProfileItems.values {
-            item.target = self
-        }
-
         menu.delegate = self
         statusItem.menu = menu
         // Keeps the item where the user dragged it, across launches.
@@ -297,11 +251,6 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         }
     }
 
-    func updateMeetingProfile(_ profile: MeetingProfile?) {
-        recordingMeetingProfile = profile
-        refreshSettings()
-    }
-
     func updateCompanionVisible(_ visible: Bool) {
         companionVisible = visible
         refreshCompanionRecovery()
@@ -358,9 +307,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         let hasVoiceReview = hasVoiceReview?() ?? false
         identifyVoicesItem.isHidden = !hasVoiceReview
         identifyVoicesItem.isEnabled = hasVoiceReview && !isRecording
-        identifyVoicesItem.title = (voiceReviewComplete?() ?? false)
-            ? "Edit Voice Names in Last Transcript…"
-            : "Identify Voices in Last Transcript…"
+        identifyVoicesItem.title = "Review Speakers in Last Transcript…"
         openFolderItem.toolTip = recordingsPath?()
     }
 
@@ -423,31 +370,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     /// Reads the checkmarks back from disk, so the menu agrees with what is
     /// stored rather than with whatever was last clicked.
     private func refreshSettings() {
-        let profile = recordingMeetingProfile ?? Config.meetingProfile()
-        meetingProfileItem.title = "Separate Voices: \(profile.title)"
-        for (candidate, item) in meetingProfileItems {
-            item.state = candidate == profile ? .on : .off
-        }
-        let transcribing = Config.transcriptionEnabled()
-        transcribeItem.state = transcribing ? .on : .off
     }
 
     private func refreshCompanionRecovery() {
         showControlsItem.isHidden = !isRecording || companionVisible
-    }
-
-    @objc private func meetingProfileClicked(_ sender: NSMenuItem) {
-        guard
-            let rawValue = sender.representedObject as? String,
-            let profile = MeetingProfile(rawValue: rawValue)
-        else { return }
-        onMeetingProfileChanged?(profile)
-        refreshSettings()
-    }
-
-    @objc private func transcribeClicked() {
-        Config.setTranscriptionEnabled(transcribeItem.state != .on)
-        refreshSettings()
     }
 
     @objc private func settingsClicked() { onSettings?() }

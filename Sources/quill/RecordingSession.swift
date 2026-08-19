@@ -1,16 +1,10 @@
 import Foundation
 
-/// One meeting recording: a timestamped folder holding two independent tracks
-/// (mic = you, system = them), a session.log, and a meta.json written on clean
-/// stop. Tracks are separate on purpose — whisper does better on clean
-/// single-source audio, and two tracks give free two-party diarization.
+/// One meeting recording with independent microphone and computer-audio tracks.
 @MainActor
 final class RecordingSession {
-    nonisolated static let captureJournalName = "capture.json"
-
     let dir: URL
     let startedAt = Date()
-    private(set) var meetingProfile: MeetingProfile
 
     /// Set the first time a track is interrupted and never cleared: the
     /// recording can no longer be assumed complete, even though capture came
@@ -56,8 +50,7 @@ final class RecordingSession {
 
     /// Create the session folder under `root` (yyyy.MM.dd-HHmm, suffixed on
     /// collision) without starting capture yet.
-    init(root: URL, meetingProfile: MeetingProfile) throws {
-        self.meetingProfile = meetingProfile
+    init(root: URL) throws {
         let base = Self.folderFormat.string(from: startedAt)
         var candidate = root.appendingPathComponent(base, isDirectory: true)
         var n = 2
@@ -66,18 +59,9 @@ final class RecordingSession {
             n += 1
         }
         try FileManager.default.createDirectory(at: candidate, withIntermediateDirectories: true)
+        _ = try SessionFiles.prepare(candidate)
         dir = candidate
         log = SessionLog(dir: candidate)
-    }
-
-    func updateMeetingProfile(_ profile: MeetingProfile) {
-        meetingProfile = profile
-        log.log("meeting profile changed to \(profile.rawValue)")
-        do {
-            try publishCaptureJournal()
-        } catch {
-            log.warn("couldn't update capture journal: \(error)")
-        }
     }
 
     /// Start both tracks. If the mic fails after the system tap started, the
@@ -90,8 +74,8 @@ final class RecordingSession {
         )
         deviceWatcher = AudioDevices.Watcher(log: log)
 
-        system.prepare(writingTo: dir.appendingPathComponent("system.caf"), log: log)
-        try mic.prepare(writingTo: dir.appendingPathComponent("mic.caf"), log: log)
+        system.prepare(writingTo: SessionFiles.internalFile("system.caf", in: dir), log: log)
+        try mic.prepare(writingTo: SessionFiles.internalFile("mic.caf", in: dir), log: log)
 
         let systemSupervisor = supervise(system)
         let micSupervisor = supervise(mic)
@@ -149,8 +133,10 @@ final class RecordingSession {
             "started": iso.string(from: startedAt),
             "ended": iso.string(from: ended),
             "duration_seconds": Int(ended.timeIntervalSince(startedAt)),
-            "meeting_profile": meetingProfile.rawValue,
-            "files": ["mic": "mic.caf", "system": "system.caf"],
+            "files": [
+                "mic": SessionFiles.internalPath("mic.caf"),
+                "system": SessionFiles.internalPath("system.caf"),
+            ],
             "start_offset_ms": [
                 "mic": Int(micStart.timeIntervalSince(earliest) * 1000),
                 "system": Int(systemStart.timeIntervalSince(earliest) * 1000),
@@ -158,24 +144,28 @@ final class RecordingSession {
             // `captured_seconds` excludes silence padded over gaps, so a track
             // that runs full length but recorded three minutes says so.
             "tracks": [
-                "mic": trackMeta(file: "mic.caf", duration: mic.duration, gaps: mic.gaps),
+                "mic": trackMeta(
+                    file: SessionFiles.internalPath("mic.caf"),
+                    duration: mic.duration,
+                    gaps: mic.gaps
+                ),
                 "system": trackMeta(
-                    file: "system.caf", duration: system.duration, gaps: system.gaps
+                    file: SessionFiles.internalPath("system.caf"),
+                    duration: system.duration,
+                    gaps: system.gaps
                 ),
             ],
         ]
         do {
             let data = try JSONSerialization.data(
                 withJSONObject: meta,
-                options: [.prettyPrinted, .sortedKeys]
+                options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
             )
             try data.write(
-                to: dir.appendingPathComponent("meta.json"),
+                to: SessionFiles.metadata(dir),
                 options: .atomic
             )
-            try? FileManager.default.removeItem(
-                at: dir.appendingPathComponent(Self.captureJournalName)
-            )
+            try? FileManager.default.removeItem(at: SessionFiles.captureJournal(dir))
         } catch {
             log.warn("couldn't publish meta.json: \(error)")
             log.close()
@@ -215,8 +205,10 @@ final class RecordingSession {
         let earliest = min(mic.firstBufferAt ?? startedAt, system.firstBufferAt ?? startedAt)
         let journal: [String: Any] = [
             "started": ISO8601DateFormatter().string(from: startedAt),
-            "meeting_profile": meetingProfile.rawValue,
-            "files": ["mic": "mic.caf", "system": "system.caf"],
+            "files": [
+                "mic": SessionFiles.internalPath("mic.caf"),
+                "system": SessionFiles.internalPath("system.caf"),
+            ],
             "start_offset_ms": [
                 "mic": Int((mic.firstBufferAt ?? earliest).timeIntervalSince(earliest) * 1000),
                 "system": Int(
@@ -226,10 +218,10 @@ final class RecordingSession {
         ]
         let data = try JSONSerialization.data(
             withJSONObject: journal,
-            options: [.prettyPrinted, .sortedKeys]
+            options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         )
         try data.write(
-            to: dir.appendingPathComponent(Self.captureJournalName),
+            to: SessionFiles.captureJournal(dir),
             options: .atomic
         )
     }

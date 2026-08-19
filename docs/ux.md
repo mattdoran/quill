@@ -8,8 +8,9 @@ everything else is what ships today.
 
 1. **The menu bar reports one thing: whether quill is recording.** Nothing else
    ever changes the icon. Transcription, downloads and queues live in the menu.
-2. **Nothing animates.** Nothing in the macOS menu bar blinks, and the elapsed
-   counter is already the motion that catches the eye.
+2. **Nothing animates without conveying state.** Nothing in the macOS menu bar
+   blinks. The detected-meeting deadline bar is the exception because it shows
+   when an unanswered prompt will disappear.
 3. **State differs in shape before it differs in colour.** Colour alone is one
    state to a colourblind user, in the strip of screen with the least contrast.
 4. **Quill interrupts only when acting in the next minute changes the outcome.**
@@ -73,11 +74,8 @@ Quill is idle                                       ⟨disabled⟩
 ────────────────────────────────────────────
 Start Recording
 Open Last Transcript
-Identify Voices in Last Transcript…
+Review Speakers in Last Transcript…
 Open Recordings Folder
-────────────────────────────────────────────
-Transcribe After Recording                       ✓
-Separate Voices: Off                             ›
 ────────────────────────────────────────────
 Settings…
 About Quill
@@ -85,10 +83,9 @@ Quit Quill                                      ⌘Q
 ```
 
 `Open Last Transcript` is disabled when no session has a `transcript.md`.
-`Identify Voices in Last Transcript…` is hidden until the newest compatible
-transcript has separated voice IDs. It is disabled during recording so sample
-playback cannot enter the capture. After all names are filled, it becomes `Edit
-Voice Names in Last Transcript…`.
+`Review Speakers in Last Transcript…` is hidden until the newest compatible
+transcript exists. It is disabled during recording so sample playback cannot
+enter the capture.
 `Retry Transcription` and `Download Transcription Models` are hidden unless they
 apply, and appear in the status block at the top. `Change Recordings Folder…`
 appears below `Open Recordings Folder` only when Quill cannot read that folder.
@@ -100,11 +97,8 @@ Recording — 12:03                                   ⟨disabled⟩
 ────────────────────────────────────────────
 Stop Recording
 Open Last Transcript
-Identify Voices in Last Transcript…                    ⟨disabled⟩
+Review Speakers in Last Transcript…                    ⟨disabled⟩
 Open Recordings Folder
-────────────────────────────────────────────
-Transcribe After Recording                       ✓
-Separate Voices: Off                             ›
 ────────────────────────────────────────────
 Settings…
 About Quill
@@ -115,41 +109,6 @@ During audio-device attachment, the status line reads `Starting recording…`
 and the command beneath it reads `Starting Recording…` disabled. The menu-bar
 glyph changes immediately, but its title stays empty so startup does not widen
 and then shrink the status item.
-
-Nothing in the settings block greys out while recording. Every item there is
-settable mid-meeting; they differ only in when the setting takes effect, which
-is a job for the tooltip, not for a grey row.
-
-### The settings block: ordering and greying
-
-Two persistent controls, one block: whether to transcribe, then where multiple
-people are for the next recording.
-
-| Order | Item | Why here |
-|---|---|---|
-| 1 | `Transcribe After Recording` | Controls whether queued processing runs. |
-| 2 | `Separate Voices` | Submenu: `Off`, `On the call`, `In the room`, `Both`. Snapshotted into the recording and changeable while recording. |
-
-Decisions this settles:
-
-- **One block, not separate settings.** Both answer what Quill should
-  do with the next recording. They persist until changed, but they are kept in
-  the operational surface because physical setup and meeting type change.
-  Splitting them by which subsystem reads them is an implementation detail
-  leaking into a menu.
-- **The profile remains enabled when transcription is off.** It belongs to the
-  recording and may be used if queued transcription is enabled later. Greying
-  it would prevent an accurate snapshot for no operational reason.
-- **One optional choice replaces two implementation toggles.** `Separate
-  Voices` directly controls which captured tracks need voice separation. `Off`
-  preserves the simple path and avoids running diarization needlessly.
-- **No section headers.** `NSMenuItem.sectionHeader(title:)` exists on macOS 14+
-  and is not warranted for three items already fenced by separators. Any honest
-  header text is either redundant with the position or vague, and headers on a
-  fifteen-item menu make it look like the preferences pane this app refuses to
-  have. Indentation under the master (`NSMenuItem.indentationLevel`) was
-  considered and dropped: greying the dependants already carries the
-  relationship, so the indent adds layout risk for nothing.
 
 ### Recording, degraded
 
@@ -205,8 +164,6 @@ Menu tooltips explain controls without opening Settings. Verbatim:
 |---|---|
 | Open Recordings Folder | *(the resolved path, e.g.)* `/Users/matt/Recordings` |
 | Change Recordings Folder… | `Pick where recordings are saved. Choosing a folder here is also how macOS grants access to protected places like Documents.` |
-| Separate Voices | `Choose where Quill should label people separately in the transcript.` |
-| Transcribe After Recording | `Off means quill records only. Turning it back on transcribes the backlog the next time Quill starts.` |
 | Stop Recording and Quit | `Ends the current recording. Transcription resumes the next time Quill starts.` |
 | Quit Quill *(while transcribing)* | `Transcription resumes the next time Quill starts.` |
 
@@ -340,8 +297,8 @@ requested merely because Quill launched.
 | Second and later faults on the same track | Once per track per session. |
 | Each queued transcription starting | Only completion speaks. |
 | Model download starting or finishing | Menu line only. |
-| A track skipped as missing or empty during transcription | `transcribe.log`. |
-| Diarization failing | It degrades to the flat label and the transcript still exists. Log only. |
+| A track skipped as missing or empty during transcription | `.quill/transcribe.log`. |
+| Speaker separation failing | The review window preserves the baseline transcript and offers Retry. |
 | Anything at launch | Including the notification permission prompt. It is asked at the first stable call or first recording, when the reason is visible. |
 
 ## 5. Config
@@ -353,8 +310,7 @@ which subsystem reads the value.
 
 | Setting | Home | Why |
 |---|---|---|
-| Voice separation | Menu | `Off`, `On the call`, `In the room`, or `Both`. It is optional and snapshotted per recording. |
-| Transcribe after recording | Menu | An operational switch used before a recording. A second label in Settings made one value look like two behaviours. |
+| Speaker review | Task-scoped review window | Optional enrichment after the baseline transcript exists. |
 | Open at login | Settings | Durable application lifecycle behaviour, backed by `SMAppService`, not a meeting control. `install --launch-at-login` remains a thin wrapper over the same call. |
 | Recordings folder | Settings + conditional menu recovery | Settings owns the persistent location. `Change Recordings Folder…` appears in the menu only when folder access is broken, because choosing through the panel is also the permission repair. |
 | Audio retention | Settings | The choice can irreversibly delete source audio and needs explanatory copy plus confirmation. |
@@ -370,9 +326,8 @@ The Settings window is three administrative groups:
 3. **Transcription:** static engine identity; model status and expected or
    installed size; Download / Remove
 
-Voice separation remains in the menu. It never expands the meeting companion
-or blocks recording. All values share one file at
-`~/Library/Application Support/Quill/config.json`.
+Recording always produces a transcript. Speaker separation has no persistent
+setting in this slice and stores its result in the transcript document.
 
 ### Audio retention
 
@@ -381,7 +336,7 @@ verification and future re-transcription, so Quill never removes them without
 an explicit user choice.
 
 Both destructive choices require confirmation when selected. `Keep for 30 days`
-uses `created_at` from `transcript.json`, falling back to its modification date
+uses `created_at` from `.quill/transcript.json`, falling back to its modification date
 for older transcripts. `Delete after transcription` becomes eligible as soon as
 that file exists. In both cases Quill deletes `Source Audio/` and any legacy CAF
 working files. `Meeting Audio.m4a`, metadata, logs and transcripts remain.
@@ -398,7 +353,7 @@ must terminate before cleanup touches that session's audio.
 
 | Kind | Case | Examples |
 |---|---|---|
-| Menu commands and checkboxes | Title case | `Start Recording`, `Open Last Transcript`, `Transcribe After Recording`, `Quit Quill` |
+| Menu commands and checkboxes | Title case | `Start Recording`, `Open Last Transcript`, `Review Speakers in Last Transcript…`, `Quit Quill` |
 | Settings labels and checkboxes | Sentence case | `Open at login`, `Source audio` |
 | Status lines | Sentence case | `Quill is idle`, `Recording — 12:03`, `Mic capture lost 4s at 2:35 PM` |
 | Notification titles | Sentence case | `Transcript ready`, `Microphone stopped` |
@@ -412,12 +367,10 @@ can see:
 | `mic.caf` | **microphone**, or **the room** when talking about who is on it | "input", "local", "me" |
 | `system.caf` | **system audio**, or **the call** when talking about who is on it | "output", "remote", "them", "loopback" |
 
-"Speakers" is banned as a word for people. On an audio app it reads as
-loudspeakers first, which is why `Detect speakers in the room` had to go. Use
-"voices" for people and "speakers" only for hardware.
-
-`me` / `them` / `room 1` remain the *transcript* labels. Those are data, not UI
-copy, and are not covered by this rule.
+Use "speakers" only in explicit transcript-review context, where it means
+people unambiguously. Use "voices" when describing captured sound. Baseline
+transcript labels are `In the room` and `On the call`; separated labels add a
+number until the user names them.
 
 **Durations.**
 
@@ -449,58 +402,67 @@ or a custom implementation of every notification:
 
 | State | Content | Exit |
 |---|---|---|
-| Detected | Application, `Record` | Record, dismiss, or call ends |
-| Recording | Record glyph, elapsed time, `Stop` | Stop or possible end |
-| Possible end | `Meeting ended?`, application, `Stop` | Stop or return to Recording if input recovers |
+| Detected | Application, `Record`, 12-second deadline | Record, dismiss, timeout, or call ends |
+| Recording, brief/expanded | Record glyph, elapsed time, `Stop` | Collapses after one second |
+| Recording, collapsed | Small record capsule and ellipsis | Expand controls or possible end |
+| Possible end | `Meeting ended?`, application, `Stop` | Stop, Keep Recording, or input recovery |
 | Stopping | `Saving recording…` | Processing |
 | Processing | `Creating transcript…` | Ready, dismiss, or handoff after ten seconds |
 | Ready while visible | `Transcript ready`, `Open` | Open or dismiss |
 
-The companion appears without activating Quill or stealing keyboard focus. A
-deliberate interaction may make it key for keyboard or VoiceOver use. Escape and
-the close control dismiss it. It stays at one stable top-centre position on the
-display where the meeting began, joins full-screen Spaces, and never stacks a
-second surface.
+The expanded companion is 380 × 72 points. It appears without activating Quill
+or stealing keyboard focus. A deliberate interaction may make it key for
+keyboard or VoiceOver use. In Recording, Escape and the close control collapse
+the controls back to the pill; in other states they dismiss the surface. Quill
+places its first appearance at the top right near system notifications, but a
+dragged position belongs to the user:
+elapsed updates never recenter it. Expansion and collapse preserve the same
+centre and clamp only when display topology would leave it off-screen. It joins
+full-screen Spaces and never stacks a second surface.
+
+An unanswered Detected prompt expires after 12 seconds. A two-point accent bar
+drains across its lower edge to make that deadline visible. Timeout means "not
+this meeting" and suppresses another prompt for the same active call episode.
+
+After recording begins, the expanded controls remain for one second, then
+collapse to a 48 × 72-point recording capsule. The capsule is confidence, not a
+second workflow: a red record glyph and ellipsis only. The entire capsule is a
+combined click-or-drag target, so a click restores the expanded controls for
+eight seconds and a drag moves it from almost anywhere. `Show Recording
+Controls` in the menu provides the same expansion. Possible end expands
+automatically because it requires a decision.
 
 Dismissing Detected suppresses the rest of that application's current active
-episode. Dismissing Recording leaves capture running. The menu then exposes
-`Show Recording Controls`, so Stop remains reachable. If input disappears, the
-hidden state is updated without resurrecting the companion; showing controls
-reveals the current timer and possible-end state.
+episode. Recording's X cannot hide capture confidence; it returns to the pill,
+and the menu exposes `Show Recording Controls`. If input disappears, Possible
+end replaces the pill because it requires an explicit decision.
 
 Native notifications retain a distinct role. They report failures and deliver
 transcript completion when the companion was dismissed or processing outlived
 its ten-second handoff. Notification Center therefore remains the recovery
 surface for asynchronous events; the companion owns only the live meeting.
 
-### Meeting profile
+### Transcript-first speaker flow
 
-Voice separation is progressive disclosure in the menu, not a question in the
-recording flow:
+Recording and initial transcription have no speaker-separation setting. Quill
+always captures both tracks and produces a baseline transcript with coarse
+`In the room` and `On the call` labels.
 
-| Choice | Microphone track | Call track |
-|---|---|---|
-| `Off` | Treat as one local voice | Treat as one call voice |
-| `On the call` | Treat as one local voice | Separate remote voices |
-| `In the room` | Separate local voices | Treat as one call voice |
-| `Both` | Separate local voices | Separate remote voices |
+`Review Speakers in Last Transcript…` opens a task-scoped window after the
+transcript exists. Before analysis it explains that people on each side are
+currently grouped, names the selected recording and offers `Separate Speakers`.
+That primary action starts local analysis directly. The review window stays
+open until success or failure, and an active recording blocks the action with
+an explicit explanation. The existing timed words remain authoritative:
+Quill runs diarisation against retained source audio and reassigns speaker
+metadata without rerunning speech recognition.
 
-The default is `Off`, including detected calls. Quill does not infer the number
-of people from the application using the microphone. Pressing `Record` always
-starts immediately. Quill captures both tracks because a meeting can change
-shape; the optional choice controls post-processing only. The selected value is
-copied into that recording's `meta.json`, so a later global setting cannot
-change queued work. A change while idle updates the default. A correction
-during a recording changes only that session and does not silently replace the
-default.
-
-The Detected surface never shows voice separation. During Recording, an active
-choice appears as a quiet `Voices: On the call`, `Voices: In the room`, or
-`Voices: Both` control. `Off` remains absent until the control has been used in
-that recording. Turning it back Off keeps `Voices: Off` visible for the rest of
-the session so the choice does not disappear under the pointer. The overlay and
-menu edit the same per-recording value; neither changes the persisted default
-while recording.
+The operation is serialised with transcript work. It stages the enriched
+document and atomically publishes `.quill/transcript.json` and `transcript.md`;
+failure leaves the baseline unchanged. Both source tracks are analysed without
+asking the user to classify the meeting. A track with one detected person still
+receives a nameable voice ID. Speech that cannot be attributed remains
+unassigned rather than being forced onto a person.
 
 ### Finished session audio
 
@@ -515,27 +477,28 @@ Source Audio/
   Microphone.m4a
   Call.m4a
   Microphone Cleaned.m4a
+.quill/                  hidden internal state
 ```
 
 `Meeting Audio.m4a` combines the echo-cleaned microphone and call tracks for
 ordinary playback and sharing. The separate tracks support voice samples,
-verification and reprocessing. Derived processing files may live below
-`Source Audio/`, but do not occupy the session root.
+verification and reprocessing. With Finder's normal hidden-file setting, the
+root presents only the three human-facing items. `.quill/` contains metadata,
+recovery journals, canonical transcript data, logs, temporary CAF capture files
+and M4A staging.
 
 Finalization keeps CAF inputs until each M4A has the expected duration and
 decodes completely, then publishes new metadata atomically before deleting the
 working files. A capture journal written before the audio taps start lets Quill
 reconstruct metadata and finalize surviving CAF files after interruption. File
-consumers resolve paths through `meta.json`; they do not infer `.caf` or `.m4a`.
+consumers resolve paths through `.quill/meta.json`; they do not infer `.caf` or `.m4a`.
 There is no WAV export: the capture is already AAC, so WAV would add size
-without adding information. Existing CAF sessions remain valid and are
-finalized lazily when Quill next processes or opens that session.
+without adding information. Older session layouts are not migrated.
 
-### Identifying voices
+### Reviewing speakers
 
 A focused Quill window names stable machine voice IDs. It is not a general
-transcript editor. `Identify Voices in Last Transcript…` opens the newest
-compatible transcript and presents:
+transcript editor. After optional separation it presents:
 
 ```text
 Who is speaking?
@@ -557,7 +520,7 @@ Per-sentence reassignment and cluster merging are outside the first scope.
 Markdown remains the normal reading and export artifact; the review surface is
 justified by audio playback and identity management that Markdown cannot do.
 The stable IDs, human label map and segments live together in schema v1 of the
-canonical `transcript.json`, which is rewritten atomically with `transcript.md`;
+canonical `.quill/transcript.json`, which is rewritten atomically with `transcript.md`;
 there is no second label database or sidecar. Incompatible JSON is ignored by
 voice review without affecting Quill or the readable Markdown.
 

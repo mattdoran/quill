@@ -1,9 +1,7 @@
 import AVFoundation
 import Foundation
 
-/// Append-only `session.log` written beside the audio it describes, so a
-/// post-mortem on a bad recording is in the folder you already opened rather
-/// than in a shared daemon log covering every meeting of the day.
+/// Per-recording capture log kept with the session's internal state.
 ///
 /// Warnings mirror to stderr; routine detail does not, or a long meeting's
 /// device chatter buries the few lines the daemon log is useful for.
@@ -19,7 +17,7 @@ final class SessionLog: @unchecked Sendable {
     }()
 
     init(dir: URL) {
-        let url = dir.appendingPathComponent("session.log")
+        let url = SessionFiles.sessionLog(dir)
         FileManager.default.createFile(atPath: url.path, contents: nil)
         handle = try? FileHandle(forWritingTo: url)
     }

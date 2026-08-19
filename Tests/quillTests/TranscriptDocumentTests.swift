@@ -3,19 +3,6 @@ import Testing
 @testable import quill
 
 @Suite struct TranscriptDocumentTests {
-    @Test func onlySeparatedClustersReceiveVoiceIDs() {
-        #expect(TranscriptDocument.voiceIDs(
-            labels: ["On the call", "On the call"],
-            source: "system", split: false, sharedLabel: "On the call"
-        ).isEmpty)
-
-        let ids = TranscriptDocument.voiceIDs(
-            labels: ["On the call 1", "On the call", "On the call 2", "On the call 1"],
-            source: "system", split: true, sharedLabel: "On the call"
-        )
-        #expect(ids == ["On the call 1": "system:1", "On the call 2": "system:2"])
-    }
-
     @Test func voiceNamesUpdateEveryMatchingSegmentAndMarkdown() throws {
         let session = try temporarySession()
         defer { try? FileManager.default.removeItem(at: session) }
@@ -26,6 +13,11 @@ import Testing
 
         let saved = try TranscriptStore(session: session).read()
         #expect(saved.segments.map(\.speaker) == ["Alice", "Alice", "Matt"])
+        let json = try String(
+            contentsOf: TranscriptStore(session: session).jsonURL,
+            encoding: .utf8
+        )
+        #expect(!json.contains("\\/"))
         let markdown = try String(
             contentsOf: TranscriptStore(session: session).markdownURL,
             encoding: .utf8
@@ -66,7 +58,7 @@ import Testing
             try TranscriptStore(session: session).write(fixture())
         }
         #expect(!FileManager.default.fileExists(
-            atPath: session.appendingPathComponent("transcript.json").path
+            atPath: SessionFiles.transcriptJSON(session).path
         ))
     }
 

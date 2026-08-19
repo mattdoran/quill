@@ -28,21 +28,11 @@ struct PreviewCompanion: ParsableCommand {
                 ("detected", .detected(application: zoom, token: UUID())),
                 ("recording", .recording(
                     application: zoom,
-                    elapsed: "1:12:34",
-                    profile: .neither,
-                    voiceControlVisible: false
-                )),
-                ("recording-voices", .recording(
-                    application: zoom,
-                    elapsed: "12:34",
-                    profile: .onTheCall,
-                    voiceControlVisible: true
+                    elapsed: "1:12:34"
                 )),
                 ("possible-end", .possibleEnd(
                     application: zoom,
-                    elapsed: "12:34",
-                    profile: .both,
-                    voiceControlVisible: true
+                    elapsed: "12:34"
                 )),
                 ("saving", .finalizing),
                 ("processing", .processing),
@@ -53,7 +43,7 @@ struct PreviewCompanion: ParsableCommand {
             for appearance in ["light", "dark"] {
                 for (name, state) in states {
                     let view = MeetingCompanionView(
-                        frame: NSRect(x: 0, y: 0, width: 468, height: 108)
+                        frame: NSRect(x: 0, y: 0, width: 380, height: 72)
                     )
                     view.appearance = NSAppearance(
                         named: appearance == "dark" ? .darkAqua : .aqua
@@ -75,17 +65,38 @@ struct PreviewCompanion: ParsableCommand {
                         options: .atomic
                     )
                 }
+
+                let collapsed = MeetingCompanionView(
+                    frame: NSRect(x: 0, y: 0, width: 48, height: 72)
+                )
+                collapsed.appearance = NSAppearance(
+                    named: appearance == "dark" ? .darkAqua : .aqua
+                )
+                collapsed.renderCollapsed(elapsed: "12:34")
+                collapsed.layoutSubtreeIfNeeded()
+                guard
+                    collapsed.visibleControlsFitBounds(),
+                    let bitmap = collapsed.bitmapImageRepForCachingDisplay(in: collapsed.bounds)
+                else { throw PreviewError.controlsOutsideBounds("\(appearance)-collapsed") }
+                collapsed.cacheDisplay(in: collapsed.bounds, to: bitmap)
+                guard let png = bitmap.representation(using: .png, properties: [:]) else {
+                    throw PreviewError.renderFailed("\(appearance)-collapsed")
+                }
+                try png.write(
+                    to: directory.appendingPathComponent("\(appearance)-collapsed.png"),
+                    options: .atomic
+                )
             }
 
             let accessible = MeetingCompanionView(
-                frame: NSRect(x: 0, y: 0, width: 468, height: 108)
+                frame: NSRect(x: 0, y: 0, width: 380, height: 72)
             )
             accessible.appearance = NSAppearance(named: .aqua)
             accessible.applyAccessibilityOptions(
                 reduceTransparency: true,
                 increaseContrast: true
             )
-            accessible.render(states[2].1)
+            accessible.render(states[1].1)
             accessible.layoutSubtreeIfNeeded()
             guard
                 accessible.visibleControlsFitBounds(),

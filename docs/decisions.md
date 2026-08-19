@@ -2,6 +2,87 @@
 
 Dated product and architecture decisions. Newest first.
 
+## 2026-08-20: Separate speakers only during transcript review
+
+**Decision:** Every completed recording produces a baseline transcript with
+`In the room` and `On the call` labels. Recording has no meeting profile,
+diarisation control or transcription switch. `Review Speakers in Last
+Transcript…` optionally analyses both retained source tracks, reassigns the
+existing timed transcript segments, then lets the user name speakers from
+short samples.
+
+**Why:** Recording, transcription and speaker separation are different user
+jobs. Asking about meeting shape during capture exposed a processing parameter
+at the most time-sensitive moment. After reading the baseline transcript, the
+user can judge whether individual speaker labels are worth the wait.
+
+**Consequence:** Speaker separation never reruns speech recognition and never
+changes words. It atomically replaces speaker metadata and Markdown only after
+analysis succeeds; failure preserves the baseline. Both tracks are analysed,
+so the UI never asks where multiple people were. Automatic separation remains
+out of Settings until the manual workflow proves useful.
+
+## 2026-08-20: Close recording controls, not recording confidence
+
+**Decision:** During recording, X and Escape collapse expanded controls back to
+the activity pill. The pill is one click-or-drag target: clicking anywhere
+expands it and dragging anywhere moves it. Other companion phases retain X as
+dismiss. Initial placement is at the top right near the system notification
+area; an explicit drag still wins over automatic placement. Recording collapses
+to the pill one second after capture starts; an explicit reopen lasts eight
+seconds.
+
+**Why:** A close glyph on controls reads as closing those controls, not as
+removing the recording indicator for the rest of the session. Splitting the
+small pill into separate drag and action regions also makes the most persistent
+surface unnecessarily difficult to move.
+
+**Consequence:** Recording capture confidence remains visible until Stop.
+Expanded controls are temporary detail over that persistent pill. Possible-end
+X explicitly acknowledges Keep Recording and collapses. Live voice settings
+state where multiple people are present, so the control describes the meeting
+shape rather than repeating that a transcript will be produced.
+
+## 2026-08-19: Keep finished session folders human-facing
+
+**Decision:** A finished session root contains only `Meeting Audio.m4a`,
+`Source Audio/` and `transcript.md`. Capture files, metadata, canonical
+transcript JSON and per-session logs live together under `.quill/`. M4A staging
+also happens there. New code uses this layout directly and does not migrate old
+session folders.
+
+**Why:** A recording folder is a user artifact, not an application data dump.
+The technical files are necessary for recovery, diagnostics and future
+reprocessing, but exposing them beside the files a person opens makes the
+finished result look incomplete. One internal directory keeps their lifecycle
+coherent without introducing a database or a migration layer.
+
+**Consequence:** `.quill/` is the single owner of capture journals, CAF working
+files, `meta.json`, `session.log`, `transcribe.log`, `transcript.json` and export
+partials. Verified M4A files move to their visible destinations before metadata
+is published, then CAF working files are deleted. Old schemas and layouts are
+ignored safely rather than upgraded.
+
+## 2026-08-19: Let each companion state earn its size
+
+**Decision:** The detected and action states use a 380 × 72-point companion.
+Detected expires after 12 seconds with a draining deadline bar. Recording keeps
+the expanded controls for four seconds, then becomes a 48 × 72-point activity
+capsule. The capsule reopens controls for eight seconds; possible end expands
+automatically. A dragged position is preserved through state changes and timer
+updates.
+
+**Why:** A persistent prompt-sized recording surface competes with the meeting
+it is meant to support. Removing it entirely would hide Stop and per-recording
+voice correction because Quill has no live notes window to own those actions.
+The small capsule provides capture confidence and a route back without making
+the full workflow permanent.
+
+**Consequence:** Voice status appears only in expanded recording and uses
+action language: `Separate voices on the call`, `Separate voices in the room`,
+or `Separate all voices`. The deadline bar is the sole animation justified by
+an expiring decision. Elapsed-time rendering must never reposition the panel.
+
 ## 2026-08-19: Reveal voice controls only after opt-in
 
 **Decision:** The detected-meeting companion contains only the application and
@@ -54,15 +135,14 @@ and matches the AAC payload Quill already records. Converting existing AAC to
 WAV would increase size without restoring information lost during encoding.
 
 **Consequence:** CAF is working state, not the finished user-facing archive.
-`meta.json` owns file paths, and transcription, retention and recovery must not
+`.quill/meta.json` owns file paths, and transcription, retention and recovery must not
 hard-code extensions. The combined meeting file uses the cleaned microphone
 and call tracks; separate source tracks remain available for verification,
 voice samples and future reprocessing. Packet-preserving CAF-to-M4A conversion
 with Apple media APIs is verified before source CAFs are removed. Quill records
 a small capture journal before opening the audio taps, validates every finished
 file with a complete decode, and publishes updated metadata before deleting CAF
-working files. Existing completed CAF sessions remain readable and are
-finalized lazily per session; there is no bulk migration.
+working files. Quill does not migrate older session layouts.
 
 ## 2026-08-19: Voice review is identification, not transcript editing
 

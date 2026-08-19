@@ -21,7 +21,6 @@ enum DoctorReport {
             checkSystemAudio(),
             checkRecordingsRoot(recordingsRoot),
             checkTranscription(),
-            checkSpeakerDetection(),
         ]
     }
 
@@ -98,13 +97,6 @@ enum DoctorReport {
     /// Never discover a missing model after an important meeting: report
     /// whether the parakeet models are already in FluidAudio's cache.
     static func checkTranscription() -> Check {
-        guard Config.transcriptionEnabled() else {
-            return Check(
-                name: "transcription",
-                status: .warn("disabled in config"),
-                remediation: nil
-            )
-        }
         let cache = AsrModels.defaultCacheDirectory(for: .v2)
         if AsrModels.modelsExist(at: cache, version: .v2) {
             return Check(name: "transcription", status: .ok, remediation: nil)
@@ -113,32 +105,6 @@ enum DoctorReport {
             name: "transcription",
             status: .warn("parakeet models not downloaded (~600 MB)"),
             remediation: "downloads automatically after Quill launches on an unmetered connection"
-        )
-    }
-
-    /// Report the labels a transcript will actually carry, so a config can be
-    /// checked without recording a meeting and reading the result. Silent when
-    /// both tracks are off — there is nothing to get wrong.
-    static func checkSpeakerDetection() -> Check {
-        let mic = Config.speakerDetection(track: "mic")
-        let system = Config.speakerDetection(track: "system")
-        guard mic.enabled || system.enabled else {
-            return Check(name: "speaker detection", status: .ok, remediation: nil)
-        }
-
-        func describe(_ settings: Config.SpeakerDetection) -> String {
-            guard settings.enabled else { return settings.soloLabel }
-            let numbered = "\(settings.sharedLabel) 1, \(settings.sharedLabel) 2, …"
-            // Only worth spelling out where the two labels differ; on the
-            // system track both are "them" and the aside would say nothing.
-            guard settings.soloLabel != settings.sharedLabel else { return numbered }
-            return "\(numbered) (\(settings.soloLabel) if alone)"
-        }
-
-        return Check(
-            name: "speaker detection",
-            status: .warn("mic → \(describe(mic)) · system → \(describe(system))"),
-            remediation: "at most 4 speakers per track — the model has four output slots"
         )
     }
 
