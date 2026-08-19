@@ -38,6 +38,14 @@ struct RetentionHarness {
         for track in ["mic.caf", "system.caf", "mic-cleaned.caf"] {
             try Data(track.utf8).write(to: session.appendingPathComponent(track))
         }
+        let sources = session.appendingPathComponent("Source Audio", isDirectory: true)
+        try FileManager.default.createDirectory(at: sources, withIntermediateDirectories: true)
+        for track in ["Microphone.m4a", "Call.m4a", "Microphone Cleaned.m4a"] {
+            try Data(track.utf8).write(to: sources.appendingPathComponent(track))
+        }
+        try Data("meeting".utf8).write(
+            to: session.appendingPathComponent("Meeting Audio.m4a")
+        )
         if let transcriptAge {
             let transcript = session.appendingPathComponent("transcript.json")
             let data = try JSONSerialization.data(
@@ -60,6 +68,10 @@ struct RetentionHarness {
                 ) {
                 throw Failure("expected \(session.lastPathComponent)/\(track) to exist")
             }
+            let sources = session.appendingPathComponent("Source Audio")
+            if !FileManager.default.fileExists(atPath: sources.path) {
+                throw Failure("expected \(session.lastPathComponent)/Source Audio to exist")
+            }
         }
     }
 
@@ -71,9 +83,13 @@ struct RetentionHarness {
                 ) {
                 throw Failure("expected \(session.lastPathComponent)/\(track) to be deleted")
             }
-            let cleaned = session.appendingPathComponent("mic-cleaned.caf")
-            if !FileManager.default.fileExists(atPath: cleaned.path) {
-                throw Failure("expected \(session.lastPathComponent)/mic-cleaned.caf to remain")
+            let sources = session.appendingPathComponent("Source Audio")
+            if FileManager.default.fileExists(atPath: sources.path) {
+                throw Failure("expected \(session.lastPathComponent)/Source Audio to be deleted")
+            }
+            let meeting = session.appendingPathComponent("Meeting Audio.m4a")
+            if !FileManager.default.fileExists(atPath: meeting.path) {
+                throw Failure("expected \(session.lastPathComponent)/Meeting Audio.m4a to remain")
             }
         }
     }

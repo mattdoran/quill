@@ -121,7 +121,9 @@ actor TranscriptionCoordinator {
         let engine = try await preparedEngine()
         publish(.transcribing(session: session, queued: queue.count))
 
-        var cleanedMic: URL?
+        var cleanedMic = meta.cleanedMicrophoneFile.map {
+            dir.appendingPathComponent($0)
+        }.flatMap { FileManager.default.fileExists(atPath: $0.path) ? $0 : nil }
         if
             let mic = meta.tracks.first(where: { $0.kind == "mic" }),
             let system = meta.tracks.first(where: { $0.kind == "system" })
@@ -319,6 +321,7 @@ private struct SessionMeta {
 
     let tracks: [Track]
     let meetingProfile: MeetingProfile?
+    let cleanedMicrophoneFile: String?
 
     enum MetaError: Error, CustomStringConvertible {
         case unreadable(URL)
@@ -350,7 +353,11 @@ private struct SessionMeta {
         }
         let meetingProfile = (json["meeting_profile"] as? String)
             .flatMap(MeetingProfile.init(rawValue:))
-        return SessionMeta(tracks: tracks, meetingProfile: meetingProfile)
+        return SessionMeta(
+            tracks: tracks,
+            meetingProfile: meetingProfile,
+            cleanedMicrophoneFile: files["mic_cleaned"]
+        )
     }
 }
 

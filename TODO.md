@@ -32,7 +32,7 @@ Work that remains. Product and architecture decisions live in
       call`, `In the room` and `Both`; selection never
       blocks recording, both tracks are always captured, and queued processing
       reads the profile from `meta.json`.
-- [ ] **Finish stopped recordings as M4A.** First prove packet-preserving
+- [x] **Finish stopped recordings as M4A.** Prove packet-preserving
       CAF-to-M4A conversion with Apple media APIs. Publish `Meeting Audio.m4a`
       plus separate source tracks only after duration verification, update
       metadata atomically, and recover unfinished CAF sessions at launch.

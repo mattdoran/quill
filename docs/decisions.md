@@ -38,9 +38,11 @@ WAV would increase size without restoring information lost during encoding.
 `meta.json` owns file paths, and transcription, retention and recovery must not
 hard-code extensions. The combined meeting file uses the cleaned microphone
 and call tracks; separate source tracks remain available for verification,
-voice samples and future reprocessing. An implementation spike must prove
-packet-preserving CAF-to-M4A conversion with Apple media APIs before the source
-CAFs are removed. Existing completed CAF sessions remain readable and are
+voice samples and future reprocessing. Packet-preserving CAF-to-M4A conversion
+with Apple media APIs is verified before source CAFs are removed. Quill records
+a small capture journal before opening the audio taps, validates every finished
+file with a complete decode, and publishes updated metadata before deleting CAF
+working files. Existing completed CAF sessions remain readable and are
 finalized lazily per session; there is no bulk migration.
 
 ## 2026-08-19: Voice review is identification, not transcript editing

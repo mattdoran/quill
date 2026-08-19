@@ -6,6 +6,8 @@ import Foundation
 /// single-source audio, and two tracks give free two-party diarization.
 @MainActor
 final class RecordingSession {
+    nonisolated static let captureJournalName = "capture.json"
+
     let dir: URL
     let startedAt = Date()
     private(set) var meetingProfile: MeetingProfile
@@ -43,6 +45,7 @@ final class RecordingSession {
     private var supervisors: [CaptureSupervisor] = []
     private var deviceWatcher: AudioDevices.Watcher?
     private var ticker: Timer?
+    private var journalHasOffsets = false
 
     private static let folderFormat: DateFormatter = {
         let f = DateFormatter()
@@ -70,6 +73,11 @@ final class RecordingSession {
     func updateMeetingProfile(_ profile: MeetingProfile) {
         meetingProfile = profile
         log.log("meeting profile changed to \(profile.rawValue)")
+        do {
+            try publishCaptureJournal()
+        } catch {
+            log.warn("couldn't update capture journal: \(error)")
+        }
     }
 
     /// Start both tracks. If the mic fails after the system tap started, the
@@ -88,6 +96,7 @@ final class RecordingSession {
         let systemSupervisor = supervise(system)
         let micSupervisor = supervise(mic)
         do {
+            try publishCaptureJournal()
             try systemSupervisor.start()
             try micSupervisor.start()
         } catch {
@@ -109,6 +118,7 @@ final class RecordingSession {
             MainActor.assumeIsolated {
                 guard let self else { return }
                 self.supervisors.forEach { $0.tick() }
+                self.publishJournalOffsetsIfReady()
                 self.reportDeadTracks()
                 self.reportEveryoneGone()
             }
@@ -118,7 +128,7 @@ final class RecordingSession {
     }
 
     /// Stop both tracks and write meta.json.
-    func stop() {
+    func stop() throws {
         ticker?.invalidate()
         ticker = nil
         deviceWatcher = nil
@@ -163,8 +173,13 @@ final class RecordingSession {
                 to: dir.appendingPathComponent("meta.json"),
                 options: .atomic
             )
+            try? FileManager.default.removeItem(
+                at: dir.appendingPathComponent(Self.captureJournalName)
+            )
         } catch {
             log.warn("couldn't publish meta.json: \(error)")
+            log.close()
+            throw error
         }
 
         log.log(String(
@@ -182,6 +197,41 @@ final class RecordingSession {
             [weak self] message in
             self?.report(message)
         }
+    }
+
+    private func publishJournalOffsetsIfReady() {
+        guard !journalHasOffsets, mic.firstBufferAt != nil, system.firstBufferAt != nil else {
+            return
+        }
+        do {
+            try publishCaptureJournal()
+            journalHasOffsets = true
+        } catch {
+            log.warn("couldn't update capture journal offsets: \(error)")
+        }
+    }
+
+    private func publishCaptureJournal() throws {
+        let earliest = min(mic.firstBufferAt ?? startedAt, system.firstBufferAt ?? startedAt)
+        let journal: [String: Any] = [
+            "started": ISO8601DateFormatter().string(from: startedAt),
+            "meeting_profile": meetingProfile.rawValue,
+            "files": ["mic": "mic.caf", "system": "system.caf"],
+            "start_offset_ms": [
+                "mic": Int((mic.firstBufferAt ?? earliest).timeIntervalSince(earliest) * 1000),
+                "system": Int(
+                    (system.firstBufferAt ?? earliest).timeIntervalSince(earliest) * 1000
+                ),
+            ],
+        ]
+        let data = try JSONSerialization.data(
+            withJSONObject: journal,
+            options: [.prettyPrinted, .sortedKeys]
+        )
+        try data.write(
+            to: dir.appendingPathComponent(Self.captureJournalName),
+            options: .atomic
+        )
     }
 
     /// A track that has been down past the threshold is announced once. Both

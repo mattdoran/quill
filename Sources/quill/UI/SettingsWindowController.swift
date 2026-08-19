@@ -166,11 +166,11 @@ final class SettingsWindowController: NSWindowController {
             let alert = NSAlert()
             if selected == .thirtyDays {
                 alert.messageText = "Apply 30-day audio retention?"
-                alert.informativeText = "Audio from completed transcripts older than 30 days will be deleted now. Transcripts remain, but the audio cannot be recovered or re-transcribed."
+                alert.informativeText = "Source audio from completed transcripts older than 30 days will be deleted now. Meeting audio and transcripts remain, but the transcript cannot be reprocessed and voice samples become unavailable."
                 alert.addButton(withTitle: "Apply")
             } else {
                 alert.messageText = "Delete transcribed audio?"
-                alert.informativeText = "Audio from every completed transcript will be deleted now. Transcripts remain, but the audio cannot be recovered or re-transcribed."
+                alert.informativeText = "Source audio from every completed transcript will be deleted now. Meeting audio and transcripts remain, but the transcript cannot be reprocessed and voice samples become unavailable."
                 alert.addButton(withTitle: "Delete Audio")
             }
             alert.addButton(withTitle: "Cancel")

@@ -376,8 +376,10 @@ an explicit user choice.
 Both destructive choices require confirmation when selected. `Keep for 30 days`
 uses `created_at` from `transcript.json`, falling back to its modification date
 for older transcripts. `Delete after transcription` becomes eligible as soon as
-that file exists. In both cases Quill deletes only `mic.caf` and `system.caf`.
-Metadata, logs and transcripts remain.
+that file exists. In both cases Quill deletes `Source Audio/` and any legacy CAF
+working files. `Meeting Audio.m4a`, metadata, logs and transcripts remain.
+Reprocessing and voice samples are unavailable once source audio is deleted;
+the confirmation says so.
 
 Cleanup runs after a successful transcript, at launch, when the recordings
 folder changes, and daily while Quill stays open. A configured `on_stop` command
@@ -493,6 +495,7 @@ transcript.md
 Source Audio/
   Microphone.m4a
   Call.m4a
+  Microphone Cleaned.m4a
 ```
 
 `Meeting Audio.m4a` combines the echo-cleaned microphone and call tracks for
@@ -500,13 +503,14 @@ ordinary playback and sharing. The separate tracks support speaker samples,
 verification and reprocessing. Derived processing files may live below
 `Source Audio/`, but do not occupy the session root.
 
-Finalization keeps CAF inputs until each M4A opens successfully and has the
-expected duration, then publishes new metadata atomically. A recovered session
-finalizes surviving CAF files on the next launch. File consumers resolve paths
-through `meta.json`; they do not infer `.caf` or `.m4a`. There is no WAV export:
-the capture is already AAC, so WAV would add size without adding information.
-Existing CAF sessions remain valid and are finalized lazily when Quill next
-processes or opens that session.
+Finalization keeps CAF inputs until each M4A has the expected duration and
+decodes completely, then publishes new metadata atomically before deleting the
+working files. A capture journal written before the audio taps start lets Quill
+reconstruct metadata and finalize surviving CAF files after interruption. File
+consumers resolve paths through `meta.json`; they do not infer `.caf` or `.m4a`.
+There is no WAV export: the capture is already AAC, so WAV would add size
+without adding information. Existing CAF sessions remain valid and are
+finalized lazily when Quill next processes or opens that session.
 
 ### Identifying voices
 

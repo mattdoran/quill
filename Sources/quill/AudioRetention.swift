@@ -25,7 +25,9 @@ enum AudioRetention {
             else { return }
         }
 
-        for name in ["mic.caf", "system.caf"] {
+        for name in [
+            "mic.caf", "system.caf", "mic-cleaned.caf", "Source Audio",
+        ] {
             let audio = session.appendingPathComponent(name)
             guard FileManager.default.fileExists(atPath: audio.path) else { continue }
             do {

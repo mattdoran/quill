@@ -186,6 +186,7 @@ final class AppController {
                     self?.showTranscription(status)
                 }
             }
+            await AudioFinalizer.shared.recoverPending(in: root)
             await transcription.resumePending(root: root)
         }
 
@@ -334,7 +335,17 @@ final class AppController {
 
     private func stopSession() {
         guard let session else { return }
-        session.stop()
+        do {
+            try session.stop()
+        } catch {
+            FileHandle.standardError.write(Data(
+                "recording metadata publication failed: \(error)\n".utf8
+            ))
+            notifyUser(
+                title: "Recording needs recovery",
+                body: "The audio is safe. Quill will recover it before processing."
+            )
+        }
         let elapsed = Self.format(Date().timeIntervalSince(session.startedAt))
         FileHandle.standardError.write(Data(
             "○ stopped · \(elapsed) · \(session.dir.path)\n".utf8
@@ -348,7 +359,24 @@ final class AppController {
         menuBar.updateMeetingProfile(nil)
 
         let dir = session.dir
-        Task { [transcription] in await transcription.enqueue(dir) }
+        menuBar.updateTranscription("Finishing audio…")
+        Task { [weak self, transcription] in
+            do {
+                try await AudioFinalizer.shared.finalize(session: dir)
+            } catch {
+                FileHandle.standardError.write(Data(
+                    "audio finalization failed for \(dir.path): \(error)\n".utf8
+                ))
+                notifyUser(
+                    title: "Couldn't finish meeting audio",
+                    body: "The source recording is safe. Quill will try again later."
+                )
+            }
+            await transcription.enqueue(dir)
+            if !Config.transcriptionEnabled() {
+                self?.menuBar.updateTranscription(nil)
+            }
+        }
     }
 
     private func callStarted(_ application: CallApplication) {
@@ -473,6 +501,10 @@ final class AppController {
 
     private func openLastTranscript() {
         guard let transcript = lastTranscript() else { return }
+        let session = transcript.deletingLastPathComponent()
+        Task {
+            try? await AudioFinalizer.shared.finalize(session: session)
+        }
         NSWorkspace.shared.open(transcript)
     }
 

@@ -79,20 +79,21 @@ Each session lands in `~/Music/Quill/<yyyy.MM.dd-HHmm>/`:
 
 | File | Contents |
 |---|---|
-| `mic.caf` | your side (default input device, AAC) |
-| `system.caf` | everything the Mac played — the other side of the call (AAC) |
-| `mic-cleaned.caf` | microphone audio with correlated speaker playback removed (AAC) |
+| `Meeting Audio.m4a` | the meeting as one playable file |
+| `Source Audio/Microphone.m4a` | your side (default input device, AAC) |
+| `Source Audio/Call.m4a` | everything the Mac played - the other side of the call (AAC) |
+| `Source Audio/Microphone Cleaned.m4a` | microphone audio with correlated speaker playback removed (AAC) |
 | `meta.json` | start/end timestamps, duration, per-track start offsets, and per-track capture health |
 | `session.log` | devices, formats and every capture interruption during the recording |
 | `transcript.json` | canonical transcript — engine provenance + timed, speaker-tagged segments |
 | `transcript.md` | the same transcript rendered for reading |
 | `transcribe.log` | transcription progress/errors for this session |
 
-Two tracks on purpose: speech models do better on clean single-source audio,
-and mic-vs-system is free two-party diarization — `me` vs `them` with no
-speaker-identification model. CAF on purpose: unlike m4a, it needs no
-finalization pass — if the process dies mid-meeting, everything already
-written is still readable.
+Two source tracks on purpose: speech models do better on clean single-source
+audio, and microphone-vs-call gives useful separation without a
+speaker-identification model. Quill records AAC into CAF while capture is live,
+so audio already written survives an interruption, then safely remuxes it into
+familiar M4A files after stop. An interrupted session is recovered on launch.
 
 macOS changes audio devices out from under a live recording — a headset
 connecting takes the default input and output at once, and switching Bluetooth
@@ -110,10 +111,11 @@ Core ML port, roughly 20 seconds per hour of audio on Apple Silicon. Models
 (~600 MB) download after the first unmetered launch; progress appears in the
 menu and Settings. `quill doctor` reports whether they are ready.
 
-Before transcription, WebRTC AEC3 uses `system.caf` as a reference to remove
-correlated speaker playback from the microphone. The result is retained as
-`mic-cleaned.caf`; both raw tracks remain unchanged. If cancellation fails,
-the failure is logged and transcription falls back to raw `mic.caf`.
+Before publishing the finished files, WebRTC AEC3 uses the call track as a
+reference to remove correlated speaker playback from the microphone. The
+result is retained as `Source Audio/Microphone Cleaned.m4a`; both original
+source tracks remain unchanged. If cancellation fails, the failure is logged
+and transcription falls back to the original microphone track.
 
 The cleaned microphone and raw system tracks are transcribed separately,
 shifted by their start offsets so both share one clock, and merged by
@@ -155,8 +157,8 @@ application home for isolated development and tests.
 - `transcription.enabled` — set `false` to just record.
 - `audio_retention`: `indefinitely` (the default), `30_days`, or
   `after_transcription`. Deletion only applies after `transcript.json` exists.
-  It removes the two raw capture tracks but retains `mic-cleaned.caf`. The
-  original cancellation cannot then be reproduced or tuned.
+  It removes `Source Audio/` but retains `Meeting Audio.m4a`. The transcript
+  cannot then be reprocessed and voice samples are unavailable.
 - `on_stop` — shell command spawned with the session directory as its
   argument, **after the transcript is written** (or right after recording if
   transcription is disabled). Wire it to whatever comes next: summarization,
