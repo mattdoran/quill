@@ -97,6 +97,8 @@ while ! /usr/bin/pgrep -f "$target_executable" >/dev/null 2>&1; do
     sleep 0.25
 done
 
+/usr/bin/codesign --verify --deep --strict "$target_app"
+
 if [ "$(readlink "$cli_link")" != "$target_executable" ]; then
     echo "CLI link does not point to the installed app" >&2
     exit 1

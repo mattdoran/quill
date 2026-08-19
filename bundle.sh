@@ -104,4 +104,6 @@ if [ "$notarize" = yes ]; then
     rm -f "$zip"
 fi
 
+codesign --verify --deep --strict "$app"
+
 echo "$app"
