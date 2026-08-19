@@ -213,7 +213,11 @@ final class AppController {
         else { return }
         promptedCallApplication = nil
         promptedCallToken = nil
-        startSession(boundTo: application, token: UUID(), profile: .onTheCall)
+        startSession(
+            boundTo: application,
+            token: UUID(),
+            profile: Config.meetingProfile()
+        )
     }
 
     func stopDetectedCall(recordingToken: String) {

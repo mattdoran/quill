@@ -147,7 +147,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menu.addItem(transcribeItem)
 
         meetingProfileItem = NSMenuItem(
-            title: "Multiple People",
+            title: "Separate Voices",
             action: nil,
             keyEquivalent: ""
         )
@@ -163,7 +163,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             meetingProfileItems[profile] = item
         }
         meetingProfileItem.submenu = profileMenu
-        meetingProfileItem.toolTip = "Where are there multiple people in this meeting?"
+        meetingProfileItem.toolTip =
+            "Choose where Quill should label people separately in the transcript."
         menu.addItem(meetingProfileItem)
 
         menu.addItem(.separator())
@@ -387,7 +388,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     /// stored rather than with whatever was last clicked.
     private func refreshSettings() {
         let profile = recordingMeetingProfile ?? Config.meetingProfile()
-        meetingProfileItem.title = "Multiple People: \(profile.title)"
+        meetingProfileItem.title = "Separate Voices: \(profile.title)"
         for (candidate, item) in meetingProfileItems {
             item.state = candidate == profile ? .on : .off
         }

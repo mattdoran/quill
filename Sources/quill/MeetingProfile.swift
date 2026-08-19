@@ -8,7 +8,7 @@ enum MeetingProfile: String, CaseIterable, Codable, Sendable {
 
     var title: String {
         switch self {
-        case .neither: "Neither"
+        case .neither: "Off"
         case .onTheCall: "On the call"
         case .inTheRoom: "In the room"
         case .both: "Both"

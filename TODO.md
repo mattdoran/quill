@@ -28,8 +28,8 @@ Work that remains. Product and architecture decisions live in
       recording, recovered-end, stopping, short processing and ready states.
       Verify non-activation, full-screen Spaces, multiple displays, VoiceOver
       and the ten-second handoff before replacing native call prompts.
-- [x] **Snapshot a per-recording meeting profile.** Use `Neither`, `On the
-      call`, `In the room` and `Both`; detected calls default to `On the call`, selection never
+- [x] **Snapshot optional voice separation per recording.** Use `Off`, `On the
+      call`, `In the room` and `Both`; selection never
       blocks recording, both tracks are always captured, and queued processing
       reads the profile from `meta.json`.
 - [ ] **Finish stopped recordings as M4A.** First prove packet-preserving

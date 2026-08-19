@@ -75,7 +75,7 @@ Open Last Transcript
 Open Recordings Folder
 ────────────────────────────────────────────
 Transcribe After Recording                       ✓
-Multiple People: On the call                     ›
+Separate Voices: Off                             ›
 ────────────────────────────────────────────
 Settings…
 About Quill
@@ -97,7 +97,7 @@ Open Last Transcript
 Open Recordings Folder
 ────────────────────────────────────────────
 Transcribe After Recording                       ✓
-Multiple People: On the call                     ›
+Separate Voices: Off                             ›
 ────────────────────────────────────────────
 Settings…
 About Quill
@@ -121,7 +121,7 @@ people are for the next recording.
 | Order | Item | Why here |
 |---|---|---|
 | 1 | `Transcribe After Recording` | Controls whether queued processing runs. |
-| 2 | `Multiple People` | Submenu: `Neither`, `On the call`, `In the room`, `Both`. Snapshotted into the recording and changeable while recording. |
+| 2 | `Separate Voices` | Submenu: `Off`, `On the call`, `In the room`, `Both`. Snapshotted into the recording and changeable while recording. |
 
 Decisions this settles:
 
@@ -133,9 +133,9 @@ Decisions this settles:
 - **The profile remains enabled when transcription is off.** It belongs to the
   recording and may be used if queued transcription is enabled later. Greying
   it would prevent an accurate snapshot for no operational reason.
-- **One question replaces two implementation toggles.** `Multiple People`
-  directly controls which captured tracks need voice separation. `Neither`
-  preserves the common one-to-one case without running diarization needlessly.
+- **One optional choice replaces two implementation toggles.** `Separate
+  Voices` directly controls which captured tracks need voice separation. `Off`
+  preserves the simple path and avoids running diarization needlessly.
 - **No section headers.** `NSMenuItem.sectionHeader(title:)` exists on macOS 14+
   and is not warranted for three items already fenced by separators. Any honest
   header text is either redundant with the position or vague, and headers on a
@@ -198,7 +198,7 @@ Menu tooltips explain controls without opening Settings. Verbatim:
 |---|---|
 | Open Recordings Folder | *(the resolved path, e.g.)* `/Users/matt/Recordings` |
 | Change Recordings Folder… | `Pick where recordings are saved. Choosing a folder here is also how macOS grants access to protected places like Documents.` |
-| Multiple People | `Where are there multiple people in this meeting?` |
+| Separate Voices | `Choose where Quill should label people separately in the transcript.` |
 | Transcribe After Recording | `Off means quill records only. Turning it back on transcribes the backlog the next time Quill starts.` |
 | Stop Recording and Quit | `Ends the current recording. Transcription resumes the next time Quill starts.` |
 | Quit Quill *(while transcribing)* | `Transcription resumes the next time Quill starts.` |
@@ -346,7 +346,7 @@ which subsystem reads the value.
 
 | Setting | Home | Why |
 |---|---|---|
-| Meeting profile | Menu and meeting companion | `Multiple People`: `Neither`, `On the call`, `In the room`, or `Both`. It is snapshotted per recording. |
+| Voice separation | Menu | `Off`, `On the call`, `In the room`, or `Both`. It is optional and snapshotted per recording. |
 | Transcribe after recording | Menu | An operational switch used before a recording. A second label in Settings made one value look like two behaviours. |
 | Open at login | Settings | Durable application lifecycle behaviour, backed by `SMAppService`, not a meeting control. `install --launch-at-login` remains a thin wrapper over the same call. |
 | Recordings folder | Settings + conditional menu recovery | Settings owns the persistent location. `Change Recordings Folder…` appears in the menu only when folder access is broken, because choosing through the panel is also the permission repair. |
@@ -363,8 +363,8 @@ The Settings window is three administrative groups:
 3. **Transcription:** static engine identity; model status and expected or
    installed size; Download / Remove
 
-The profile remains in the menu until the meeting companion ships, then appears
-in both because both are operational surfaces for the same live recording. All values share one file at
+Voice separation remains in the menu. It never expands the meeting companion
+or blocks recording. All values share one file at
 `~/Library/Application Support/Quill/config.json`.
 
 ### Audio retention
@@ -443,8 +443,8 @@ or a custom implementation of every notification:
 
 | State | Content | Exit |
 |---|---|---|
-| Detected | Application, `Record`, meeting profile | Record, dismiss, or call ends |
-| Recording | Red state, elapsed time, `Stop`, profile disclosure | Stop or possible end |
+| Detected | Application, `Record` | Record, dismiss, or call ends |
+| Recording | Record glyph, elapsed time, `Stop` | Stop or possible end |
 | Possible end | `Meeting ended?`, application, `Stop` | Stop or return to Recording if input recovers |
 | Stopping | `Saving recording…` | Processing |
 | Processing | `Creating transcript…` | Ready, dismiss, or handoff after ten seconds |
@@ -461,25 +461,25 @@ surface for asynchronous events; the companion owns only the live meeting.
 
 ### Meeting profile
 
-The profile asks where there are multiple people, not whether to run
-diarization:
+Voice separation is progressive disclosure in the menu, not a question in the
+recording flow:
 
 | Choice | Microphone track | Call track |
 |---|---|---|
-| `Neither` | Treat as one local voice | Treat as one call voice |
+| `Off` | Treat as one local voice | Treat as one call voice |
 | `On the call` | Treat as one local voice | Separate remote voices |
 | `In the room` | Separate local voices | Treat as one call voice |
 | `Both` | Separate local voices | Separate remote voices |
 
-A detected calling app defaults to `On the call`. Pressing `Record` starts
-immediately, and the profile remains an optional correction during recording.
-It never blocks capture. Quill always records both tracks because a meeting can
-change shape; the profile controls post-processing only. The selected profile
-is copied into that recording's `meta.json`, so a later global setting cannot
+The default is `Off`, including detected calls. Quill does not infer the number
+of people from the application using the microphone. Pressing `Record` always
+starts immediately. Quill captures both tracks because a meeting can change
+shape; the optional choice controls post-processing only. The selected value is
+copied into that recording's `meta.json`, so a later global setting cannot
 change queued work. Sessions created before profiles exist retain the legacy
 per-track processing behaviour; Quill does not bulk-rewrite their metadata. A
-change while idle updates the manual-recording default. A correction during a
-recording changes only that session and does not silently replace the default.
+change while idle updates the default. A correction during a recording changes
+only that session and does not silently replace the default.
 
 ### Finished session audio
 

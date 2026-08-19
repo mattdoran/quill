@@ -140,6 +140,13 @@ import Testing
 }
 
 @Suite(.serialized) struct MeetingProfileConfigTests {
+    @Test func freshConfigDefaultsToSeparationOff() throws {
+        try withConfig([:]) {
+            #expect(Config.meetingProfile() == .neither)
+            #expect(Config.meetingProfile().title == "Off")
+        }
+    }
+
     @Test func legacyBothOffMapsToNeither() throws {
         try withConfig([
             "separate_voices": [

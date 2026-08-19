@@ -2,6 +2,25 @@
 
 Dated product and architecture decisions. Newest first.
 
+## 2026-08-19: Keep voice separation out of the recording flow
+
+**Decision:** Voice separation defaults to `Off`, including detected calls. The
+meeting companion never asks about it. The menu offers the optional `Separate
+Voices` choices `Off`, `On the call`, `In the room` and `Both`. An idle choice
+persists as the default; a live change affects only that recording.
+
+**Why:** Detecting a calling app says where audio comes from, not how many people
+are speaking. Automatically diarizing every call adds a model download, extra
+processing and the risk of splitting one person into several labels. Asking a
+meeting-structure question before recording makes a time-critical action feel
+procedural. The simple path should remain `Record` and `Stop`.
+
+**Consequence:** This supersedes the detected-call default and companion profile
+control in the earlier meeting-companion decision. The per-recording profile
+remains in metadata so people who opt in get reproducible processing and can
+later request voice separation from a completed recording with retained source
+audio.
+
 ## 2026-08-19: Finish recordings as M4A while capturing into CAF
 
 **Decision:** Continue writing AAC into CAF while a recording is active. After
