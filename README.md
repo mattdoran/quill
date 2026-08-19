@@ -96,6 +96,12 @@ speaker-identification model. Quill records AAC into CAF while capture is live,
 so audio already written survives an interruption, then safely remuxes it into
 familiar M4A files after stop. An interrupted session is recovered on launch.
 
+Voice separation is optional and stays out of the recording flow by default.
+Choose **Separate Voices** in the menu for group calls, rooms, or both. When a
+track is actually split into several voices, **Identify Voices in Last
+Transcript…** plays short source-audio samples and applies the names you enter
+throughout both `transcript.json` and `transcript.md`.
+
 macOS changes audio devices out from under a live recording — a headset
 connecting takes the default input and output at once, and switching Bluetooth
 off stops the system tap dead. Both tracks are rebuilt on the new device and the
@@ -192,7 +198,8 @@ recording. The menu app writes its own snapshots to
 - **AVAudioFile** — streaming AAC encode into CAF
 - **FluidAudio / Parakeet** — on-device Core ML transcription
 - **WebRTC AEC3** — post-recording acoustic echo cancellation
-- **NSStatusItem + AppKit**: menu-bar controls and a small Settings window
+- **NSStatusItem + AppKit**: menu-bar controls, the meeting companion, Settings,
+  and focused voice identification
 
 ## Gotchas
 
