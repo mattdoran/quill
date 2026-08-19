@@ -4,6 +4,24 @@ set -eu
 root=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
 config=release
 app="$root/.build/$config/Quill.app"
+notarize=no
+if [ "${1:-}" = "--notarize" ]; then
+    notarize=yes
+    shift
+fi
+if [ "$#" -ne 0 ]; then
+    echo "usage: ./build-dmg.sh [--notarize]" >&2
+    exit 64
+fi
+
+SIGN_IDENTITY=""
+NOTARY_PROFILE=""
+# shellcheck source=/dev/null
+[ -f "$root/signing.conf" ] && . "$root/signing.conf"
+if [ -z "$SIGN_IDENTITY" ]; then
+    SIGN_IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null \
+        | awk -F'"' '/Developer ID Application/ { print $2; exit }')
+fi
 
 if [ ! -d "$app" ]; then
     echo "bundle first: ./bundle.sh" >&2
@@ -87,4 +105,24 @@ hdiutil detach "$mount" -quiet
 mount=""
 hdiutil convert "$rw" -quiet -format UDZO -imagekey zlib-level=9 -ov -o "$output"
 "$set_icon" "$root/Sources/quill/AppIcon.icns" "$output"
+
+if [ -n "$SIGN_IDENTITY" ]; then
+    codesign --force --timestamp --sign "$SIGN_IDENTITY" "$output"
+else
+    echo "note: no Developer ID found, DMG is unsigned" >&2
+fi
+
+if [ "$notarize" = yes ]; then
+    if [ -z "$SIGN_IDENTITY" ]; then
+        echo "--notarize needs a Developer ID Application identity" >&2
+        exit 1
+    fi
+    if [ -z "$NOTARY_PROFILE" ]; then
+        echo "--notarize needs NOTARY_PROFILE in signing.conf" >&2
+        exit 1
+    fi
+    xcrun notarytool submit "$output" --keychain-profile "$NOTARY_PROFILE" --wait
+    xcrun stapler staple "$output"
+fi
+
 echo "$output"

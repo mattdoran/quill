@@ -24,8 +24,13 @@ Starting a fresh session? Read these in order:
 cd quill
 swift build -c release
 ./bundle.sh                                   # wraps the binary in Quill.app
+./install.sh                                  # installs and restarts Quill
 ./build-dmg.sh                                # optional distributable image
 ```
+
+`install.sh` installs to `~/Applications/Quill.app`, replaces
+`~/.local/bin/quill` with a symlink to the bundle executable, and always quits
+and relaunches Quill. The app bundle is the single installed copy of the code.
 
 For a distributable release, notarize the reviewed app before building the
 image around it:
@@ -33,7 +38,7 @@ image around it:
 ```sh
 swift build -c release
 ./bundle.sh --notarize
-./build-dmg.sh
+./build-dmg.sh --notarize
 ```
 
 See `signing.conf.example` for the one-time Developer ID and notarization
@@ -63,6 +68,12 @@ transcription speed.
 3. **Click → Stop recording** when the meeting ends. Transcription starts
    automatically (the menu shows progress); a notification fires when the
    transcript is ready.
+
+When a recognized calling app uses audio input continuously for two seconds,
+Quill asks whether to start recording. A recording started from that action is
+bound to the detected app; when its input ends for two seconds, Quill asks
+whether to stop. Neither transition starts or stops recording without an
+explicit action.
 
 Each session lands in `~/Music/Quill/<yyyy.MM.dd-HHmm>/`:
 
@@ -157,9 +168,17 @@ application home for isolated development and tests.
 quill                        # run the menu-bar daemon (^C to quit)
 quill run --out <dir>        # custom recordings root (default ~/Music/Quill)
 quill doctor                 # check permissions, recordings folder, models
+quill watch-calls            # print recognized call-input transitions
+quill watch-calls --all      # also print unknown microphone users
 quill install --launch-at-login   # same as Settings → Open at login
 quill install --uninstall
 ```
+
+`watch-calls` is an observation-only test harness over the same Core Audio
+scanner and stable-transition reducer used by the menu app. It prints snapshots
+and possible call transitions, but never shows notifications or affects a
+recording. The menu app writes its own snapshots to
+`~/Library/Application Support/Quill/cache/call-detection.log`.
 
 ## Stack
 
