@@ -15,6 +15,13 @@ enum SessionName {
         return "\(timeFormat.string(from: date)) recording"
     }
 
+    static func dated(_ dir: URL) -> String {
+        guard let date = folderFormat.date(from: dir.lastPathComponent) else {
+            return dir.lastPathComponent
+        }
+        return dateTimeFormat.string(from: date)
+    }
+
     private static let folderFormat: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "yyyy.MM.dd-HHmm"
@@ -26,6 +33,13 @@ enum SessionName {
         let f = DateFormatter()
         f.timeStyle = .short
         f.dateStyle = .none
+        return f
+    }()
+
+    private static let dateTimeFormat: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .medium
+        f.timeStyle = .short
         return f
     }()
 }

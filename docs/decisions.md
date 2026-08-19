@@ -66,11 +66,11 @@ finalized lazily per session; there is no bulk migration.
 
 ## 2026-08-19: Voice review is identification, not transcript editing
 
-**Decision:** A future transcript review surface may assign human names to
-stable machine voice IDs. For each unidentified voice, it offers a short clean
-audio sample and two or three alternatives when needed. The first scope renames
-one voice cluster everywhere; it does not reassign individual sentences, merge
-clusters or become a general transcript editor.
+**Decision:** `Identify Voices…` assigns human names to stable machine voice
+IDs in transcript schema v1. For each voice, it offers a short source-audio
+sample and up to two alternatives. Saving renames one voice cluster everywhere;
+it does not reassign individual sentences, merge clusters or become a general
+transcript editor.
 
 **Why:** `Remote voice 1` is only useful if a person can identify it. Timed
 diarization already provides candidate regions, and a representative clip is
@@ -80,13 +80,14 @@ right source interval.
 
 **Consequence:** Machine IDs and human labels are separate data owned by the
 canonical `transcript.json`; no label sidecar or database is introduced. Label
-updates rewrite that document and its Markdown rendering atomically. Sample
-selection favors one uninterrupted voice, three to eight seconds of audible
-speech, little silence or overlap, useful words and strong recognition
-confidence where available. Existing transcripts without stable machine IDs
-remain readable but require re-transcription before voice identification.
-Markdown remains the reading and export format; the Quill review surface exists
-only for actions a static document cannot do.
+updates rewrite that document and its Markdown rendering atomically. Samples
+are ranked by useful duration and recognized words and play directly from the
+retained source track. Existing names remain editable when retention removes
+that track; only playback becomes unavailable. Playback is also unavailable
+during recording. Incompatible transcript JSON is ignored; no migration path
+is maintained. Markdown remains
+the reading and export format; the Quill review surface exists only for actions
+a static document cannot do.
 
 ## 2026-08-19: One meeting companion spans the live workflow
 

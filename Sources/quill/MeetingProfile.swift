@@ -30,8 +30,8 @@ enum MeetingProfile: String, CaseIterable, Codable, Sendable {
         }
         return VoiceSettings(
             separatesVoices: separatesVoices,
-            soloLabel: isMicrophone ? "me" : "them",
-            sharedLabel: isMicrophone ? "room" : "them"
+            soloLabel: isMicrophone ? "In the room" : "On the call",
+            sharedLabel: isMicrophone ? "In the room" : "On the call"
         )
     }
 }

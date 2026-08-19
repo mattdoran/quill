@@ -1,7 +1,7 @@
 import Foundation
 
 /// Post-recording pipeline: a serial queue of session folders to transcribe.
-/// mic.caf → "me", system.caf → "them"; each track's segments are shifted by
+/// Microphone and system-audio segments are shifted by
 /// its start offset, merged by timestamp, and written as transcript.json
 /// (canonical) plus transcript.md (readable). The filesystem is the queue —
 /// `resumePending()` rescans at launch, so a crash or quit mid-transcription
@@ -159,7 +159,8 @@ actor TranscriptionCoordinator {
             }
         }
 
-        var merged: [Transcript.Segment] = []
+        var merged: [TranscriptDocument.Segment] = []
+        var voices: [String: TranscriptDocument.Voice] = [:]
         var diarizedModel: String?
         for track in meta.tracks {
             let source = dir.appendingPathComponent(track.file)
@@ -178,7 +179,7 @@ actor TranscriptionCoordinator {
                 log(dir, "skipping \(track.file): \(error)")
                 continue
             }
-            let (speakers, split) = await labels(
+            let (speakers, split, sharedLabel) = await labels(
                 for: segments, track: track, profile: meta.meetingProfile,
                 audio: audio, dir: dir
             )
@@ -186,9 +187,38 @@ actor TranscriptionCoordinator {
                 diarizedModel = diarizer?.model
             }
             let offset = TimeInterval(track.offsetMs) / 1000
+            let voiceIDs = TranscriptDocument.voiceIDs(
+                labels: speakers,
+                source: track.kind,
+                split: split,
+                sharedLabel: sharedLabel
+            )
+            let audioFile = audio.path.replacingOccurrences(of: dir.path + "/", with: "")
+            for (speaker, id) in voiceIDs {
+                var candidates: [(sample: TranscriptDocument.Voice.Sample, score: Int)] = []
+                for index in segments.indices where speakers[index] == speaker {
+                    let sample = TranscriptDocument.Voice.Sample(
+                        start_ms: Int(segments[index].start * 1000),
+                        end_ms: Int(segments[index].end * 1000)
+                    )
+                    candidates.append((
+                        sample,
+                        Self.sampleScore(sample, text: segments[index].text)
+                    ))
+                }
+                candidates.sort { $0.score > $1.score }
+                voices[id] = TranscriptDocument.Voice(
+                    source: track.kind,
+                    audio_file: audioFile,
+                    machine_label: speaker,
+                    name: nil,
+                    samples: candidates.prefix(3).map(\.sample)
+                )
+            }
             merged += zip(segments, speakers).map { segment, speaker in
-                Transcript.Segment(
+                TranscriptDocument.Segment(
                     speaker: speaker,
+                    voice_id: voiceIDs[speaker],
                     start_ms: Int((segment.start + offset) * 1000),
                     end_ms: Int((segment.end + offset) * 1000),
                     text: segment.text
@@ -197,15 +227,25 @@ actor TranscriptionCoordinator {
         }
         merged.sort { $0.start_ms < $1.start_ms }
 
-        let transcript = Transcript(
+        let transcript = TranscriptDocument(
+            schema_version: TranscriptDocument.currentSchemaVersion,
             engine: engine.name,
             model: engine.model,
             diarizer: diarizedModel,
             created_at: ISO8601DateFormatter().string(from: Date()),
+            voices: voices,
             segments: merged
         )
-        try transcript.write(to: dir)
+        try TranscriptStore(session: dir).write(transcript)
         log(dir, "done — \(merged.count) segments")
+    }
+
+    private static func sampleScore(
+        _ sample: TranscriptDocument.Voice.Sample, text: String
+    ) -> Int {
+        let duration = sample.end_ms - sample.start_ms
+        let durationScore = duration <= 8_000 ? min(duration, 8_000) : max(0, 16_000 - duration)
+        return durationScore + min(text.count, 120) * 20
     }
 
     /// Per-segment speaker labels for one track, diarized when that track's
@@ -224,7 +264,7 @@ actor TranscriptionCoordinator {
         profile: MeetingProfile?,
         audio: URL,
         dir: URL
-    ) async -> (labels: [String], split: Bool) {
+    ) async -> (labels: [String], split: Bool, sharedLabel: String) {
         let settings: VoiceSettings
         if let profile {
             settings = profile.voiceSettings(for: track.kind)
@@ -237,7 +277,7 @@ actor TranscriptionCoordinator {
             )
         }
         guard settings.separatesVoices, !segments.isEmpty else {
-            return (segments.map { _ in settings.soloLabel }, false)
+            return (segments.map { _ in settings.soloLabel }, false, settings.sharedLabel)
         }
         do {
             log(dir, "diarizing \(track.file)")
@@ -251,10 +291,10 @@ actor TranscriptionCoordinator {
             )
             let distinct = Set(labels).count
             log(dir, "diarized \(track.file) — \(distinct) speaker(s)")
-            return (labels, distinct > 1)
+            return (labels, distinct > 1, settings.sharedLabel)
         } catch {
             log(dir, "diarization failed for \(track.file), using \(settings.soloLabel): \(error)")
-            return (segments.map { _ in settings.soloLabel }, false)
+            return (segments.map { _ in settings.soloLabel }, false, settings.sharedLabel)
         }
     }
 
@@ -367,57 +407,5 @@ private struct SessionMeta {
             meetingProfile: meetingProfile,
             cleanedMicrophoneFile: files["mic_cleaned"]
         )
-    }
-}
-
-/// Canonical transcript. Property names are the JSON schema — this struct
-/// exists to be serialized.
-private struct Transcript: Codable {
-    struct Segment: Codable {
-        let speaker: String
-        let start_ms: Int
-        let end_ms: Int
-        let text: String
-    }
-
-    let engine: String
-    let model: String
-    /// Diarization model, when the system track was actually split. Absent on
-    /// transcripts where diarization was off, failed, or found one speaker.
-    let diarizer: String?
-    let created_at: String
-    let segments: [Segment]
-
-    /// Write transcript.json and render transcript.md. Both writes are atomic
-    /// (temp file + rename), so a partially written transcript never exists on
-    /// disk — resumePending treats presence of transcript.json as "done".
-    func write(to dir: URL) throws {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try encoder.encode(self)
-            .write(to: dir.appendingPathComponent("transcript.json"), options: .atomic)
-        try Data(rendered(title: dir.lastPathComponent).utf8)
-            .write(to: dir.appendingPathComponent("transcript.md"), options: .atomic)
-    }
-
-    private func rendered(title: String) -> String {
-        var lines = ["# \(title)", "", "engine: \(engine) (\(model))"]
-        if let diarizer {
-            lines.append("diarizer: \(diarizer)")
-        }
-        lines.append("")
-        for seg in segments {
-            lines.append("**[\(Self.clock(seg.start_ms))] \(seg.speaker):** \(seg.text)")
-            lines.append("")
-        }
-        return lines.joined(separator: "\n")
-    }
-
-    private static func clock(_ ms: Int) -> String {
-        let total = ms / 1000
-        let h = total / 3600, m = (total % 3600) / 60, s = total % 60
-        return h > 0
-            ? String(format: "%d:%02d:%02d", h, m, s)
-            : String(format: "%d:%02d", m, s)
     }
 }

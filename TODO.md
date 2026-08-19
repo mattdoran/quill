@@ -24,7 +24,7 @@ Work that remains. Product and architecture decisions live in
 
 ## End-to-end meeting workflow
 
-- [ ] **Build the meeting companion as one stateful surface.** Prove detected,
+- [x] **Build the meeting companion as one stateful surface.** Prove detected,
       recording, recovered-end, stopping, short processing and ready states.
       Verify non-activation, full-screen Spaces, multiple displays, VoiceOver
       and the ten-second handoff before replacing native call prompts.
@@ -36,7 +36,7 @@ Work that remains. Product and architecture decisions live in
       CAF-to-M4A conversion with Apple media APIs. Publish `Meeting Audio.m4a`
       plus separate source tracks only after duration verification, update
       metadata atomically, and recover unfinished CAF sessions at launch.
-- [ ] **Add focused voice identification after transcript generation.** Rank
+- [x] **Add focused voice identification after transcript generation.** Rank
       representative source-audio samples, let a person name a stable voice ID,
       and apply that label across its cluster without becoming a general
       transcript editor.

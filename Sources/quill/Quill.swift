@@ -9,7 +9,7 @@ struct Quill: ParsableCommand {
         abstract: "Local meeting recorder + transcriber. Records mic and system audio as two tracks, then transcribes on-device.",
         subcommands: [
             Run.self, Doctor.self, Install.self, Diarize.self, WatchCalls.self,
-            PreviewCompanion.self,
+            PreviewCompanion.self, PreviewVoices.self,
         ],
         defaultSubcommand: Run.self
     )
@@ -101,6 +101,7 @@ final class AppController {
     private let transcription = TranscriptionCoordinator()
     private let models = ModelDownload()
     private var settings: SettingsWindowController?
+    private var voiceReview: VoiceReviewWindowController?
     private var session: RecordingSession?
     private var isStarting = false
     private var callObserver: CallObservationController?
@@ -129,6 +130,16 @@ final class AppController {
         menuBar.onOpenFolder = { [weak self] in self?.openFolder() }
         menuBar.onQuit = { [weak self] in self?.shutdown() }
         menuBar.onOpenLastTranscript = { [weak self] in self?.openLastTranscript() }
+        menuBar.onIdentifyVoices = { [weak self] in self?.identifyVoices() }
+        menuBar.hasVoiceReview = { [weak self] in self?.voiceReviewSession() != nil }
+        menuBar.voiceReviewComplete = { [weak self] in
+            guard
+                let self,
+                let session = voiceReviewSession(),
+                let transcript = try? TranscriptStore(session: session).read()
+            else { return false }
+            return transcript.unidentifiedVoiceIDs.isEmpty
+        }
         menuBar.hasTranscript = { [weak self] in
             guard let self else { return false }
             // Checked here rather than on a timer: the menu opening is the
@@ -597,6 +608,34 @@ final class AppController {
             try? await AudioFinalizer.shared.finalize(session: session)
         }
         NSWorkspace.shared.open(transcript)
+    }
+
+    private func voiceReviewSession() -> URL? {
+        guard let transcript = lastTranscript() else { return nil }
+        let session = transcript.deletingLastPathComponent()
+        guard
+            let document = try? TranscriptStore(session: session).read(),
+            !document.voiceIDs.isEmpty
+        else { return nil }
+        return session
+    }
+
+    private func identifyVoices() {
+        guard let session = voiceReviewSession() else { return }
+        if voiceReview?.sessionURL == session {
+            voiceReview?.show()
+            return
+        }
+        do {
+            let controller = try VoiceReviewWindowController(
+                session: session,
+                isRecording: { [weak self] in self?.session != nil }
+            )
+            voiceReview = controller
+            controller.show()
+        } catch {
+            notifyUser(title: "Voice review unavailable", body: error.localizedDescription)
+        }
     }
 
     /// The open panel is not only a convenience: a folder chosen through it is

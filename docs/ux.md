@@ -22,7 +22,8 @@ everything else is what ships today.
    surfaces merely because it fits both sections. The menu may expose a
    contextual recovery command for a Settings-owned value, but never a second
    copy of the setting itself.
-7. **One utility window, no workflows.** Settings is allowed. Wizards,
+7. **One persistent utility window.** Settings is the only persistent window.
+   A focused, task-scoped voice-identification window is allowed; wizards,
    transcript viewers and recording windows are not.
 
 ## 2. Status item
@@ -72,6 +73,7 @@ Quill is idle                                       ⟨disabled⟩
 ────────────────────────────────────────────
 Start Recording
 Open Last Transcript
+Identify Voices in Last Transcript…
 Open Recordings Folder
 ────────────────────────────────────────────
 Transcribe After Recording                       ✓
@@ -83,6 +85,10 @@ Quit Quill                                      ⌘Q
 ```
 
 `Open Last Transcript` is disabled when no session has a `transcript.md`.
+`Identify Voices in Last Transcript…` is hidden until the newest compatible
+transcript has separated voice IDs. It is disabled during recording so sample
+playback cannot enter the capture. After all names are filled, it becomes `Edit
+Voice Names in Last Transcript…`.
 `Retry Transcription` and `Download Transcription Models` are hidden unless they
 apply, and appear in the status block at the top. `Change Recordings Folder…`
 appears below `Open Recordings Folder` only when Quill cannot read that folder.
@@ -94,6 +100,7 @@ Recording — 12:03                                   ⟨disabled⟩
 ────────────────────────────────────────────
 Stop Recording
 Open Last Transcript
+Identify Voices in Last Transcript…                    ⟨disabled⟩
 Open Recordings Folder
 ────────────────────────────────────────────
 Transcribe After Recording                       ✓
@@ -483,10 +490,9 @@ of people from the application using the microphone. Pressing `Record` always
 starts immediately. Quill captures both tracks because a meeting can change
 shape; the optional choice controls post-processing only. The selected value is
 copied into that recording's `meta.json`, so a later global setting cannot
-change queued work. Sessions created before profiles exist retain the legacy
-per-track processing behaviour; Quill does not bulk-rewrite their metadata. A
-change while idle updates the default. A correction during a recording changes
-only that session and does not silently replace the default.
+change queued work. A change while idle updates the default. A correction
+during a recording changes only that session and does not silently replace the
+default.
 
 The Detected surface never shows voice separation. During Recording, an active
 choice appears as a quiet `Voices: On the call`, `Voices: In the room`, or
@@ -512,7 +518,7 @@ Source Audio/
 ```
 
 `Meeting Audio.m4a` combines the echo-cleaned microphone and call tracks for
-ordinary playback and sharing. The separate tracks support speaker samples,
+ordinary playback and sharing. The separate tracks support voice samples,
 verification and reprocessing. Derived processing files may live below
 `Source Audio/`, but do not occupy the session root.
 
@@ -527,29 +533,33 @@ finalized lazily when Quill next processes or opens that session.
 
 ### Identifying voices
 
-A future Quill review surface may name stable machine voice IDs. It is not a
-general transcript editor. The first interaction is:
+A focused Quill window names stable machine voice IDs. It is not a general
+transcript editor. `Identify Voices in Last Transcript…` opens the newest
+compatible transcript and presents:
 
 ```text
-Remote voice 1      ▶  “I’ll send that through tomorrow…”
-Name                [ Alice                              ]
+Who is speaking?
+In the room · Voice 1    [ Name this voice ]  ▶ Play Sample
+On the call · Voice 1    [ Alice           ]  ▶ Play Sample
 ```
 
-Each voice offers a representative three-to-eight-second sample and two or
-three alternatives. Candidate ranking favors uninterrupted audible speech,
-little silence or overlap, useful words and high recognition confidence where
-available. Playback seeks into the appropriate source track; no extracted clip
-file is required.
+Each voice offers up to three representative samples. The first click plays the
+best candidate; `Another Sample` advances through alternatives. Candidate
+ranking favors a useful three-to-eight-second duration and enough recognized
+words to identify the person. Playback seeks into the appropriate source track;
+no extracted clip file is required.
+If retention removed the source track, existing names remain editable and only
+the sample control becomes unavailable.
 
 Assigning `Alice` changes the human label mapped to the stable machine ID and
 updates every segment in that cluster. It does not rewrite diarization output.
 Per-sentence reassignment and cluster merging are outside the first scope.
 Markdown remains the normal reading and export artifact; the review surface is
 justified by audio playback and identity management that Markdown cannot do.
-The stable IDs, human label map and segments live together in the canonical
-`transcript.json`, which is rewritten atomically with `transcript.md`; there is
-no second label database or sidecar. Older transcripts remain readable but need
-re-transcription before voice identification if they lack stable IDs.
+The stable IDs, human label map and segments live together in schema v1 of the
+canonical `transcript.json`, which is rewritten atomically with `transcript.md`;
+there is no second label database or sidecar. Incompatible JSON is ignored by
+voice review without affecting Quill or the readable Markdown.
 
 ## 8. Deliberately not doing
 
@@ -558,7 +568,7 @@ re-transcription before voice identification if they lack stable IDs.
 | Pause and resume | Two tracks share one wall clock; a pause is a gap to reconcile in both, for a feature that "stop and start again" already covers. |
 | Per-app audio picker | The global tap is the feature. Filtering it is a preferences pane and a support burden for "don't play Spotify". |
 | Level meters or a waveform | The menu bar is not a mixer, and the elapsed counter already proves capture is alive. |
-| A general transcript editor | `transcript.md` remains the reading and export artifact. Quill's future review surface is limited to voice identification and other actions a static document cannot perform. |
+| A general transcript editor | `transcript.md` remains the reading and export artifact. Quill's review surface is limited to voice identification, which a static document cannot perform. |
 | A Dock icon, ever | `LSUIElement` is declared in the plist and set at runtime. It is a menu bar app. |
 | Our own sounds | The system's notification sound is the only sound quill makes. |
 | A first-run wizard | Permissions prompt themselves and the menu is thirteen items. If onboarding is needed, the menu is wrong. |

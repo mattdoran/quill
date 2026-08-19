@@ -15,6 +15,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private let toggleItem: NSMenuItem
     private let showControlsItem: NSMenuItem
     private let lastTranscriptItem: NSMenuItem
+    private let identifyVoicesItem: NSMenuItem
     private let retryItem: NSMenuItem
     private let downloadModelsItem: NSMenuItem
     private let meetingProfileItem: NSMenuItem
@@ -32,6 +33,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     var onOpenFolder: (() -> Void)?
     var onChangeFolder: (() -> Void)?
     var onOpenLastTranscript: (() -> Void)?
+    var onIdentifyVoices: (() -> Void)?
     var onOpenFailureLog: (() -> Void)?
     var onRetryTranscription: (() -> Void)?
     var onDownloadModels: (() -> Void)?
@@ -42,6 +44,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     /// Whether a transcript exists to open, re-asked each time the menu opens
     /// rather than tracked, since transcription finishes on its own schedule.
     var hasTranscript: (() -> Bool)?
+    var hasVoiceReview: (() -> Bool)?
+    var voiceReviewComplete: (() -> Bool)?
 
     /// Reported in the state line rather than as its own row: it is a
     /// condition, not a command, and Change Recordings Folder… below is the
@@ -120,6 +124,13 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             keyEquivalent: ""
         )
         menu.addItem(lastTranscriptItem)
+
+        identifyVoicesItem = NSMenuItem(
+            title: "Identify Voices in Last Transcript…",
+            action: #selector(identifyVoicesClicked),
+            keyEquivalent: ""
+        )
+        menu.addItem(identifyVoicesItem)
 
         openFolderItem = NSMenuItem(
             title: "Open Recordings Folder",
@@ -206,7 +217,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
         for item in [
             toggleItem, showControlsItem, openFolderItem, changeFolderItem, quitItem,
-            transcribeItem, lastTranscriptItem, about, retryItem,
+            transcribeItem, lastTranscriptItem, identifyVoicesItem, about, retryItem,
             downloadModelsItem,
             transcriptionLabel,
             settings,
@@ -344,6 +355,12 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
         refreshSettings()
         lastTranscriptItem.isEnabled = hasTranscript?() ?? false
+        let hasVoiceReview = hasVoiceReview?() ?? false
+        identifyVoicesItem.isHidden = !hasVoiceReview
+        identifyVoicesItem.isEnabled = hasVoiceReview && !isRecording
+        identifyVoicesItem.title = (voiceReviewComplete?() ?? false)
+            ? "Edit Voice Names in Last Transcript…"
+            : "Identify Voices in Last Transcript…"
         openFolderItem.toolTip = recordingsPath?()
     }
 
@@ -454,5 +471,6 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     @objc private func openFolderClicked() { onOpenFolder?() }
     @objc private func changeFolderClicked() { onChangeFolder?() }
     @objc private func openLastTranscriptClicked() { onOpenLastTranscript?() }
+    @objc private func identifyVoicesClicked() { onIdentifyVoices?() }
     @objc private func quitClicked() { onQuit?() }
 }
