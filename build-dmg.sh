@@ -69,6 +69,7 @@ on run argv
             set background picture of viewOptions to file ".background:background.tiff"
             set position of item "Quill.app" of container window to {170, 220}
             set position of item "Applications" of container window to {490, 220}
+            set position of item ".background" of container window to {900, 700}
             close
             open
             update without registering applications
@@ -78,6 +79,9 @@ on run argv
 end run
 APPLESCRIPT
 
+# Writable volumes collect host metadata while Finder lays out the window.
+# None of it belongs in the distributed image.
+rm -rf "$mount/.fseventsd" "$mount/.Trashes" "$mount/.Spotlight-V100"
 sync
 hdiutil detach "$mount" -quiet
 mount=""
