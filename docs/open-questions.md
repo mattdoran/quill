@@ -3,10 +3,12 @@
 Possible product paths that need investigation or a design decision. Nothing in
 this file is committed roadmap or current behaviour.
 
-## Meeting-aware start and stop
+## Call lifecycle reliability
 
-Should Quill offer to start recording when a meeting begins and stop when it
-ends, while leaving the decision to record with the person?
+Quill offers to start recording when a recognized meeting begins and offers to
+stop when its input ends. Both actions remain explicit. The open decision is
+whether per-application evidence can ever justify automatic stopping or a
+stronger signal such as calendar proximity.
 
 ### Call lifecycle signal, 2026-08-19
 
@@ -73,7 +75,7 @@ its microphone when muted, during a device change or during browser navigation.
 ```text
 handle_started(apps):
     if not recording and no call prompt is pending:
-        show "Possible call" with a tokenized "Start Recording" action
+        show "Meeting detected" with a tokenized "Record" action
 
 on start action(prompt_token):
     if the token is still current and that app is still confirmed:
@@ -81,7 +83,7 @@ on start action(prompt_token):
 
 handle_ended(apps):
     if an ended app owns the current bound recording:
-        show "Call may have ended" with its recording token
+        show "Meeting ended?" with its recording token and a "Stop" action
 
 on stop action(recording_token):
     if the token still identifies the current recording:
@@ -99,10 +101,10 @@ the only owner of product behavior. A pure reducer confirms start and end only
 after two stable seconds. Initial state establishes a baseline without a start
 event, and applications are tracked independently when their activity overlaps.
 
-Recognized applications can produce a `Possible call` notification with an
-explicit `Start Recording` action. Accepting it binds that recording to the
-application family. Two seconds of absence from that application produces a
-`call may have ended` notification with an explicit `Stop Recording` action.
+Recognized applications can produce a `Meeting detected` notification with an
+explicit `Record` action. Accepting it binds that recording to the application
+family. Two seconds of absence from that application produces a `Meeting
+ended?` notification with an explicit `Stop` action.
 Manual recordings remain unbound. Unknown processes are diagnostic evidence
 only and cannot prompt.
 
@@ -113,9 +115,7 @@ notifications or recording actions.
 
 Reducer tests cover initial snapshots, stable start and end, transient input and
 overlapping recognized applications. Remaining coverage belongs around helper
-PID replacement, loopback exclusion and monitor restart. The integration check
-must still run the signed app through a real call start, accepted recording and
-hang-up; a mocked process list cannot verify the macOS signal.
+PID replacement, loopback exclusion and monitor restart.
 
 Questions:
 
@@ -124,8 +124,6 @@ Questions:
   to stop automatically rather than ask?
 - Should muting for longer than two seconds count as leaving a call? Core Audio
   reports input IO, not membership in a meeting.
-- Should accepting a detected call also snapshot the per-recording meeting
-  profile described below?
 - Should the existing ten-minute silence nudge remain as the final fallback?
 
 The observation-only diagnostic is `quill watch-calls`. It prints changed input
@@ -151,49 +149,3 @@ prompt work. Chrome Meet also prompted correctly. Dismissing Chrome's start
 prompt and leaving produced neither a recording nor an end prompt. Remaining
 browser evidence is mute and device switching during a real meeting. The
 application-by-application false-transition rate is not known.
-
-## Per-recording meeting profile
-
-The current two `Separate Voices` controls persist globally and are read when
-transcription runs. A later change can therefore affect a recording already in
-the queue.
-
-Should each recording instead snapshot a processing profile in `meta.json`?
-One prompt framed around the physical meeting could derive both track settings:
-
-| Choice | Microphone track | System track |
-|---|---|---|
-| People on the call | one local speaker | separate remote speakers |
-| People in the room | separate local speakers | no remote speakers expected |
-| People in both | separate local speakers | separate remote speakers |
-
-The labels need testing. `On the call`, `In the room`, and `Both` may be clearer
-than meeting-type labels such as remote and hybrid. Asking how many people are
-at both ends may cost more comprehension than the avoided diarisation work is
-worth.
-
-Questions:
-
-- Does the start confirmation carry this choice, or does a call-detected prompt
-  carry it before recording begins?
-- Should Quill remember the last choice, infer a default from the initiating
-  app or calendar event, or always require a choice?
-- For `People on the call`, is always diarising the system track the simplest
-  honest behaviour?
-- Should an in-room profile omit system capture, or retain it because a meeting
-  can change shape after recording starts?
-
-## Live recording indicator
-
-Should Quill add a Granola-style draggable indicator while another app is in
-front? Its purpose would be immediate confidence and access, not a second
-workflow surface.
-
-The smallest useful surface may contain elapsed time and a stop control. This
-would require revisiting the current decision that Quill has no recording
-windows while retaining the menu-bar item as canonical status.
-
-Questions:
-
-- Is it always visible while recording, or optional after first use?
-- Can it remain unobtrusive across full-screen apps and multiple displays?

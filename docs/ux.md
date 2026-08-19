@@ -441,14 +441,114 @@ The word after the time is `recording` in most places and `meeting` in the
 transcript-ready notification, where the thing being announced is the meeting,
 not the file.
 
-## 7. Deliberately not doing
+## 7. Planned end-to-end meeting workflow
+
+This section is the agreed target beyond 0.2. The current product still uses
+native start and stop notifications, persistent voice-separation toggles and
+CAF files after capture.
+
+### Meeting companion
+
+The custom surface is one non-activating meeting companion, not a parallel menu
+or a custom implementation of every notification:
+
+| State | Content | Exit |
+|---|---|---|
+| Detected | Application, `Record`, meeting profile | Record, dismiss, or call ends |
+| Recording | Red state, elapsed time, `Stop`, profile disclosure | Stop or possible end |
+| Possible end | `Meeting ended?`, application, `Stop` | Stop or return to Recording if input recovers |
+| Stopping | `Saving recording…` | Processing |
+| Processing | `Creating transcript…` | Ready, dismiss, or handoff after ten seconds |
+| Ready while visible | `Transcript ready`, `Open` | Open or dismiss |
+
+The companion does not activate Quill, steal keyboard focus or replace the menu
+bar as canonical state. It remains dismissible. Placement must work across
+full-screen Spaces and multiple displays and must be usable with VoiceOver.
+
+Native notifications retain a distinct role. They report failures and deliver
+transcript completion when the companion was dismissed or processing outlived
+its ten-second handoff. Notification Center therefore remains the recovery
+surface for asynchronous events; the companion owns only the live meeting.
+
+### Meeting profile
+
+The profile asks where the people are, not whether to run diarization:
+
+| Choice | Microphone track | Call track |
+|---|---|---|
+| `On the call` | Treat as one local voice | Separate remote voices |
+| `In the room` | Separate local voices | Treat as one call voice |
+| `Both` | Separate local voices | Separate remote voices |
+
+A detected calling app defaults to `On the call`. Pressing `Record` starts
+immediately, and the profile remains an optional correction during recording.
+It never blocks capture. Quill always records both tracks because a meeting can
+change shape; the profile controls post-processing only. The selected profile
+is copied into that recording's `meta.json`, so a later global setting cannot
+change queued work. Sessions created before profiles exist retain the legacy
+per-track processing behaviour; Quill does not bulk-rewrite their metadata.
+
+### Finished session audio
+
+CAF remains the active capture container because audio already written survives
+an interrupted recording. It is not the finished format. A normally completed
+session presents:
+
+```text
+Meeting Audio.m4a
+transcript.md
+Source Audio/
+  Microphone.m4a
+  Call.m4a
+```
+
+`Meeting Audio.m4a` combines the echo-cleaned microphone and call tracks for
+ordinary playback and sharing. The separate tracks support speaker samples,
+verification and reprocessing. Derived processing files may live below
+`Source Audio/`, but do not occupy the session root.
+
+Finalization keeps CAF inputs until each M4A opens successfully and has the
+expected duration, then publishes new metadata atomically. A recovered session
+finalizes surviving CAF files on the next launch. File consumers resolve paths
+through `meta.json`; they do not infer `.caf` or `.m4a`. There is no WAV export:
+the capture is already AAC, so WAV would add size without adding information.
+Existing CAF sessions remain valid and are finalized lazily when Quill next
+processes or opens that session.
+
+### Identifying voices
+
+A future Quill review surface may name stable machine voice IDs. It is not a
+general transcript editor. The first interaction is:
+
+```text
+Remote voice 1      ▶  “I’ll send that through tomorrow…”
+Name                [ Alice                              ]
+```
+
+Each voice offers a representative three-to-eight-second sample and two or
+three alternatives. Candidate ranking favors uninterrupted audible speech,
+little silence or overlap, useful words and high recognition confidence where
+available. Playback seeks into the appropriate source track; no extracted clip
+file is required.
+
+Assigning `Alice` changes the human label mapped to the stable machine ID and
+updates every segment in that cluster. It does not rewrite diarization output.
+Per-sentence reassignment and cluster merging are outside the first scope.
+Markdown remains the normal reading and export artifact; the review surface is
+justified by audio playback and identity management that Markdown cannot do.
+The stable IDs, human label map and segments live together in the canonical
+`transcript.json`, which is rewritten atomically with `transcript.md`; there is
+no second label database or sidecar. Older transcripts remain readable but need
+re-transcription before voice identification if they lack stable IDs.
+
+## 8. Deliberately not doing
 
 | | Why |
 |---|---|
 | Pause and resume | Two tracks share one wall clock; a pause is a gap to reconcile in both, for a feature that "stop and start again" already covers. |
 | Per-app audio picker | The global tap is the feature. Filtering it is a preferences pane and a support burden for "don't play Spotify". |
 | Level meters or a waveform | The menu bar is not a mixer, and the elapsed counter already proves capture is alive. |
-| A transcript viewer window | `transcript.md` opens in whatever the user already reads Markdown in. Writing a worse one is not a feature. |
+| A general transcript editor | `transcript.md` remains the reading and export artifact. Quill's future review surface is limited to voice identification and other actions a static document cannot perform. |
 | A Dock icon, ever | `LSUIElement` is declared in the plist and set at runtime. It is a menu bar app. |
 | Our own sounds | The system's notification sound is the only sound quill makes. |
 | A first-run wizard | Permissions prompt themselves and the menu is thirteen items. If onboarding is needed, the menu is wrong. |

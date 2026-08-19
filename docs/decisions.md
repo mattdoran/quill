@@ -2,6 +2,85 @@
 
 Dated product and architecture decisions. Newest first.
 
+## 2026-08-19: Finish recordings as M4A while capturing into CAF
+
+**Decision:** Continue writing AAC into CAF while a recording is active. After
+a clean stop, produce `Meeting Audio.m4a` at the session root and place the
+separate `Microphone.m4a` and `Call.m4a` tracks under `Source Audio/`. Keep the
+CAF inputs until every replacement has been opened and its duration verified.
+Recover and finalize surviving CAF files after a crash. Do not offer WAV export.
+
+**Why:** CAF protects audio already written if Quill or the Mac stops during a
+meeting, but it is an unfamiliar finished format. M4A is easy to play and share,
+and matches the AAC payload Quill already records. Converting existing AAC to
+WAV would increase size without restoring information lost during encoding.
+
+**Consequence:** CAF is working state, not the finished user-facing archive.
+`meta.json` owns file paths, and transcription, retention and recovery must not
+hard-code extensions. The combined meeting file uses the cleaned microphone
+and call tracks; separate source tracks remain available for verification,
+voice samples and future reprocessing. An implementation spike must prove
+packet-preserving CAF-to-M4A conversion with Apple media APIs before the source
+CAFs are removed. Existing completed CAF sessions remain readable and are
+finalized lazily per session; there is no bulk migration.
+
+## 2026-08-19: Voice review is identification, not transcript editing
+
+**Decision:** A future transcript review surface may assign human names to
+stable machine voice IDs. For each unidentified voice, it offers a short clean
+audio sample and two or three alternatives when needed. The first scope renames
+one voice cluster everywhere; it does not reassign individual sentences, merge
+clusters or become a general transcript editor.
+
+**Why:** `Remote voice 1` is only useful if a person can identify it. Timed
+diarization already provides candidate regions, and a representative clip is
+faster to recognize than hunting through a transcript. Markdown can display a
+finished transcript but cannot safely maintain identity mappings or play the
+right source interval.
+
+**Consequence:** Machine IDs and human labels are separate data owned by the
+canonical `transcript.json`; no label sidecar or database is introduced. Label
+updates rewrite that document and its Markdown rendering atomically. Sample
+selection favors one uninterrupted voice, three to eight seconds of audible
+speech, little silence or overlap, useful words and strong recognition
+confidence where available. Existing transcripts without stable machine IDs
+remain readable but require re-transcription before voice identification.
+Markdown remains the reading and export format; the Quill review surface exists
+only for actions a static document cannot do.
+
+## 2026-08-19: One meeting companion spans the live workflow
+
+**Decision:** The planned custom surface is a meeting companion, not a custom
+replacement for every macOS notification. It moves from detected meeting, to
+recording, to possible end, to short post-processing and, when fast enough, to
+transcript ready. It is non-activating, dismissible and secondary to the menu
+bar's canonical state. Native notifications remain the fallback for failures
+and asynchronous completion after the companion has gone.
+
+Detected calling apps default to the `On the call` profile. Recording starts
+immediately when `Record` is pressed; choosing a profile never blocks capture.
+The three user-facing profiles are `On the call`, `In the room` and `Both`.
+Quill always captures both tracks, snapshots the chosen processing profile in
+the recording metadata, and allows correction while recording.
+
+**Why:** A custom banner alone would duplicate macOS while taking ownership of
+window levels, Spaces, displays, focus, accessibility and dismissal. A single
+surface earns that cost by preserving context and controls throughout the live
+meeting. Physical descriptions of where people are avoid the jargon and
+ambiguity of `Hybrid` and `diarization`.
+
+**Consequence:** The companion remains visible through stopping and brief
+transcription. It can become `Transcript ready` with an `Open` action if that
+happens while visible. After ten seconds, or when dismissed, processing returns
+to the menu and eventual completion uses a native notification. An end signal
+changes the same surface to `Meeting ended?`; recovery returns it to the timer.
+The implementation must verify non-activation, full-screen Spaces, multiple
+displays, VoiceOver and a non-irritating placement before replacing the native
+start and stop prompts.
+
+Recordings made before profiles exist retain the current per-track processing
+behaviour. They are not rewritten in place merely to acquire a profile.
+
 ## 2026-08-19: Keep call prompts compact and recoverable
 
 **Decision:** Start prompts read `Meeting detected` / app / `Record`; end
