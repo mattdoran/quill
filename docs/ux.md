@@ -227,8 +227,8 @@ Menu tooltips explain controls without opening Settings. Verbatim:
 
 ## 4. Notifications
 
-Five, total. Three ship today; two are proposed. Every one of them is a terminal
-event or a thing the user can act on within a minute.
+Seven, total. Every one of them is a terminal event or a thing the user can act
+on within a minute.
 
 | # | Trigger | Title | Body | Buttons | Click opens | Interrupts | Status |
 |---|---|---|---|---|---|---|---|
@@ -237,6 +237,8 @@ event or a thing the user can act on within a minute.
 | 3 | Transcription failed | `Transcription failed` | `2:32 PM recording` | `Retry` | `transcribe.log` | Yes | Ships; **body and button are changes** |
 | 4 | A track down 30s continuously | *see below* | *see below* | — | — | Yes | Ships |
 | 5 | Every audible track quiet 10 minutes | `Still recording` | `No one has spoken for 10 minutes. Is the meeting over?` | `Stop Recording` | — | Yes | Ships |
+| 6 | Recognized call input active for 2s | `Meeting detected` | `Zen Browser` | `Record` | — | Yes | Ships |
+| 7 | Bound call input absent for 2s | `Meeting ended?` | `Zen Browser` | `Stop` | — | Yes | Ships |
 
 Changes to the three that ship: #1 currently interpolates a raw Swift error into
 a banner — the error belongs on stderr and in the log, not in front of a person
@@ -308,6 +310,28 @@ it fires during real lulls, which teaches the user to ignore it; much longer and
 the thing it exists to prevent has mostly already happened. The cost of being
 wrong is ten minutes of junk audio and about four seconds of transcription.
 
+### #6 and #7: call lifecycle prompts
+
+The menu app observes audio-input processes once per second. It normalizes
+recognized application families and requires two continuous seconds before
+either prompt. Initial state establishes a baseline and never produces a false
+start at launch.
+
+The start action is the only path that binds a recording to the detected app.
+Manual recordings never inherit a call association. The end prompt appears only
+for that bound recording, and stopping remains explicit because mute, route
+changes and browser navigation can all interrupt input without ending a call.
+Unknown input processes are logged but never prompt.
+
+Both prompts request banner and Notification Center list presentation. A banner
+covered by another app remains recoverable from Notification Center. If a bound
+application recovers after an end prompt, Quill removes that prompt and rejects
+its action if it is already in flight.
+
+Notification permission is requested when the first stable call is detected or
+the first manual recording starts, whichever happens first. It is never
+requested merely because Quill launched.
+
 ### Quill must not speak
 
 | Moment | Instead |
@@ -321,7 +345,7 @@ wrong is ten minutes of junk audio and about four seconds of transcription.
 | Model download starting or finishing | Menu line only. |
 | A track skipped as missing or empty during transcription | `transcribe.log`. |
 | Diarization failing | It degrades to the flat label and the transcript still exists. Log only. |
-| Anything at launch | Including the notification permission prompt. It is asked the first time a recording starts: asking at the first *stop*, as originally written here, would miss the failed-to-start notification, which is the one a fresh install is most likely to need. |
+| Anything at launch | Including the notification permission prompt. It is asked at the first stable call or first recording, when the reason is visible. |
 
 ## 5. Config
 

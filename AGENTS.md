@@ -17,6 +17,8 @@ is not in play.
   Core Audio callback compiled cleanly and then trapped on the realtime thread.
 - Treat signing as a functional audio change. Hardened runtime without
   `com.apple.security.device.audio-input` produced correctly sized silent files.
+- Keep `com.apple.WebKit.GPU` normalized as Safari; the coverage tradeoff is
+  settled in `docs/decisions.md`.
 - Do not make a recordings-folder check fatal at startup. TCC can allow writes
   while returning an empty directory listing to the menu-bar process.
 - Retention cleanup must run only after `transcript.json` exists and after

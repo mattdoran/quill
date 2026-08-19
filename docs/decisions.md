@@ -2,6 +2,68 @@
 
 Dated product and architecture decisions. Newest first.
 
+## 2026-08-19: Keep call prompts compact and recoverable
+
+**Decision:** Start prompts read `Meeting detected` / app / `Record`; end
+prompts read `Meeting ended?` / app / `Stop`. Both request banner and
+Notification Center list presentation. A recovered call removes its end prompt
+and invalidates that action.
+
+**Why:** A larger meeting overlay covered Quill's short-lived banner during
+live testing. The action disappeared before it could be used, and the extra
+sentence repeated information already carried by the app name and button.
+
+**Consequence:** The banner can remain brief without losing the action. Stale
+end prompts cannot stop a recording after its bound application recovers.
+
+## 2026-08-19: Label the shared WebKit audio helper as Safari
+
+**Decision:** Normalize `com.apple.WebKit.GPU` to Safari for call detection.
+
+**Why:** A live Google Meet in Safari placed microphone IO on that helper, not
+`com.apple.Safari`. The helper is launched directly by `launchd`, and public
+process parentage does not attribute it to Safari or a specific Safari web app.
+The chosen product label favors browser-call coverage over preserving that
+implementation ambiguity.
+
+**Consequence:** Safari meetings can prompt. A Safari web app, or another app
+whose microphone IO uses the shared WebKit GPU helper, may also be labeled
+Safari.
+
+## 2026-08-19: Call prompts belong to the menu app
+
+**Decision:** The menu app continuously observes audio-input processes and owns
+all call prompts. A recognized application must remain active for two seconds
+before Quill offers to record. Only accepting that action binds the recording
+to the application; two seconds of absence then offers to stop. Both actions
+remain explicit. `quill watch-calls` exercises the same scanner and reducer but
+only prints diagnostics.
+
+**Why:** Live checks detected Voice Memos as unknown, normalized Zen Browser,
+and produced stable start and end transitions without a real call. They also
+showed noisy helper activity from CoreSpeech and duplicate banners when two
+diagnostic observers were allowed to notify. Audio-input activity is useful
+evidence of a possible call, not proof of one.
+
+**Consequence:** Unknown processes can appear in the disposable detection log
+but cannot prompt. The menu app is the only process allowed to turn transitions
+into notifications or recording actions. Automatic start and stop remain out
+of scope until application-specific false transitions have been measured.
+
+## 2026-08-19: The installed app bundle is the only executable copy
+
+**Decision:** Install Quill at `~/Applications/Quill.app`. The `quill` command
+is a symlink to the executable inside that bundle. Every install quits the
+running app, replaces the bundle and relaunches it.
+
+**Why:** A separately copied binary in `~/.local/bin` remained on an older
+build than the app, so the same command name exposed different features from
+the running product.
+
+**Consequence:** `./install.sh` is the live installation command. Installing is
+an intentional restart, and rollback restores both the bundle and CLI link if
+the replacement does not launch.
+
 ## 2026-08-17: Cancel speaker playback after capture
 
 **Decision:** Capture raw microphone and system audio, then use the system track

@@ -7,7 +7,7 @@ struct Quill: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "quill",
         abstract: "Local meeting recorder + transcriber. Records mic and system audio as two tracks, then transcribes on-device.",
-        subcommands: [Run.self, Doctor.self, Install.self, Diarize.self],
+        subcommands: [Run.self, Doctor.self, Install.self, Diarize.self, WatchCalls.self],
         defaultSubcommand: Run.self
     )
 }
@@ -52,6 +52,12 @@ struct Run: ParsableCommand {
         Notifier.shared.onStopRequested = { [weak controller] in
             controller?.stopFromNotification()
         }
+        Notifier.shared.onCallRecordingRequested = { [weak controller] promptToken in
+            controller?.startDetectedCall(promptToken: promptToken)
+        }
+        Notifier.shared.onCallStopRequested = { [weak controller] recordingToken in
+            controller?.stopDetectedCall(recordingToken: recordingToken)
+        }
 
         let sigint = DispatchSource.makeSignalSource(signal: SIGINT, queue: .main)
         sigint.setEventHandler {
@@ -93,6 +99,13 @@ final class AppController {
     private var settings: SettingsWindowController?
     private var session: RecordingSession?
     private var isStarting = false
+    private var callObserver: CallObservationController?
+    private var promptedCallApplication: CallApplication?
+    private var promptedCallToken: UUID?
+    private var startingCallApplication: CallApplication?
+    private var startingCallToken: UUID?
+    private var recordingCallApplication: CallApplication?
+    private var recordingCallToken: UUID?
     private var ticker: Timer?
     private var retentionTimer: Timer?
 
@@ -164,14 +177,47 @@ final class AppController {
             }
             await transcription.resumePending(root: root)
         }
+
+        let callObserver = CallObservationController(
+            includeUnknown: true,
+            printSnapshots: false,
+            log: try? CallDetectionLog(path: CallDetectionLog.defaultPath),
+            onStarted: { [weak self] application in self?.callStarted(application) },
+            onEnded: { [weak self] application in self?.callEnded(application) }
+        )
+        callObserver.start()
+        self.callObserver = callObserver
     }
 
     /// Stop from the Stop Recording button on a notification.
     func stopFromNotification() { stopSession() }
 
+    func startDetectedCall(promptToken: String) {
+        guard
+            let application = promptedCallApplication,
+            promptedCallToken?.uuidString == promptToken,
+            callObserver?.activeApplications.contains(application) == true,
+            session == nil,
+            !isStarting
+        else { return }
+        promptedCallApplication = nil
+        promptedCallToken = nil
+        startSession(boundTo: application, token: UUID())
+    }
+
+    func stopDetectedCall(recordingToken: String) {
+        guard
+            self.recordingCallToken?.uuidString == recordingToken,
+            let application = recordingCallApplication,
+            callObserver?.activeApplications.contains(application) == false
+        else { return }
+        stopSession()
+    }
+
     /// Stop any live session cleanly (finalizing files) and exit.
     func shutdown() {
         stopSession()
+        callObserver?.stop()
         retentionTimer?.invalidate()
         NSApp.terminate(nil)
     }
@@ -179,13 +225,17 @@ final class AppController {
     private func toggle() {
         guard !isStarting else { return }
         if session == nil {
-            startSession()
+            promptedCallApplication = nil
+            promptedCallToken = nil
+            startSession(boundTo: nil, token: nil)
         } else {
             stopSession()
         }
     }
 
-    private func startSession() {
+    private func startSession(boundTo application: CallApplication?, token: UUID?) {
+        startingCallApplication = application
+        startingCallToken = token
         isStarting = true
         menuBar.updateStarting()
         // Let the NSMenu action return and AppKit paint the acknowledgement
@@ -200,6 +250,8 @@ final class AppController {
         Notifier.shared.requestAuthorizationOnce()
         guard canReachRoot() else {
             isStarting = false
+            startingCallApplication = nil
+            startingCallToken = nil
             refreshMenuStatus()
             notifyUser(
                 title: "Can't reach the recordings folder",
@@ -225,10 +277,14 @@ final class AppController {
             }
             try newSession.start()
             session = newSession
+            recordingCallApplication = startingCallApplication
+            recordingCallToken = startingCallToken
             FileHandle.standardError.write(Data("● recording → \(newSession.dir.path)\n".utf8))
         } catch {
             FileHandle.standardError.write(Data("recording start failed: \(error)\n".utf8))
             isStarting = false
+            startingCallApplication = nil
+            startingCallToken = nil
             refreshMenuStatus()
             // The raw error goes to stderr and the log. What reaches someone
             // about to start a meeting is the thing they can act on.
@@ -243,6 +299,8 @@ final class AppController {
         }
 
         isStarting = false
+        startingCallApplication = nil
+        startingCallToken = nil
         refreshMenuStatus()
         let ticker = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
@@ -259,12 +317,38 @@ final class AppController {
             "○ stopped · \(elapsed) · \(session.dir.path)\n".utf8
         ))
         self.session = nil
+        recordingCallApplication = nil
+        recordingCallToken = nil
         ticker?.invalidate()
         ticker = nil
         menuBar.update(recording: false, elapsed: nil)
 
         let dir = session.dir
         Task { [transcription] in await transcription.enqueue(dir) }
+    }
+
+    private func callStarted(_ application: CallApplication) {
+        if recordingCallApplication == application, let recordingCallToken {
+            Notifier.shared.removeCallEnded(recordingToken: recordingCallToken)
+        }
+        guard session == nil, !isStarting, promptedCallApplication == nil else { return }
+        let promptToken = UUID()
+        promptedCallApplication = application
+        promptedCallToken = promptToken
+        Notifier.shared.postCallDetected(application, promptToken: promptToken)
+    }
+
+    private func callEnded(_ application: CallApplication) {
+        if promptedCallApplication == application {
+            promptedCallApplication = nil
+            promptedCallToken = nil
+        }
+        guard
+            session != nil,
+            recordingCallApplication == application,
+            let recordingCallToken
+        else { return }
+        Notifier.shared.postCallEnded(application, recordingToken: recordingCallToken)
     }
 
     private func showModelDownload(_ status: ModelDownload.Status) {

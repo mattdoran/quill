@@ -7,6 +7,9 @@ Work that remains. Product and architecture decisions live in
 
 - [ ] **Review the installed menu and Settings window visually.** Both build and
       launch, but the status item is not exposed to the available UI automation.
+- [ ] **Measure mute and device switching in a real browser meeting.** Safari
+      and Chrome Meet detection passed on 2026-08-19; dismissing Chrome's start
+      prompt correctly produced neither recording nor an end prompt.
 
 ## Transcription
 
