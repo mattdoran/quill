@@ -25,9 +25,14 @@ actor TranscriptionCoordinator {
     private var diarizer: DiarizationEngine?
     private var lastFailure: (name: String, dir: URL)?
     private var statusHandler: (@Sendable (Status) -> Void)?
+    private var completionHandler: (@Sendable (URL) -> Void)?
 
     func setStatusHandler(_ handler: @escaping @Sendable (Status) -> Void) {
         statusHandler = handler
+    }
+
+    func setCompletionHandler(_ handler: @escaping @Sendable (URL) -> Void) {
+        completionHandler = handler
     }
 
     /// Queue a finished session. With transcription disabled in config, the
@@ -83,11 +88,15 @@ actor TranscriptionCoordinator {
             let session = SessionName.spoken(dir)
             do {
                 try await transcribe(dir, session: session)
-                notifyUser(
-                    title: "Transcript ready",
-                    body: SessionName.spoken(dir),
-                    opens: dir.appendingPathComponent("transcript.md")
-                )
+                if let completionHandler {
+                    completionHandler(dir)
+                } else {
+                    notifyUser(
+                        title: "Transcript ready",
+                        body: SessionName.spoken(dir),
+                        opens: dir.appendingPathComponent("transcript.md")
+                    )
+                }
                 runHook(for: dir, then: { AudioRetention.clean(session: dir) })
             } catch {
                 log(dir, "transcription failed: \(error)")

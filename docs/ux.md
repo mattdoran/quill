@@ -433,10 +433,7 @@ The word after the time is `recording` in most places and `meeting` in the
 transcript-ready notification, where the thing being announced is the meeting,
 not the file.
 
-## 7. Planned end-to-end meeting workflow
-
-This section is the agreed target beyond 0.2. The current product still uses
-native start and stop notifications and CAF files after capture.
+## 7. End-to-end meeting workflow
 
 ### Meeting companion
 
@@ -452,9 +449,17 @@ or a custom implementation of every notification:
 | Processing | `Creating transcript…` | Ready, dismiss, or handoff after ten seconds |
 | Ready while visible | `Transcript ready`, `Open` | Open or dismiss |
 
-The companion does not activate Quill, steal keyboard focus or replace the menu
-bar as canonical state. It remains dismissible. Placement must work across
-full-screen Spaces and multiple displays and must be usable with VoiceOver.
+The companion appears without activating Quill or stealing keyboard focus. A
+deliberate interaction may make it key for keyboard or VoiceOver use. Escape and
+the close control dismiss it. It stays at one stable top-centre position on the
+display where the meeting began, joins full-screen Spaces, and never stacks a
+second surface.
+
+Dismissing Detected suppresses the rest of that application's current active
+episode. Dismissing Recording leaves capture running. The menu then exposes
+`Show Recording Controls`, so Stop remains reachable. If input disappears, the
+hidden state is updated without resurrecting the companion; showing controls
+reveals the current timer and possible-end state.
 
 Native notifications retain a distinct role. They report failures and deliver
 transcript completion when the companion was dismissed or processing outlived
@@ -482,6 +487,14 @@ change queued work. Sessions created before profiles exist retain the legacy
 per-track processing behaviour; Quill does not bulk-rewrite their metadata. A
 change while idle updates the default. A correction during a recording changes
 only that session and does not silently replace the default.
+
+The Detected surface never shows voice separation. During Recording, an active
+choice appears as a quiet `Voices: On the call`, `Voices: In the room`, or
+`Voices: Both` control. `Off` remains absent until the control has been used in
+that recording. Turning it back Off keeps `Voices: Off` visible for the rest of
+the session so the choice does not disappear under the pointer. The overlay and
+menu edit the same per-recording value; neither changes the persisted default
+while recording.
 
 ### Finished session audio
 

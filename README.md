@@ -70,10 +70,11 @@ transcription speed.
    transcript is ready.
 
 When a recognized calling app uses audio input continuously for two seconds,
-Quill asks whether to start recording. A recording started from that action is
-bound to the detected app; when its input ends for two seconds, Quill asks
-whether to stop. Neither transition starts or stops recording without an
-explicit action.
+Quill shows a compact meeting companion with `Record`. A recording started from
+that action is bound to the detected app; when its input ends for two seconds,
+the same companion asks whether to stop. It stays with the recording through
+saving and short transcript processing. Neither transition starts or stops
+recording without an explicit action.
 
 Each session lands in `~/Music/Quill/<yyyy.MM.dd-HHmm>/`:
 

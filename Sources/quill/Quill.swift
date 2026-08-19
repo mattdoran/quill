@@ -7,7 +7,10 @@ struct Quill: ParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "quill",
         abstract: "Local meeting recorder + transcriber. Records mic and system audio as two tracks, then transcribes on-device.",
-        subcommands: [Run.self, Doctor.self, Install.self, Diarize.self, WatchCalls.self],
+        subcommands: [
+            Run.self, Doctor.self, Install.self, Diarize.self, WatchCalls.self,
+            PreviewCompanion.self,
+        ],
         defaultSubcommand: Run.self
     )
 }
@@ -94,6 +97,7 @@ struct Doctor: ParsableCommand {
 final class AppController {
     private var root: URL
     private let menuBar = MenuBarController()
+    private let companion = MeetingCompanionController()
     private let transcription = TranscriptionCoordinator()
     private let models = ModelDownload()
     private var settings: SettingsWindowController?
@@ -109,6 +113,8 @@ final class AppController {
     private var recordingCallToken: UUID?
     private var ticker: Timer?
     private var retentionTimer: Timer?
+    private var processingSession: URL?
+    private var pendingReadyTranscript: URL?
 
     /// The session whose transcription failed, so its log can be opened and
     /// the job re-queued without quitting the app.
@@ -117,6 +123,9 @@ final class AppController {
     init(root: URL) {
         self.root = root
         menuBar.onToggle = { [weak self] in self?.toggle() }
+        menuBar.onShowRecordingControls = { [weak self] in
+            self?.companion.showRecordingControls()
+        }
         menuBar.onOpenFolder = { [weak self] in self?.openFolder() }
         menuBar.onQuit = { [weak self] in self?.shutdown() }
         menuBar.onOpenLastTranscript = { [weak self] in self?.openLastTranscript() }
@@ -163,14 +172,24 @@ final class AppController {
         }
         menuBar.onSettings = { [weak self] in self?.showSettings() }
         menuBar.onMeetingProfileChanged = { [weak self] profile in
-            guard let self else { return }
-            if let session {
-                session.updateMeetingProfile(profile)
-                menuBar.updateMeetingProfile(profile)
-            } else {
-                Config.setMeetingProfile(profile)
-                menuBar.updateMeetingProfile(nil)
-            }
+            self?.setMeetingProfile(profile)
+        }
+
+        companion.onRecord = { [weak self] token in
+            self?.startDetectedCall(promptToken: token.uuidString)
+        }
+        companion.onStop = { [weak self] in self?.requestStopSession() }
+        companion.onDismiss = { [weak self] in self?.companionDismissed() }
+        companion.onOpenTranscript = { [weak self] transcript in
+            self?.pendingReadyTranscript = nil
+            self?.companion.handle(.reset)
+            NSWorkspace.shared.open(transcript)
+        }
+        companion.onProfileChanged = { [weak self] profile in
+            self?.setMeetingProfile(profile)
+        }
+        companion.onVisibilityChanged = { [weak self] visible in
+            self?.menuBar.updateCompanionVisible(visible)
         }
 
         Task { [models] in
@@ -185,6 +204,9 @@ final class AppController {
                 Task { @MainActor [weak self] in
                     self?.showTranscription(status)
                 }
+            }
+            await transcription.setCompletionHandler { dir in
+                Task { @MainActor [weak self] in self?.transcriptFinished(dir) }
             }
             await AudioFinalizer.shared.recoverPending(in: root)
             await transcription.resumePending(root: root)
@@ -202,7 +224,7 @@ final class AppController {
     }
 
     /// Stop from the Stop Recording button on a notification.
-    func stopFromNotification() { stopSession() }
+    func stopFromNotification() { requestStopSession() }
 
     func startDetectedCall(promptToken: String) {
         guard
@@ -214,6 +236,7 @@ final class AppController {
         else { return }
         promptedCallApplication = nil
         promptedCallToken = nil
+        companion.handle(.startRequested(application))
         startSession(
             boundTo: application,
             token: UUID(),
@@ -227,7 +250,7 @@ final class AppController {
             let application = recordingCallApplication,
             callObserver?.activeApplications.contains(application) == false
         else { return }
-        stopSession()
+        requestStopSession()
     }
 
     /// Stop any live session cleanly (finalizing files) and exit.
@@ -243,9 +266,10 @@ final class AppController {
         if session == nil {
             promptedCallApplication = nil
             promptedCallToken = nil
+            companion.handle(.startRequested(nil))
             startSession(boundTo: nil, token: nil, profile: Config.meetingProfile())
         } else {
-            stopSession()
+            requestStopSession()
         }
     }
 
@@ -278,10 +302,11 @@ final class AppController {
                 body: "macOS is blocking access to \(root.path). Use Change "
                     + "Recordings Folder… in the menu to grant it."
             )
+            companion.handle(.reset)
             return
         }
         do {
-            let profile = startingMeetingProfile ?? .onTheCall
+            let profile = startingMeetingProfile ?? .neither
             let newSession = try RecordingSession(root: root, meetingProfile: profile)
             // No buttons: at thirty seconds the useful response is physical,
             // and "stop recording" is wrong advice while the other track is
@@ -301,6 +326,7 @@ final class AppController {
             menuBar.updateMeetingProfile(profile)
             recordingCallApplication = startingCallApplication
             recordingCallToken = startingCallToken
+            companion.handle(.recordingStarted(recordingCallApplication, profile: profile))
             FileHandle.standardError.write(Data("● recording → \(newSession.dir.path)\n".utf8))
         } catch {
             FileHandle.standardError.write(Data("recording start failed: \(error)\n".utf8))
@@ -318,6 +344,7 @@ final class AppController {
                     Screen & System Audio Recording permissions.
                     """
             )
+            companion.handle(.reset)
             return
         }
 
@@ -359,6 +386,7 @@ final class AppController {
         menuBar.updateMeetingProfile(nil)
 
         let dir = session.dir
+        processingSession = dir
         menuBar.updateTranscription("Finishing audio…")
         Task { [weak self, transcription] in
             do {
@@ -372,35 +400,48 @@ final class AppController {
                     body: "The source recording is safe. Quill will try again later."
                 )
             }
+            self?.companion.handle(.finalizationFinished(
+                transcriptionEnabled: Config.transcriptionEnabled()
+            ))
             await transcription.enqueue(dir)
             if !Config.transcriptionEnabled() {
+                self?.processingSession = nil
                 self?.menuBar.updateTranscription(nil)
             }
         }
     }
 
+    private func requestStopSession() {
+        guard session != nil else { return }
+        companion.handle(.stopRequested)
+        DispatchQueue.main.async { [weak self] in self?.stopSession() }
+    }
+
     private func callStarted(_ application: CallApplication) {
         if recordingCallApplication == application, let recordingCallToken {
             Notifier.shared.removeCallEnded(recordingToken: recordingCallToken)
+            companion.handle(.callRecovered(application))
         }
         guard session == nil, !isStarting, promptedCallApplication == nil else { return }
         let promptToken = UUID()
         promptedCallApplication = application
         promptedCallToken = promptToken
-        Notifier.shared.postCallDetected(application, promptToken: promptToken)
+        Notifier.shared.requestAuthorizationOnce()
+        companion.handle(.callDetected(application, token: promptToken))
     }
 
     private func callEnded(_ application: CallApplication) {
         if promptedCallApplication == application {
             promptedCallApplication = nil
             promptedCallToken = nil
+            companion.handle(.callEnded(application))
         }
         guard
             session != nil,
             recordingCallApplication == application,
-            let recordingCallToken
+            recordingCallToken != nil
         else { return }
-        Notifier.shared.postCallEnded(application, recordingToken: recordingCallToken)
+        companion.handle(.callEnded(application))
     }
 
     private func showModelDownload(_ status: ModelDownload.Status) {
@@ -461,6 +502,10 @@ final class AppController {
         case .failed(let name, let dir):
             failedSession = dir
             menuBar.updateTranscription("Transcription failed — \(name)", failed: true)
+            if processingSession == dir {
+                processingSession = nil
+                companion.handle(.reset)
+            }
         }
     }
 
@@ -482,6 +527,52 @@ final class AppController {
             elapsed: Self.format(Date().timeIntervalSince(session.startedAt)),
             trouble: session.trouble,
             degraded: session.isDegraded
+        )
+        companion.handle(.elapsed(Self.format(Date().timeIntervalSince(session.startedAt))))
+    }
+
+    private func setMeetingProfile(_ profile: MeetingProfile) {
+        if let session {
+            session.updateMeetingProfile(profile)
+            menuBar.updateMeetingProfile(profile)
+            companion.handle(.profileChanged(profile))
+        } else {
+            Config.setMeetingProfile(profile)
+            menuBar.updateMeetingProfile(nil)
+        }
+    }
+
+    private func transcriptFinished(_ dir: URL) {
+        let transcript = dir.appendingPathComponent("transcript.md")
+        guard processingSession == dir, session == nil else {
+            if processingSession == dir {
+                processingSession = nil
+            }
+            notifyTranscriptReady(transcript)
+            return
+        }
+        processingSession = nil
+        pendingReadyTranscript = transcript
+        companion.handle(.transcriptReady(transcript))
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
+            guard self?.pendingReadyTranscript == transcript else { return }
+            self?.pendingReadyTranscript = nil
+            self?.companion.handle(.reset)
+            self?.notifyTranscriptReady(transcript)
+        }
+    }
+
+    private func companionDismissed() {
+        guard let transcript = pendingReadyTranscript else { return }
+        pendingReadyTranscript = nil
+        notifyTranscriptReady(transcript)
+    }
+
+    private func notifyTranscriptReady(_ transcript: URL) {
+        notifyUser(
+            title: "Transcript ready",
+            body: SessionName.spoken(transcript.deletingLastPathComponent()),
+            opens: transcript
         )
     }
 

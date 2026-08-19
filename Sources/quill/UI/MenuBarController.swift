@@ -13,6 +13,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private let troubleLabel: NSMenuItem
     private let transcriptionLabel: NSMenuItem
     private let toggleItem: NSMenuItem
+    private let showControlsItem: NSMenuItem
     private let lastTranscriptItem: NSMenuItem
     private let retryItem: NSMenuItem
     private let downloadModelsItem: NSMenuItem
@@ -23,8 +24,11 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private let changeFolderItem: NSMenuItem
     private let quitItem: NSMenuItem
     private var recordingMeetingProfile: MeetingProfile?
+    private var isRecording = false
+    private var companionVisible = false
 
     var onToggle: (() -> Void)?
+    var onShowRecordingControls: (() -> Void)?
     var onOpenFolder: (() -> Void)?
     var onChangeFolder: (() -> Void)?
     var onOpenLastTranscript: (() -> Void)?
@@ -101,6 +105,14 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             keyEquivalent: ""
         )
         menu.addItem(toggleItem)
+
+        showControlsItem = NSMenuItem(
+            title: "Show Recording Controls",
+            action: #selector(showRecordingControlsClicked),
+            keyEquivalent: ""
+        )
+        showControlsItem.isHidden = true
+        menu.addItem(showControlsItem)
 
         lastTranscriptItem = NSMenuItem(
             title: "Open Last Transcript",
@@ -193,7 +205,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         super.init()
 
         for item in [
-            toggleItem, openFolderItem, changeFolderItem, quitItem,
+            toggleItem, showControlsItem, openFolderItem, changeFolderItem, quitItem,
             transcribeItem, lastTranscriptItem, about, retryItem,
             downloadModelsItem,
             transcriptionLabel,
@@ -238,6 +250,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         recording: Bool, elapsed: String?, trouble: String? = nil, degraded: Bool = false
     ) {
         precondition(!recording || elapsed != nil)
+        isRecording = recording
         toggleItem.isEnabled = true
         let clock = elapsed ?? "0:00"
         stateLabel.title =
@@ -249,6 +262,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         // no window to put one in front of.
         quitItem.title = recording ? "Stop Recording and Quit" : "Quit Quill"
         statusItem.button?.title = recording ? " \(clock)" : ""
+        refreshCompanionRecovery()
 
         troubleLabel.title = trouble ?? ""
         troubleLabel.isHidden = trouble == nil
@@ -275,6 +289,11 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     func updateMeetingProfile(_ profile: MeetingProfile?) {
         recordingMeetingProfile = profile
         refreshSettings()
+    }
+
+    func updateCompanionVisible(_ visible: Bool) {
+        companionVisible = visible
+        refreshCompanionRecovery()
     }
 
     func updateStarting() {
@@ -396,6 +415,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         transcribeItem.state = transcribing ? .on : .off
     }
 
+    private func refreshCompanionRecovery() {
+        showControlsItem.isHidden = !isRecording || companionVisible
+    }
+
     @objc private func meetingProfileClicked(_ sender: NSMenuItem) {
         guard
             let rawValue = sender.representedObject as? String,
@@ -427,6 +450,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     @objc private func retryClicked() { onRetryTranscription?() }
     @objc private func downloadModelsClicked() { onDownloadModels?() }
     @objc private func toggleClicked() { onToggle?() }
+    @objc private func showRecordingControlsClicked() { onShowRecordingControls?() }
     @objc private func openFolderClicked() { onOpenFolder?() }
     @objc private func changeFolderClicked() { onChangeFolder?() }
     @objc private func openLastTranscriptClicked() { onOpenLastTranscript?() }

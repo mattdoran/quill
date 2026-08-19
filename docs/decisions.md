@@ -2,6 +2,25 @@
 
 Dated product and architecture decisions. Newest first.
 
+## 2026-08-19: Reveal voice controls only after opt-in
+
+**Decision:** The detected-meeting companion contains only the application and
+`Record`. During recording, the companion shows a quiet `Voices` control only
+when separation was already active or was changed in that session. The menu and
+companion edit one per-recording value. A live change never changes the saved
+default. Turning separation Off keeps the control visible until that recording
+ends.
+
+**Why:** The common one-to-one case should not introduce diarization or a setup
+question. Someone who opted into voice separation still needs confidence that
+the choice is active and a nearby way to correct it. Hiding the control
+immediately after selecting Off would make that correction hard to reverse.
+
+**Consequence:** The companion does not ask about meeting structure before
+capture. The menu remains the persistent default and the fallback when live
+controls are dismissed. Post-stop changes require future transcript
+reprocessing while source audio still exists.
+
 ## 2026-08-19: Keep voice separation out of the recording flow
 
 **Decision:** Voice separation defaults to `Off`, including detected calls. The
