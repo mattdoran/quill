@@ -24,8 +24,8 @@ import Testing
 
         let published = try readJSON(SessionFiles.metadata(session))
         let files = try #require(published["files"] as? [String: String])
-        #expect(files["mic"] == AudioFinalizer.microphonePath)
-        #expect(files["system"] == AudioFinalizer.callPath)
+        #expect(files["mic"] == AudioFinalizer.localPath)
+        #expect(files["system"] == AudioFinalizer.remotePath)
         #expect(files["meeting"] == AudioFinalizer.meetingAudioPath)
         #expect(published["audio_state"] as? String == "finalized")
         let metadataText = try String(
@@ -36,8 +36,8 @@ import Testing
         #expect(!FileManager.default.fileExists(atPath: microphone.path))
         #expect(!FileManager.default.fileExists(atPath: call.path))
 
-        let finalMicrophone = session.appendingPathComponent(AudioFinalizer.microphonePath)
-        let finalCall = session.appendingPathComponent(AudioFinalizer.callPath)
+        let finalMicrophone = session.appendingPathComponent(AudioFinalizer.localPath)
+        let finalCall = session.appendingPathComponent(AudioFinalizer.remotePath)
         let meeting = session.appendingPathComponent(AudioFinalizer.meetingAudioPath)
         #expect(try AVAudioFile(forReading: finalMicrophone).length == microphoneLength)
         #expect(try AVAudioFile(forReading: finalCall).length == callLength)

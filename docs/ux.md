@@ -24,8 +24,8 @@ everything else is what ships today.
    contextual recovery command for a Settings-owned value, but never a second
    copy of the setting itself.
 7. **One persistent utility window.** Settings is the only persistent window.
-   A focused, task-scoped voice-identification window is allowed; wizards,
-   transcript viewers and recording windows are not.
+   A focused, task-scoped transcript review window is allowed; wizards,
+   general editors and persistent recording windows are not.
 
 ## 2. Status item
 
@@ -36,7 +36,7 @@ the item keeps the position the user dragged it to.
 |---|---|---|---|---|
 | Idle | feather (inline SVG, template) | none | *(empty)* | `Quill, idle` |
 | Starting | `record.circle` | none | *(empty)* | `Quill, starting recording` |
-| Recording | `record.circle.fill` | `.systemRed` | ` 12:03` | `Quill, recording, 12 minutes 3 seconds` |
+| Recording | `circle.fill` | `.systemRed` | ` 12:03` | `Quill, recording, 12 minutes 3 seconds` |
 | Degraded | `exclamationmark.triangle.fill` | `.systemOrange` | ` 12:03` | `Quill, capture problem, 12 minutes 3 seconds` |
 | Transcribing, not recording | feather | none | *(empty)* | `Quill, idle` |
 | Downloading models | feather | none | *(empty)* | `Quill, idle` |
@@ -74,7 +74,7 @@ Quill is idle                                       ⟨disabled⟩
 ────────────────────────────────────────────
 Start Recording
 Open Last Transcript
-Review Speakers in Last Transcript…
+Review Last Transcript…
 Open Recordings Folder
 ────────────────────────────────────────────
 Settings…
@@ -83,7 +83,7 @@ Quit Quill                                      ⌘Q
 ```
 
 `Open Last Transcript` is disabled when no session has a `transcript.md`.
-`Review Speakers in Last Transcript…` is hidden until the newest compatible
+`Review Last Transcript…` is hidden until the newest compatible
 transcript exists. It is disabled during recording so sample playback cannot
 enter the capture.
 `Retry Transcription` and `Download Transcription Models` are hidden unless they
@@ -97,7 +97,7 @@ Recording — 12:03                                   ⟨disabled⟩
 ────────────────────────────────────────────
 Stop Recording
 Open Last Transcript
-Review Speakers in Last Transcript…                    ⟨disabled⟩
+Review Last Transcript…                                ⟨disabled⟩
 Open Recordings Folder
 ────────────────────────────────────────────
 Settings…
@@ -353,7 +353,7 @@ must terminate before cleanup touches that session's audio.
 
 | Kind | Case | Examples |
 |---|---|---|
-| Menu commands and checkboxes | Title case | `Start Recording`, `Open Last Transcript`, `Review Speakers in Last Transcript…`, `Quit Quill` |
+| Menu commands and checkboxes | Title case | `Start Recording`, `Open Last Transcript`, `Review Last Transcript…`, `Quit Quill` |
 | Settings labels and checkboxes | Sentence case | `Open at login`, `Source audio` |
 | Status lines | Sentence case | `Quill is idle`, `Recording — 12:03`, `Mic capture lost 4s at 2:35 PM` |
 | Notification titles | Sentence case | `Transcript ready`, `Microphone stopped` |
@@ -364,13 +364,13 @@ can see:
 
 | Track | User-facing word | Never |
 |---|---|---|
-| `mic.caf` | **microphone**, or **the room** when talking about who is on it | "input", "local", "me" |
-| `system.caf` | **system audio**, or **the call** when talking about who is on it | "output", "remote", "them", "loopback" |
+| `mic.caf` | **microphone**, or **local** as source context after separation | "input" |
+| `system.caf` | **system audio**, or **remote** as source context after separation | "output", "loopback" |
 
 Use "speakers" only in explicit transcript-review context, where it means
 people unambiguously. Use "voices" when describing captured sound. Baseline
-transcript labels are `In the room` and `On the call`; separated labels add a
-number until the user names them.
+transcript labels are `Me` and `Them`. After separation, unnamed voices are
+globally numbered `Voice 1`, `Voice 2` and so on.
 
 **Durations.**
 
@@ -403,54 +403,67 @@ or a custom implementation of every notification:
 | State | Content | Exit |
 |---|---|---|
 | Detected | Application, `Record`, 12-second deadline | Record, dismiss, timeout, or call ends |
-| Recording, brief/expanded | Record glyph, elapsed time, `Stop` | Collapses after one second |
+| Recording, brief/expanded | Red dot, elapsed time, `Stop` | Collapses after three seconds |
 | Recording, collapsed | Small record capsule and ellipsis | Expand controls or possible end |
 | Possible end | `Meeting ended?`, application, `Stop` | Stop, Keep Recording, or input recovery |
 | Stopping | `Saving recording…` | Processing |
-| Processing | `Creating transcript…` | Ready, dismiss, or handoff after ten seconds |
-| Ready while visible | `Transcript ready`, `Open` | Open or dismiss |
+| Processing | `Creating transcript…` | Ready or dismiss |
+| Ready while visible | `Transcript ready`, `Review` | Review or dismiss |
 
 The expanded companion is 380 × 72 points. It appears without activating Quill
 or stealing keyboard focus. A deliberate interaction may make it key for
-keyboard or VoiceOver use. In Recording, Escape and the close control collapse
+keyboard or VoiceOver use. In Recording, Escape and the right-chevron control collapse
 the controls back to the pill; in other states they dismiss the surface. Quill
-places its first appearance at the top right near system notifications, but a
-dragged position belongs to the user:
-elapsed updates never recenter it. Expansion and collapse preserve the same
-centre and clamp only when display topology would leave it off-screen. It joins
+places every new session's first appearance at the top right near system
+notifications. A drag changes the position for that session only: state changes
+and elapsed updates never recenter it, while the next session returns to the
+default top-right position. Expansion and collapse preserve the same right edge
+and clamp only when display topology would leave it off-screen. It joins
 full-screen Spaces and never stacks a second surface.
+
+During a detected recording, the quiet subtitle remains the detected
+application name. A manual recording has no subtitle. Normal capture does not
+repeat `microphone and computer audio`; capture failures replace the subtitle
+with an actionable exception instead.
 
 An unanswered Detected prompt expires after 12 seconds. A two-point accent bar
 drains across its lower edge to make that deadline visible. Timeout means "not
 this meeting" and suppresses another prompt for the same active call episode.
 
-After recording begins, the expanded controls remain for one second, then
+After recording begins, the expanded controls remain for three seconds, then
 collapse to a 48 × 72-point recording capsule. The capsule is confidence, not a
 second workflow: a red record glyph and ellipsis only. The entire capsule is a
 combined click-or-drag target, so a click restores the expanded controls for
-eight seconds and a drag moves it from almost anywhere. `Show Recording
+eight seconds and a drag moves it from almost anywhere. Hovering the expanded
+controls extends their stay to eight seconds but never prevents collapse
+indefinitely. `Show Recording
 Controls` in the menu provides the same expansion. Possible end expands
 automatically because it requires a decision.
 
 Dismissing Detected suppresses the rest of that application's current active
-episode. Recording's X cannot hide capture confidence; it returns to the pill,
+episode. Recording's right chevron cannot hide capture confidence; it returns to the pill,
 and the menu exposes `Show Recording Controls`. If input disappears, Possible
 end replaces the pill because it requires an explicit decision.
 
 Native notifications retain a distinct role. They report failures and deliver
-transcript completion when the companion was dismissed or processing outlived
-its ten-second handoff. Notification Center therefore remains the recovery
-surface for asynchronous events; the companion owns only the live meeting.
+transcript completion when the person dismissed processing. Dismissal never
+cancels work. If the companion remains visible, it stays on `Creating
+transcript…` until completion and becomes `Transcript ready`. Both completion
+surfaces open the same Quill review window.
 
 ### Transcript-first speaker flow
 
 Recording and initial transcription have no speaker-separation setting. Quill
 always captures both tracks and produces a baseline transcript with coarse
-`In the room` and `On the call` labels.
+`Me` and `Them` labels.
 
-`Review Speakers in Last Transcript…` opens a task-scoped window after the
-transcript exists. Before analysis it explains that people on each side are
-currently grouped, names the selected recording and offers `Separate Speakers`.
+`Review Last Transcript…` opens a task-scoped, read-only window after the
+transcript exists. The transcript is the primary content. Its Speakers sidebar
+lets the user sample and name `Me` and `Them` immediately. `Separate Voices`
+appears below them for meetings with more people.
+While this task window is open, Quill temporarily appears in the Dock and
+Command-Tab switcher. Closing it returns Quill to its menu-bar-only accessory
+state. The transcript window remains part of the same app and process.
 That primary action starts local analysis directly. The review window stays
 open until success or failure, and an active recording blocks the action with
 an explicit explanation. The existing timed words remain authoritative:
@@ -474,9 +487,9 @@ session presents:
 Meeting Audio.m4a
 transcript.md
 Source Audio/
-  Microphone.m4a
-  Call.m4a
-  Microphone Cleaned.m4a
+  Local.m4a
+  Remote.m4a
+  Local Cleaned.m4a
 .quill/                  hidden internal state
 ```
 
@@ -497,13 +510,14 @@ without adding information. Older session layouts are not migrated.
 
 ### Reviewing speakers
 
-A focused Quill window names stable machine voice IDs. It is not a general
-transcript editor. After optional separation it presents:
+A focused Quill window presents the readable transcript and names stable
+machine voice IDs. It is not a general transcript editor. After optional
+separation its Speakers sidebar presents:
 
 ```text
 Who is speaking?
-In the room · Voice 1    [ Name this voice ]  ▶ Play Sample
-On the call · Voice 1    [ Alice           ]  ▶ Play Sample
+Voice 1   local      [ Name this voice ]  ▶ Play Sample
+Voice 2   remote     [ Alice           ]  ▶ Play Sample
 ```
 
 Each voice offers up to three representative samples. The first click plays the
@@ -511,18 +525,32 @@ best candidate; `Another Sample` advances through alternatives. Candidate
 ranking favors a useful three-to-eight-second duration and enough recognized
 words to identify the person. Playback seeks into the appropriate source track;
 no extracted clip file is required.
+Voice numbers are unique across the recording. Source appears as quiet
+secondary context in native review and remains visible after naming, but is not
+part of the voice name or post-separation Markdown.
+Before separation, `Me` and `Them` can be named without running diarisation. If
+a named source produces exactly one separated voice, its name carries forward.
+If it produces several, none inherits the group name.
 If retention removed the source track, existing names remain editable and only
 the sample control becomes unavailable.
 
 Assigning `Alice` changes the human label mapped to the stable machine ID and
 updates every segment in that cluster. It does not rewrite diarization output.
 Per-sentence reassignment and cluster merging are outside the first scope.
-Markdown remains the normal reading and export artifact; the review surface is
-justified by audio playback and identity management that Markdown cannot do.
+Markdown remains the editable and export artifact. `Open Transcript File` and
+`Show in Finder` are explicit actions in the review window. The native review is
+justified by a coherent completion flow, audio playback and identity management
+that Markdown cannot do.
+Those file actions sit at the footer's left. `Close` and, after separation,
+`Save Names` sit at the right. Standard window controls remain available.
+Closing with changed names offers Save, Don't Save and Cancel; closing never
+implies that optional speaker review is complete.
 The stable IDs, human label map and segments live together in schema v1 of the
 canonical `.quill/transcript.json`, which is rewritten atomically with `transcript.md`;
 there is no second label database or sidecar. Incompatible JSON is ignored by
 voice review without affecting Quill or the readable Markdown.
+Model and diarizer provenance stays in the internal JSON. It does not appear in
+the human-facing Markdown.
 
 ## 8. Deliberately not doing
 
@@ -531,8 +559,8 @@ voice review without affecting Quill or the readable Markdown.
 | Pause and resume | Two tracks share one wall clock; a pause is a gap to reconcile in both, for a feature that "stop and start again" already covers. |
 | Per-app audio picker | The global tap is the feature. Filtering it is a preferences pane and a support burden for "don't play Spotify". |
 | Level meters or a waveform | The menu bar is not a mixer, and the elapsed counter already proves capture is alive. |
-| A general transcript editor | `transcript.md` remains the reading and export artifact. Quill's review surface is limited to voice identification, which a static document cannot perform. |
-| A Dock icon, ever | `LSUIElement` is declared in the plist and set at runtime. It is a menu bar app. |
+| A general transcript editor | `transcript.md` remains the editable and export artifact. Quill's native window is read-only review plus speaker identification. |
+| A permanent Dock icon | Quill is normally a menu bar accessory. It becomes a regular app only while transcript review is open, so that task window participates in Command-Tab. |
 | Our own sounds | The system's notification sound is the only sound quill makes. |
 | A first-run wizard | Permissions prompt themselves and the menu is thirteen items. If onboarding is needed, the menu is wrong. |
 | Live transcription during the meeting | Doubles the compute during the one moment the machine is busy, to show text nobody reads while talking. |

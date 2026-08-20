@@ -198,7 +198,7 @@ actor TranscriptionCoordinator {
                 log(dir, "skipping \(track.file): \(error)")
                 continue
             }
-            let speaker = track.kind == "mic" ? "In the room" : "On the call"
+            let speaker = track.kind == "mic" ? "Me" : "Them"
             let speakers = segments.map { _ in speaker }
             let offset = TimeInterval(track.offsetMs) / 1000
             let voiceIDs = [speaker: "\(track.kind):1"]
@@ -260,8 +260,9 @@ actor TranscriptionCoordinator {
         var voices: [String: TranscriptDocument.Voice] = [:]
         var segments = current.segments
         var processedTrack = false
+        var voiceLabels = VoiceLabelSequence()
 
-        for track in meta.tracks {
+        for track in meta.tracks.sorted(by: { Self.trackOrder($0.kind) < Self.trackOrder($1.kind) }) {
             let source = dir.appendingPathComponent(track.file)
             let cleaned = meta.cleanedMicrophoneFile.map { dir.appendingPathComponent($0) }
             let audio = track.kind == "mic" && cleaned.map({
@@ -296,45 +297,50 @@ actor TranscriptionCoordinator {
                 guard let assignment, ordinals[assignment] == nil else { continue }
                 ordinals[assignment] = ordinals.count + 1
             }
-            let place = track.kind == "mic" ? "in the room" : "on the call"
             let audioFile = audio.path.replacingOccurrences(of: dir.path + "/", with: "")
 
             if ordinals.isEmpty {
                 let id = "\(track.kind):1"
-                let label = track.kind == "mic" ? "In the room" : "On the call"
-                voices[id] = makeVoice(
+                let label = voiceLabels.next()
+                var voice = makeVoice(
                     source: track.kind, audioFile: audioFile,
                     label: label, indices: Array(timed.indices), segments: timed
                 )
+                voice.name = current.nameToCarry(
+                    source: track.kind, separatedVoiceCount: 1
+                )
+                voices[id] = voice
                 for index in indices {
-                    segments[index].speaker = label
+                    segments[index].speaker = voice.displayName
                     segments[index].voice_id = id
                 }
                 continue
             }
 
-            for (speaker, ordinal) in ordinals {
+            for (speaker, ordinal) in ordinals.sorted(by: { $0.value < $1.value }) {
                 let id = "\(track.kind):\(ordinal)"
-                let label = ordinals.count == 1
-                    ? (track.kind == "mic" ? "In the room" : "On the call")
-                    : "Speaker \(ordinal) (\(place))"
+                let label = voiceLabels.next()
                 let positions = assignments.indices.filter { assignments[$0] == speaker }
-                voices[id] = makeVoice(
+                var voice = makeVoice(
                     source: track.kind, audioFile: audioFile,
                     label: label, indices: positions, segments: timed
                 )
+                voice.name = current.nameToCarry(
+                    source: track.kind, separatedVoiceCount: ordinals.count
+                )
+                voices[id] = voice
             }
             for (position, index) in indices.enumerated() {
                 guard
                     let speaker = assignments[position],
                     let ordinal = ordinals[speaker]
                 else {
-                    segments[index].speaker = "Unassigned (\(place))"
+                    segments[index].speaker = "Unassigned"
                     segments[index].voice_id = nil
                     continue
                 }
                 let id = "\(track.kind):\(ordinal)"
-                segments[index].speaker = voices[id]?.machine_label ?? "Speaker \(ordinal)"
+                segments[index].speaker = voices[id]?.displayName ?? "Voice \(ordinal)"
                 segments[index].voice_id = id
             }
             log(dir, "found \(ordinals.count) speaker(s) in \(track.file)")
@@ -376,6 +382,10 @@ actor TranscriptionCoordinator {
             name: nil,
             samples: candidates.prefix(3).map(\.0)
         )
+    }
+
+    private static func trackOrder(_ kind: String) -> Int {
+        kind == "mic" ? 0 : 1
     }
 
     private enum SpeakerSeparationError: LocalizedError {

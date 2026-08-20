@@ -36,7 +36,7 @@ struct PreviewCompanion: ParsableCommand {
                 )),
                 ("saving", .finalizing),
                 ("processing", .processing),
-                ("ready", .ready(transcript: transcript)),
+                ("ready", .ready(session: transcript.deletingLastPathComponent())),
                 ("failed", .failed(message: "The source recording is safe.")),
             ]
 

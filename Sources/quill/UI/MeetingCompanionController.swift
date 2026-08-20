@@ -13,33 +13,28 @@ final class MeetingCompanionController: NSObject, NSWindowDelegate {
     private var isCollapsed = false
     private var collapseTask: DispatchWorkItem?
     private var detectionTimeoutTask: DispatchWorkItem?
-    private var processingTimeoutTask: DispatchWorkItem?
     private var collapseGeneration = 0
     private var detectionTimeoutGeneration = 0
-    private var processingTimeoutGeneration = 0
     private var interactionDepth = 0
     private let initialCollapseDelay: TimeInterval
     private let reopenedCollapseDelay: TimeInterval
     private let detectionTimeout: TimeInterval
-    private let processingTimeout: TimeInterval
 
     var onRecord: ((UUID) -> Void)?
     var onStop: (() -> Void)?
     var onDismiss: (() -> Void)?
     var onReadyDismissed: (() -> Void)?
-    var onOpenTranscript: ((URL) -> Void)?
+    var onReviewTranscript: ((URL) -> Void)?
     var onVisibilityChanged: ((Bool) -> Void)?
 
     init(
-        initialCollapseDelay: TimeInterval = 1,
+        initialCollapseDelay: TimeInterval = 3,
         reopenedCollapseDelay: TimeInterval = 8,
-        detectionTimeout: TimeInterval = 12,
-        processingTimeout: TimeInterval = 10
+        detectionTimeout: TimeInterval = 12
     ) {
         self.initialCollapseDelay = initialCollapseDelay
         self.reopenedCollapseDelay = reopenedCollapseDelay
         self.detectionTimeout = detectionTimeout
-        self.processingTimeout = processingTimeout
         panel = MeetingCompanionPanel(
             contentRect: NSRect(origin: .zero, size: Self.expandedSize),
             styleMask: [.borderless, .nonactivatingPanel],
@@ -80,6 +75,7 @@ final class MeetingCompanionController: NSObject, NSWindowDelegate {
 
     var isVisible: Bool { panel.isVisible }
     var presentationIsCollapsed: Bool { isCollapsed }
+    var presentationFrame: NSRect { panel.frame }
 
     deinit {
         NotificationCenter.default.removeObserver(self)
@@ -87,11 +83,30 @@ final class MeetingCompanionController: NSObject, NSWindowDelegate {
 
     func handle(_ event: MeetingCompanionState.Event) {
         let wasVisible = panel.isVisible
+        let previousPhase = state.phase
         state.handle(event)
+        if startsNewSession(event, from: previousPhase) {
+            hasPositioned = false
+            display = nil
+        }
         updatePresentation(for: event)
         render()
         if panel.isVisible != wasVisible {
             onVisibilityChanged?(panel.isVisible)
+        }
+    }
+
+    private func startsNewSession(
+        _ event: MeetingCompanionState.Event,
+        from previousPhase: MeetingCompanionState.Phase
+    ) -> Bool {
+        switch (event, previousPhase, state.phase) {
+        case (.callDetected, .hidden, .detected):
+            true
+        case (.startRequested, .hidden, .starting):
+            true
+        default:
+            false
         }
     }
 
@@ -103,7 +118,6 @@ final class MeetingCompanionController: NSObject, NSWindowDelegate {
         let dismissedPhase = state.phase
         cancelCollapse()
         cancelDetectionTimeout()
-        cancelProcessingTimeout()
         state.handle(.dismissed)
         panel.orderOut(nil)
         if case .ready = dismissedPhase {
@@ -154,11 +168,6 @@ final class MeetingCompanionController: NSObject, NSWindowDelegate {
         } else {
             cancelDetectionTimeout()
         }
-        if case .finalizationFinished = event {
-            scheduleProcessingTimeout()
-        } else {
-            cancelProcessingTimeout()
-        }
         switch event {
         case .recordingStarted:
             expandRecordingControls(after: initialCollapseDelay)
@@ -181,12 +190,21 @@ final class MeetingCompanionController: NSObject, NSWindowDelegate {
         cancelCollapse()
         let wasCollapsed = isCollapsed
         isCollapsed = false
-        if let delay, interactionDepth == 0 { scheduleCollapse(after: delay) }
+        if let delay {
+            let pointerIsOverControls = interactionDepth > 0
+            scheduleCollapse(
+                after: pointerIsOverControls ? reopenedCollapseDelay : delay,
+                evenDuringInteraction: pointerIsOverControls
+            )
+        }
         if panel.isVisible { render() }
         if wasCollapsed { onVisibilityChanged?(true) }
     }
 
-    private func scheduleCollapse(after delay: TimeInterval) {
+    private func scheduleCollapse(
+        after delay: TimeInterval,
+        evenDuringInteraction: Bool = false
+    ) {
         cancelCollapse()
         guard case .recording = state.phase else { return }
         let generation = collapseGeneration
@@ -195,7 +213,7 @@ final class MeetingCompanionController: NSObject, NSWindowDelegate {
                 let self,
                 collapseGeneration == generation,
                 case .recording = state.phase,
-                interactionDepth == 0
+                evenDuringInteraction || interactionDepth == 0
             else { return }
             collapseTask = nil
             collapseRecordingControls()
@@ -220,7 +238,11 @@ final class MeetingCompanionController: NSObject, NSWindowDelegate {
 
     func beginInteraction() {
         interactionDepth += 1
-        cancelCollapse()
+        if case .recording = state.phase {
+            scheduleCollapse(after: reopenedCollapseDelay, evenDuringInteraction: true)
+        } else {
+            cancelCollapse()
+        }
     }
 
     func endInteraction() {
@@ -251,36 +273,12 @@ final class MeetingCompanionController: NSObject, NSWindowDelegate {
         detectionTimeoutTask = nil
     }
 
-    private func scheduleProcessingTimeout() {
-        cancelProcessingTimeout()
-        guard case .processing = state.phase else { return }
-        let generation = processingTimeoutGeneration
-        let task = DispatchWorkItem { [weak self] in
-            guard
-                let self,
-                processingTimeoutGeneration == generation,
-                case .processing = state.phase
-            else { return }
-            processingTimeoutTask = nil
-            panel.orderOut(nil)
-            onVisibilityChanged?(false)
-        }
-        processingTimeoutTask = task
-        DispatchQueue.main.asyncAfter(deadline: .now() + processingTimeout, execute: task)
-    }
-
-    private func cancelProcessingTimeout() {
-        processingTimeoutGeneration += 1
-        processingTimeoutTask?.cancel()
-        processingTimeoutTask = nil
-    }
-
     private func applyPanelSize() {
         let size = isCollapsed ? Self.collapsedSize : Self.expandedSize
         guard panel.frame.size != size else { return }
         let old = panel.frame
         var frame = NSRect(
-            x: old.midX - size.width / 2,
+            x: old.maxX - size.width,
             y: old.midY - size.height / 2,
             width: size.width,
             height: size.height
@@ -326,8 +324,8 @@ final class MeetingCompanionController: NSObject, NSWindowDelegate {
             onRecord?(token)
         case .recording, .possibleEnd:
             onStop?()
-        case .ready(let transcript):
-            onOpenTranscript?(transcript)
+        case .ready(let session):
+            onReviewTranscript?(session)
         case .hidden, .starting, .finalizing, .processing, .failed:
             break
         }
@@ -453,7 +451,7 @@ final class MeetingCompanionView: NSVisualEffectView {
         spinner.isDisplayedWhenStopped = false
 
         collapsedSymbol.image = NSImage(
-            systemSymbolName: "record.circle.fill",
+            systemSymbolName: "circle.fill",
             accessibilityDescription: nil
         )
         collapsedSymbol.symbolConfiguration = .init(pointSize: 18, weight: .medium)
@@ -570,6 +568,10 @@ final class MeetingCompanionView: NSVisualEffectView {
         collapsedSymbol.isHidden = true
         expandButton.isHidden = true
         closeButton.isHidden = false
+        closeButton.image = NSImage(
+            systemSymbolName: "xmark",
+            accessibilityDescription: "Dismiss meeting controls"
+        )
         symbol.isHidden = false
         titleLabel.isHidden = false
         elapsedLabel.isHidden = true
@@ -605,15 +607,20 @@ final class MeetingCompanionView: NSVisualEffectView {
             spinner.startAnimation(nil)
             setAccessibility(title: "Starting recording", detail: application?.name)
         case .recording(let application, let elapsed):
-            setSymbol("record.circle.fill", description: "Recording")
+            setSymbol("circle.fill", description: "Recording")
             symbol.contentTintColor = .systemRed
             titleLabel.stringValue = "Recording"
             elapsedLabel.stringValue = elapsed
             elapsedLabel.isHidden = false
-            detailLabel.stringValue = application?.name ?? "Mic + system audio"
+            detailLabel.stringValue = application?.name ?? ""
+            detailLabel.isHidden = application == nil
             actionButton.title = "Stop"
             actionButton.keyEquivalent = ""
             closeButton.toolTip = "Collapse"
+            closeButton.image = NSImage(
+                systemSymbolName: "chevron.right",
+                accessibilityDescription: "Collapse recording controls"
+            )
             closeButton.setAccessibilityLabel("Collapse recording controls")
             setAccessibility(title: "Recording, \(elapsed)", detail: application?.name)
         case .possibleEnd(let application, let elapsed):
@@ -625,6 +632,10 @@ final class MeetingCompanionView: NSVisualEffectView {
             actionButton.title = "Stop"
             actionButton.keyEquivalent = ""
             closeButton.toolTip = "Keep recording"
+            closeButton.image = NSImage(
+                systemSymbolName: "chevron.right",
+                accessibilityDescription: "Keep recording and collapse controls"
+            )
             closeButton.setAccessibilityLabel("Keep recording and collapse controls")
             setAccessibility(
                 title: "Meeting ended? Still recording, \(elapsed)",
@@ -645,12 +656,12 @@ final class MeetingCompanionView: NSVisualEffectView {
             actionButton.isHidden = true
             spinner.startAnimation(nil)
             setAccessibility(title: "Creating transcript", detail: nil)
-        case .ready(let transcript):
+        case .ready(let session):
             setSymbol("checkmark.circle.fill", description: "Transcript ready")
             symbol.contentTintColor = .systemGreen
             titleLabel.stringValue = "Transcript ready"
-            detailLabel.stringValue = SessionName.spoken(transcript.deletingLastPathComponent())
-            actionButton.title = "Open"
+            detailLabel.stringValue = SessionName.spoken(session)
+            actionButton.title = "Review"
             actionButton.keyEquivalent = "\r"
             setAccessibility(title: "Transcript ready", detail: detailLabel.stringValue)
         case .failed(let message):

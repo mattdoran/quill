@@ -1,11 +1,7 @@
 import AppKit
 import AVFAudio
 
-private final class VoiceReviewStackView: NSStackView {
-    override var isFlipped: Bool { true }
-}
-
-private final class VoiceReviewRootView: NSView {
+private final class TranscriptReviewRootView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         NSColor.windowBackgroundColor.setFill()
         dirtyRect.fill()
@@ -15,16 +11,8 @@ private final class VoiceReviewRootView: NSView {
 
 @MainActor
 final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate {
-    private enum SeparationState {
-        case idle
-        case separating
-        case failed(String)
-    }
-
-    private struct Row {
-        let voiceID: String
-        let field: NSTextField
-    }
+    private enum SeparationState { case idle, separating, failed(String) }
+    private struct Row { let voiceID: String; let field: NSTextField }
 
     private let session: URL
     private var transcript: TranscriptDocument
@@ -47,22 +35,23 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate {
         appearance: NSAppearance? = nil
     ) throws {
         self.session = session
-        self.transcript = try TranscriptStore(session: session).read()
+        transcript = try TranscriptStore(session: session).read()
         self.isRecording = isRecording
         self.separateSpeakers = separateSpeakers
-
         let window = NSWindow(
-            contentRect: NSRect(
-                x: 0, y: 0, width: 540,
-                height: transcript.diarizer == nil ? 230 : 540
-            ),
-            styleMask: [.titled, .closable],
+            contentRect: NSRect(x: 0, y: 0, width: 840, height: 620),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
         window.appearance = appearance
-        window.title = "Review Speakers"
+        window.title = "Transcript"
+        window.titleVisibility = .visible
+        window.titlebarAppearsTransparent = false
+        window.minSize = NSSize(width: 760, height: 500)
         window.isReleasedWhenClosed = false
+        window.standardWindowButton(.closeButton)?.isHidden = false
+        window.standardWindowButton(.closeButton)?.isEnabled = true
         super.init(window: window)
         window.delegate = self
         window.contentView = buildContent()
@@ -72,186 +61,342 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate {
     required init?(coder: NSCoder) { nil }
 
     func show() {
+        NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
-        rows.first?.field.window?.makeFirstResponder(rows.first?.field)
     }
 
-    func windowWillClose(_ notification: Notification) { stopPlayback() }
-
+    func windowWillClose(_ notification: Notification) {
+        stopPlayback()
+        NSApp.setActivationPolicy(.accessory)
+    }
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         if case .separating = separationState { return false }
-        return true
+        guard hasUnsavedNames else { return true }
+        let alert = NSAlert()
+        alert.messageText = "Save speaker names?"
+        alert.informativeText = "Your changes have not been saved to the transcript."
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Don’t Save")
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            return saveNames(refresh: false)
+        case .alertThirdButtonReturn:
+            return true
+        default:
+            return false
+        }
     }
 
     private func buildContent() -> NSView {
         rows = []
-        guard transcript.diarizer != nil else { return buildSeparationContent() }
-        let root = VoiceReviewRootView()
+        let root = TranscriptReviewRootView()
+        let title = NSTextField(labelWithString: "Transcript")
+        title.font = .systemFont(ofSize: 24, weight: .semibold)
+        let sessionLabel = NSTextField(labelWithString: SessionName.dated(session))
+        sessionLabel.textColor = .secondaryLabelColor
+        let heading = NSStackView(views: [title, sessionLabel])
+        heading.orientation = .vertical
+        heading.alignment = .leading
+        heading.spacing = 3
 
-        let title = NSTextField(labelWithString: transcript.unidentifiedVoiceIDs.isEmpty
-            ? "Edit voice names"
-            : "Who is speaking?")
-        title.font = .systemFont(ofSize: 22, weight: .semibold)
+        let markdown = NSButton(title: "Open Transcript File", target: self, action: #selector(openMarkdownClicked))
+        markdown.bezelStyle = .rounded
+        let finder = NSButton(title: "Show in Finder", target: self, action: #selector(showFolderClicked))
+        finder.bezelStyle = .rounded
+        let fileActions = NSStackView(views: [finder, markdown])
+        fileActions.orientation = .horizontal
+        fileActions.spacing = 8
 
-        let detail = NSTextField(
-            wrappingLabelWithString: "\(SessionName.dated(session))\nPlay a sample, then add the name you want in the transcript."
-        )
-        detail.textColor = .secondaryLabelColor
-
-        let voiceStack = VoiceReviewStackView()
-        voiceStack.orientation = .vertical
-        voiceStack.spacing = 10
-        voiceStack.alignment = .leading
-        voiceStack.translatesAutoresizingMaskIntoConstraints = false
-
-        for id in transcript.voiceIDs {
-            guard let voice = transcript.voices[id] else { continue }
-            voiceStack.addArrangedSubview(makeRow(id: id, voice: voice))
+        let close = NSButton(title: "Close", target: self, action: #selector(closeClicked))
+        close.bezelStyle = .rounded
+        close.keyEquivalent = "\u{1b}"
+        if case .separating = separationState { close.isEnabled = false }
+        var reviewButtons = [close]
+        if !transcript.voiceIDs.isEmpty {
+            let save = NSButton(title: "Save Names", target: self, action: #selector(saveClicked))
+            save.bezelStyle = .rounded
+            save.keyEquivalent = "\r"
+            if case .separating = separationState { save.isEnabled = false }
+            reviewButtons.append(save)
         }
+        let reviewActions = NSStackView(views: reviewButtons)
+        reviewActions.orientation = .horizontal
+        reviewActions.spacing = 8
 
-        let scroll = NSScrollView()
-        scroll.hasVerticalScroller = voiceStack.arrangedSubviews.count > 4
-        scroll.drawsBackground = false
-        scroll.documentView = voiceStack
-        scroll.contentView.scroll(to: .zero)
-
-        let cancel = NSButton(title: "Cancel", target: self, action: #selector(cancelClicked))
-        cancel.keyEquivalent = "\u{1b}"
-        let save = NSButton(title: "Save Names", target: self, action: #selector(saveClicked))
-        save.keyEquivalent = "\r"
-        save.bezelStyle = .rounded
-
-        let buttons = NSStackView(views: [cancel, save])
-        buttons.orientation = .horizontal
-        buttons.spacing = 8
-
-        for view in [title, detail, scroll, buttons] {
+        let transcriptScroll = makeTranscriptScrollView()
+        let sidebar = makeSpeakerSidebar()
+        let divider = NSBox()
+        divider.boxType = .separator
+        for view in [heading, transcriptScroll, divider, sidebar, fileActions, reviewActions] {
             view.translatesAutoresizingMaskIntoConstraints = false
             root.addSubview(view)
         }
         NSLayoutConstraint.activate([
-            title.topAnchor.constraint(equalTo: root.topAnchor, constant: 26),
-            title.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 28),
-            title.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -28),
-            detail.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 6),
-            detail.leadingAnchor.constraint(equalTo: title.leadingAnchor),
-            detail.trailingAnchor.constraint(equalTo: title.trailingAnchor),
-            scroll.topAnchor.constraint(equalTo: detail.bottomAnchor, constant: 20),
-            scroll.leadingAnchor.constraint(equalTo: title.leadingAnchor),
-            scroll.trailingAnchor.constraint(equalTo: title.trailingAnchor),
-            scroll.bottomAnchor.constraint(equalTo: buttons.topAnchor, constant: -20),
-            voiceStack.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor),
-            buttons.trailingAnchor.constraint(equalTo: title.trailingAnchor),
-            buttons.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -22),
+            heading.topAnchor.constraint(equalTo: root.topAnchor, constant: 24),
+            heading.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 28),
+            transcriptScroll.topAnchor.constraint(equalTo: heading.bottomAnchor, constant: 22),
+            transcriptScroll.leadingAnchor.constraint(equalTo: heading.leadingAnchor),
+            transcriptScroll.bottomAnchor.constraint(equalTo: fileActions.topAnchor, constant: -18),
+            transcriptScroll.trailingAnchor.constraint(equalTo: divider.leadingAnchor, constant: -24),
+            divider.topAnchor.constraint(equalTo: transcriptScroll.topAnchor),
+            divider.bottomAnchor.constraint(equalTo: transcriptScroll.bottomAnchor),
+            divider.widthAnchor.constraint(equalToConstant: 1),
+            sidebar.topAnchor.constraint(equalTo: transcriptScroll.topAnchor),
+            sidebar.leadingAnchor.constraint(equalTo: divider.trailingAnchor, constant: 24),
+            sidebar.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -28),
+            sidebar.bottomAnchor.constraint(lessThanOrEqualTo: transcriptScroll.bottomAnchor),
+            sidebar.widthAnchor.constraint(equalToConstant: 286),
+            fileActions.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 28),
+            fileActions.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -20),
+            reviewActions.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -28),
+            reviewActions.bottomAnchor.constraint(equalTo: fileActions.bottomAnchor),
         ])
         return root
     }
 
-    private func buildSeparationContent() -> NSView {
-        let root = VoiceReviewRootView()
-        let title = NSTextField(labelWithString: "Review Speakers")
-        title.font = .systemFont(ofSize: 22, weight: .semibold)
-        let sessionLabel = NSTextField(labelWithString: SessionName.dated(session))
-        sessionLabel.textColor = .secondaryLabelColor
+    private func makeTranscriptScrollView() -> NSScrollView {
+        let textView = NSTextView(frame: .zero)
+        textView.isEditable = false
+        textView.isSelectable = true
+        textView.drawsBackground = false
+        textView.textContainerInset = NSSize(width: 0, height: 4)
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        textView.autoresizingMask = [.width]
+        textView.minSize = .zero
+        textView.maxSize = NSSize(
+            width: CGFloat.greatestFiniteMagnitude,
+            height: CGFloat.greatestFiniteMagnitude
+        )
+        textView.textContainer?.widthTracksTextView = true
+        textView.textContainer?.containerSize = NSSize(
+            width: 0,
+            height: CGFloat.greatestFiniteMagnitude
+        )
+        textView.textStorage?.setAttributedString(transcriptText())
+        textView.setAccessibilityLabel("Transcript text")
+        let scroll = NSScrollView()
+        scroll.hasVerticalScroller = true
+        scroll.drawsBackground = false
+        scroll.documentView = textView
+        return scroll
+    }
 
-        let status: NSTextField
-        let detail: NSTextField
-        let primary: NSButton?
+    private func transcriptText() -> NSAttributedString {
+        let result = NSMutableAttributedString()
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineSpacing = 3
+        paragraph.paragraphSpacing = 15
+        let body: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 14), .foregroundColor: NSColor.labelColor,
+            .paragraphStyle: paragraph,
+        ]
+        let speaker: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
+            .foregroundColor: NSColor.labelColor,
+        ]
+        let time: [NSAttributedString.Key: Any] = [
+            .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular),
+            .foregroundColor: NSColor.secondaryLabelColor,
+        ]
+        for segment in transcript.segments {
+            result.append(NSAttributedString(string: "\(Self.clock(segment.start_ms))  ", attributes: time))
+            result.append(NSAttributedString(string: segment.speaker, attributes: speaker))
+            if
+                transcript.diarizer != nil,
+                let voiceID = segment.voice_id,
+                let voice = transcript.voices[voiceID]
+            {
+                result.append(NSAttributedString(
+                    string: "   \(Self.sourceTag(for: voice))",
+                    attributes: time
+                ))
+            }
+            result.append(NSAttributedString(string: "\n\(segment.text)\n", attributes: body))
+        }
+        if result.length == 0 {
+            result.append(NSAttributedString(
+                string: "No spoken text was found in this recording.",
+                attributes: [.font: NSFont.systemFont(ofSize: 14), .foregroundColor: NSColor.secondaryLabelColor]
+            ))
+        }
+        return result
+    }
+
+    private func makeSpeakerSidebar() -> NSView {
+        let root = NSView()
+        let heading = NSTextField(labelWithString: "Speakers")
+        heading.font = .systemFont(ofSize: 17, weight: .semibold)
+        let content = transcript.diarizer == nil
+            ? makeBaselineReview()
+            : makeVoiceList(showSource: true)
+        heading.translatesAutoresizingMaskIntoConstraints = false
+        content.translatesAutoresizingMaskIntoConstraints = false
+        root.addSubview(heading)
+        root.addSubview(content)
+        NSLayoutConstraint.activate([
+            heading.topAnchor.constraint(equalTo: root.topAnchor),
+            heading.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            heading.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            content.topAnchor.constraint(equalTo: heading.bottomAnchor, constant: 14),
+            content.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            content.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            content.bottomAnchor.constraint(lessThanOrEqualTo: root.bottomAnchor),
+        ])
+        return root
+    }
+
+    private func makeBaselineReview() -> NSView {
+        guard case .idle = separationState else { return makeSeparationPrompt() }
+        let voices = makeVoiceList(showSource: false, minimumHeight: 230)
+        let prompt = makeSeparationPrompt()
+        let stack = NSStackView(views: [voices, prompt])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 18
+        voices.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        prompt.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        return stack
+    }
+
+    private func makeSeparationPrompt() -> NSView {
+        let stack = NSStackView()
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 10
         switch separationState {
         case .idle:
-            status = NSTextField(labelWithString: "Separate individual speakers?")
-            detail = NSTextField(wrappingLabelWithString: sourceAudioAvailable
-                ? "Quill currently groups everyone in the room together and everyone on the call together."
-                : "Source audio is no longer available, so this transcript cannot be reprocessed."
+            let detail = NSTextField(wrappingLabelWithString: sourceAudioAvailable
+                ? "More than two people?"
+                : "Source audio is no longer available, so voices cannot be separated."
             )
-            let button = NSButton(
-                title: "Separate Speakers",
-                target: self,
-                action: #selector(separateClicked)
-            )
+            detail.font = .systemFont(ofSize: 12, weight: .semibold)
+            detail.textColor = .secondaryLabelColor
+            let button = NSButton(title: "Separate Voices", target: self, action: #selector(separateClicked))
             button.bezelStyle = .rounded
-            button.keyEquivalent = "\r"
             button.isEnabled = sourceAudioAvailable
-            button.toolTip = sourceAudioAvailable ? nil
-                : "Source audio is no longer available"
-            primary = button
+            button.toolTip = sourceAudioAvailable ? nil : "Source audio is no longer available"
+            stack.addArrangedSubview(detail)
+            stack.addArrangedSubview(button)
         case .separating:
-            status = NSTextField(labelWithString: "Separating speakers…")
-            detail = NSTextField(wrappingLabelWithString:
-                "This may take a few minutes. Keep this window open while Quill analyses the recording."
-            )
-            primary = nil
-        case .failed(let message):
-            status = NSTextField(labelWithString: "Couldn’t separate speakers")
-            detail = NSTextField(wrappingLabelWithString:
-                "Your existing transcript is unchanged.\n\(message)"
-            )
-            let button = NSButton(title: "Retry", target: self, action: #selector(separateClicked))
-            button.bezelStyle = .rounded
-            primary = button
-        }
-        status.font = .systemFont(ofSize: 15, weight: .semibold)
-        detail.textColor = .secondaryLabelColor
-
-        let close = NSButton(title: "Close", target: self, action: #selector(cancelClicked))
-        close.keyEquivalent = "\u{1b}"
-        if case .separating = separationState { close.isEnabled = false }
-        let buttons = NSStackView(views: [close] + (primary.map { [$0] } ?? []))
-        buttons.orientation = .horizontal
-        buttons.spacing = 8
-
-        let statusRow: NSStackView
-        if case .separating = separationState {
             let spinner = NSProgressIndicator()
             spinner.style = .spinning
             spinner.controlSize = .small
             spinner.startAnimation(nil)
-            statusRow = NSStackView(views: [spinner, status])
-            statusRow.spacing = 8
-            statusRow.alignment = .centerY
-        } else {
-            statusRow = NSStackView(views: [status])
+            let status = NSTextField(labelWithString: "Separating speakers…")
+            status.font = .systemFont(ofSize: 13, weight: .semibold)
+            let row = NSStackView(views: [spinner, status])
+            row.spacing = 8
+            row.alignment = .centerY
+            let detail = NSTextField(wrappingLabelWithString: "This may take a few minutes. Keep this window open.")
+            detail.textColor = .secondaryLabelColor
+            stack.addArrangedSubview(row)
+            stack.addArrangedSubview(detail)
+        case .failed(let message):
+            let status = NSTextField(labelWithString: "Couldn’t separate speakers")
+            status.font = .systemFont(ofSize: 13, weight: .semibold)
+            let detail = NSTextField(wrappingLabelWithString: "The transcript is unchanged.\n\(message)")
+            detail.textColor = .secondaryLabelColor
+            let retry = NSButton(title: "Retry", target: self, action: #selector(separateClicked))
+            retry.bezelStyle = .rounded
+            stack.addArrangedSubview(status)
+            stack.addArrangedSubview(detail)
+            stack.addArrangedSubview(retry)
         }
-        let content = NSStackView(views: [statusRow, detail])
-        content.orientation = .vertical
-        content.alignment = .leading
-        content.spacing = 8
+        return stack
+    }
 
-        for view in [title, sessionLabel, content, buttons] {
-            view.translatesAutoresizingMaskIntoConstraints = false
-            root.addSubview(view)
+    private func makeVoiceList(
+        showSource: Bool,
+        minimumHeight: CGFloat = 250
+    ) -> NSView {
+        let voiceStack = NSStackView()
+        voiceStack.orientation = .vertical
+        voiceStack.alignment = .leading
+        voiceStack.spacing = 10
+        voiceStack.translatesAutoresizingMaskIntoConstraints = false
+        for id in transcript.voiceIDs {
+            guard let voice = transcript.voices[id] else { continue }
+            let row = makeRow(id: id, voice: voice, showSource: showSource)
+            voiceStack.addArrangedSubview(row)
+            row.widthAnchor.constraint(equalTo: voiceStack.widthAnchor).isActive = true
         }
+        let scroll = NSScrollView()
+        scroll.hasVerticalScroller = voiceStack.arrangedSubviews.count > 3
+        scroll.drawsBackground = false
+        scroll.documentView = voiceStack
+        scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: minimumHeight).isActive = true
+        voiceStack.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor).isActive = true
+        return scroll
+    }
+
+    private func makeRow(
+        id: String,
+        voice: TranscriptDocument.Voice,
+        showSource: Bool
+    ) -> NSView {
+        let card = NSBox()
+        card.boxType = .custom
+        card.cornerRadius = 9
+        card.borderWidth = 1
+        card.borderColor = .separatorColor
+        card.fillColor = .controlBackgroundColor
+        let voiceLabel = NSTextField(labelWithString: voice.machine_label)
+        voiceLabel.font = .systemFont(ofSize: 12, weight: .semibold)
+        var headerViews: [NSView] = [voiceLabel]
+        if showSource {
+            let sourceLabel = NSTextField(labelWithString: Self.sourceTag(for: voice))
+            sourceLabel.font = .systemFont(ofSize: 11)
+            sourceLabel.textColor = .secondaryLabelColor
+            headerViews.append(sourceLabel)
+        }
+        let header = NSStackView(views: headerViews)
+        header.orientation = .horizontal
+        header.alignment = .firstBaseline
+        header.spacing = 7
+        let context = Self.context(for: id, voice: voice, showSource: showSource)
+        let field = NSTextField(string: voice.name ?? "")
+        field.placeholderString = "Name this voice"
+        field.setAccessibilityLabel("Name for \(context)")
+        rows.append(Row(voiceID: id, field: field))
+        let play = NSButton(title: "Play Sample", target: self, action: #selector(playClicked(_:)))
+        play.bezelStyle = .rounded
+        play.controlSize = .small
+        play.image = NSImage(systemSymbolName: "play.fill", accessibilityDescription: nil)
+        play.imagePosition = .imageLeading
+        play.identifier = NSUserInterfaceItemIdentifier(id)
+        let sampleAvailable = voice.samples.first != nil && sourceURL(for: voice) != nil
+        play.isEnabled = sampleAvailable
+        play.title = sampleAvailable ? Self.initialPlayTitle(voice) : "Sample Unavailable"
+        play.toolTip = sampleAvailable ? "Play a short sample" : "Source audio is unavailable"
+        play.setAccessibilityLabel("Play sample for \(context)")
+        let stack = NSStackView(views: [header, field, play])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 6
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        card.addSubview(stack)
         NSLayoutConstraint.activate([
-            title.topAnchor.constraint(equalTo: root.topAnchor, constant: 26),
-            title.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 28),
-            title.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -28),
-            sessionLabel.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 6),
-            sessionLabel.leadingAnchor.constraint(equalTo: title.leadingAnchor),
-            content.topAnchor.constraint(equalTo: sessionLabel.bottomAnchor, constant: 22),
-            content.leadingAnchor.constraint(equalTo: title.leadingAnchor),
-            content.trailingAnchor.constraint(equalTo: title.trailingAnchor),
-            buttons.trailingAnchor.constraint(equalTo: title.trailingAnchor),
-            buttons.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -22),
+            stack.topAnchor.constraint(equalTo: card.topAnchor, constant: 10),
+            stack.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 11),
+            stack.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -11),
+            stack.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -10),
+            field.widthAnchor.constraint(equalTo: stack.widthAnchor),
         ])
-        return root
+        return card
     }
 
     private var sourceAudioAvailable: Bool {
-        !transcript.voices.isEmpty && transcript.voices.values.allSatisfy {
-            sourceURL(for: $0) != nil
-        }
+        !transcript.voices.isEmpty && transcript.voices.values.allSatisfy { sourceURL(for: $0) != nil }
     }
 
     private func refreshContent() {
-        let isSeparating: Bool
-        if case .separating = separationState { isSeparating = true } else { isSeparating = false }
-        window?.standardWindowButton(.closeButton)?.isEnabled = !isSeparating
-        window?.setContentSize(NSSize(
-            width: 540,
-            height: transcript.diarizer == nil ? 230 : 540
-        ))
+        let separating: Bool
+        if case .separating = separationState { separating = true } else { separating = false }
+        window?.standardWindowButton(.closeButton)?.isEnabled = !separating
         window?.contentView = buildContent()
     }
 
@@ -260,12 +405,11 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate {
         if isRecording() {
             let alert = NSAlert()
             alert.messageText = "Finish the recording first"
-            alert.informativeText =
-                "Speaker analysis will be available when the current recording ends."
+            alert.informativeText = "Speaker analysis will be available when the current recording ends."
             alert.runModal()
             return
         }
-
+        if hasUnsavedNames, !saveNames(refresh: false) { return }
         separationState = .separating
         refreshContent()
         Task { [weak self] in
@@ -275,76 +419,11 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate {
                 transcript = try TranscriptStore(session: session).read()
                 separationState = .idle
                 refreshContent()
-                rows.first?.field.window?.makeFirstResponder(rows.first?.field)
             } catch {
                 separationState = .failed(error.localizedDescription)
                 if window?.isVisible == true { refreshContent() }
             }
         }
-    }
-
-    private func makeRow(id: String, voice: TranscriptDocument.Voice) -> NSView {
-        let card = NSBox()
-        card.boxType = .custom
-        card.cornerRadius = 10
-        card.borderWidth = 1
-        card.borderColor = .separatorColor
-        card.fillColor = .controlBackgroundColor
-        card.translatesAutoresizingMaskIntoConstraints = false
-
-        let icon = NSImageView(image: NSImage(
-            systemSymbolName: "waveform",
-            accessibilityDescription: nil
-        ) ?? NSImage())
-        icon.contentTintColor = voice.source == "mic" ? .systemIndigo : .systemGreen
-        icon.symbolConfiguration = .init(pointSize: 18, weight: .medium)
-        icon.setAccessibilityElement(false)
-
-        let context = NSTextField(labelWithString: Self.context(for: id, voice: voice))
-        context.font = .systemFont(ofSize: 11, weight: .medium)
-        context.textColor = .secondaryLabelColor
-
-        let field = NSTextField(string: voice.name ?? "")
-        field.placeholderString = "Name this voice"
-        field.font = .systemFont(ofSize: 15)
-        field.setAccessibilityLabel("Name for \(context.stringValue)")
-        rows.append(Row(voiceID: id, field: field))
-
-        let play = NSButton(
-            title: "Play Sample",
-            target: self,
-            action: #selector(playClicked(_:))
-        )
-        play.bezelStyle = .rounded
-        play.image = NSImage(systemSymbolName: "play.fill", accessibilityDescription: nil)
-        play.imagePosition = .imageLeading
-        play.identifier = NSUserInterfaceItemIdentifier(id)
-        let sampleAvailable = voice.samples.first != nil && sourceURL(for: voice) != nil
-        play.isEnabled = sampleAvailable
-        play.title = sampleAvailable ? Self.initialPlayTitle(voice) : "Sample Unavailable"
-        play.toolTip = sampleAvailable ? "Play a short sample of this voice" : "Source audio is unavailable"
-        play.setAccessibilityLabel("Play sample for \(context.stringValue)")
-
-        let textStack = NSStackView(views: [context, field])
-        textStack.orientation = .vertical
-        textStack.spacing = 4
-        textStack.alignment = .leading
-        field.widthAnchor.constraint(greaterThanOrEqualToConstant: 220).isActive = true
-
-        let row = NSStackView(views: [icon, textStack, play])
-        row.orientation = .horizontal
-        row.alignment = .centerY
-        row.spacing = 14
-        row.translatesAutoresizingMaskIntoConstraints = false
-        card.addSubview(row)
-        NSLayoutConstraint.activate([
-            card.heightAnchor.constraint(equalToConstant: 76),
-            row.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 14),
-            row.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -14),
-            row.centerYAnchor.constraint(equalTo: card.centerYAnchor),
-            textStack.widthAnchor.constraint(greaterThanOrEqualToConstant: 235),
-        ])
-        return card
     }
 
     @objc private func playClicked(_ sender: NSButton) {
@@ -355,22 +434,12 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate {
             alert.runModal()
             return
         }
-        guard
-            let id = sender.identifier?.rawValue,
-            let voice = transcript.voices[id],
-            !voice.samples.isEmpty,
-            let source = sourceURL(for: voice)
-        else { return }
-
-        if activePlayButton === sender, player?.isPlaying == true {
-            stopPlayback()
-            return
-        }
-
+        guard let id = sender.identifier?.rawValue, let voice = transcript.voices[id],
+              !voice.samples.isEmpty, let source = sourceURL(for: voice) else { return }
+        if activePlayButton === sender, player?.isPlaying == true { stopPlayback(); return }
         let index = nextSampleIndex[id, default: 0] % voice.samples.count
         let sample = voice.samples[index]
         nextSampleIndex[id] = index + 1
-
         do {
             stopPlayback()
             let player = try AVAudioPlayer(contentsOf: source)
@@ -384,7 +453,7 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate {
             sender.image = NSImage(systemSymbolName: "stop.fill", accessibilityDescription: nil)
             sender.setAccessibilityLabel("Stop sample for \(Self.context(for: id, voice: voice))")
             let duration = max(0.5, min(8, TimeInterval(sample.end_ms - sample.start_ms) / 1000))
-        stopTimer = Timer.scheduledTimer(withTimeInterval: duration, repeats: false) {
+            stopTimer = Timer.scheduledTimer(withTimeInterval: duration, repeats: false) {
                 [weak self] _ in MainActor.assumeIsolated { self?.stopPlayback() }
             }
         } catch {
@@ -395,22 +464,34 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate {
     }
 
     @objc private func saveClicked() {
+        _ = saveNames()
+    }
+
+    @objc private func closeClicked() {
+        window?.performClose(nil)
+    }
+
+    private func saveNames(refresh: Bool = true) -> Bool {
         stopPlayback()
         do {
             try transcript.applyVoiceNames(Dictionary(uniqueKeysWithValues: rows.map {
-                ($0.voiceID, $0.field.stringValue)
+                ($0.voiceID, enteredName(in: $0))
             }))
             try TranscriptStore(session: session).write(transcript)
-            close()
+            if refresh { refreshContent() }
+            return true
         } catch {
-            let alert = NSAlert(error: error)
-            alert.runModal()
+            NSAlert(error: error).runModal()
+            return false
         }
     }
 
-    @objc private func cancelClicked() {
-        stopPlayback()
-        close()
+    @objc private func openMarkdownClicked() {
+        NSWorkspace.shared.open(SessionFiles.transcriptMarkdown(session))
+    }
+
+    @objc private func showFolderClicked() {
+        NSWorkspace.shared.activateFileViewerSelecting([SessionFiles.transcriptMarkdown(session)])
     }
 
     private func sourceURL(for voice: TranscriptDocument.Voice) -> URL? {
@@ -423,15 +504,9 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate {
         stopTimer = nil
         player?.stop()
         player = nil
-        if
-            let id = activeVoiceID,
-            let voice = transcript.voices[id],
-            let button = activePlayButton
-        {
+        if let id = activeVoiceID, let voice = transcript.voices[id], let button = activePlayButton {
             let next = nextSampleIndex[id, default: 0] % max(voice.samples.count, 1)
-            button.title = voice.samples.count > 1
-                ? "Next Sample \(next + 1) of \(voice.samples.count)"
-                : "Replay Sample"
+            button.title = voice.samples.count > 1 ? "Next Sample \(next + 1) of \(voice.samples.count)" : "Replay Sample"
             button.image = NSImage(systemSymbolName: "play.fill", accessibilityDescription: nil)
             button.setAccessibilityLabel(
                 voice.samples.count > 1
@@ -443,13 +518,42 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate {
         activeVoiceID = nil
     }
 
-    private static func context(for id: String, voice: TranscriptDocument.Voice) -> String {
-        let number = id.split(separator: ":").last.map(String.init) ?? ""
-        let place = voice.source == "mic" ? "In the room" : "On the call"
-        return "\(place) · Voice \(number)"
+    private static func context(
+        for id: String,
+        voice: TranscriptDocument.Voice,
+        showSource: Bool = true
+    ) -> String {
+        showSource
+            ? "\(voice.machine_label) · \(sourceTag(for: voice))"
+            : voice.machine_label
+    }
+
+    private static func sourceTag(for voice: TranscriptDocument.Voice) -> String {
+        voice.source == "mic" ? "local" : "remote"
+    }
+
+    private var hasUnsavedNames: Bool {
+        rows.contains { row in
+            normalized(enteredName(in: row)) != normalized(transcript.voices[row.voiceID]?.name ?? "")
+        }
+    }
+
+    private func enteredName(in row: Row) -> String {
+        row.field.currentEditor()?.string ?? row.field.stringValue
+    }
+
+    private func normalized(_ value: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     private static func initialPlayTitle(_ voice: TranscriptDocument.Voice) -> String {
         voice.samples.count > 1 ? "Play Sample 1 of \(voice.samples.count)" : "Play Sample"
+    }
+
+    private static func clock(_ ms: Int) -> String {
+        let total = ms / 1000
+        let h = total / 3600, m = (total % 3600) / 60, s = total % 60
+        return h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%d:%02d", m, s)
     }
 }

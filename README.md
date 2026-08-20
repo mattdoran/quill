@@ -66,14 +66,14 @@ transcription speed.
    icon turns red with a running elapsed counter, and macOS shows the purple
    recording indicator.
 3. **Click → Stop recording** when the meeting ends. Transcription starts
-   automatically (the menu shows progress); a notification fires when the
-   transcript is ready.
+   automatically. The companion stays on progress until the transcript is
+   ready; if you dismiss it, completion arrives as a notification instead.
 
 When a recognized calling app uses audio input continuously for two seconds,
 Quill shows a compact meeting companion with `Record`. A recording started from
 that action is bound to the detected app; when its input ends for two seconds,
 the same companion asks whether to stop. It stays with the recording through
-saving and short transcript processing. Neither transition starts or stops
+saving and transcript processing. Neither transition starts or stops
 recording without an explicit action.
 
 Each session lands in `~/Music/Quill/<yyyy.MM.dd-HHmm>/`:
@@ -81,9 +81,9 @@ Each session lands in `~/Music/Quill/<yyyy.MM.dd-HHmm>/`:
 | File | Contents |
 |---|---|
 | `Meeting Audio.m4a` | the meeting as one playable file |
-| `Source Audio/Microphone.m4a` | your side (default input device, AAC) |
-| `Source Audio/Call.m4a` | everything the Mac played - the other side of the call (AAC) |
-| `Source Audio/Microphone Cleaned.m4a` | microphone audio with correlated speaker playback removed (AAC) |
+| `Source Audio/Local.m4a` | audio captured from the local microphone (AAC) |
+| `Source Audio/Remote.m4a` | audio captured from computer playback (AAC) |
+| `Source Audio/Local Cleaned.m4a` | local audio with correlated speaker playback removed (AAC) |
 | `transcript.md` | the same transcript rendered for reading |
 
 Quill keeps recovery data, metadata, canonical transcript JSON and logs inside
@@ -97,10 +97,11 @@ so audio already written survives an interruption, then safely remuxes it into
 familiar M4A files after stop. An interrupted session is recovered on launch.
 
 Quill first writes a useful transcript that distinguishes the room from the
-call. **Review Speakers in Last Transcript…** can then analyse both retained
-source tracks, separate individual speakers and play short samples for naming
-them. This optional work happens after transcription and never complicates
-recording.
+call. Completion opens a read-only transcript review where **Separate
+Speakers** can optionally analyse both retained source tracks and play short
+samples for naming them. **Open Transcript File** opens the editable Markdown
+copy. This
+optional work happens after transcription and never complicates recording.
 
 macOS changes audio devices out from under a live recording — a headset
 connecting takes the default input and output at once, and switching Bluetooth
@@ -120,7 +121,7 @@ menu and Settings. `quill doctor` reports whether they are ready.
 
 Before publishing the finished files, WebRTC AEC3 uses the call track as a
 reference to remove correlated speaker playback from the microphone. The
-result is retained as `Source Audio/Microphone Cleaned.m4a`; both original
+result is retained as `Source Audio/Local Cleaned.m4a`; both original
 source tracks remain unchanged. If cancellation fails, the failure is logged
 and transcription falls back to the original microphone track.
 

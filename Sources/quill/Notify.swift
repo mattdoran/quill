@@ -28,12 +28,16 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     private nonisolated static let callEndedCategory = "CALL_ENDED"
     private nonisolated static let stopAction = "STOP_RECORDING"
     private nonisolated static let stopCategory = "RECORDING"
+    private nonisolated static let reviewTranscriptKey = "reviewTranscript"
+    private nonisolated static let reviewTranscriptAction = "REVIEW_TRANSCRIPT"
+    private nonisolated static let transcriptReadyCategory = "TRANSCRIPT_READY"
 
     /// Invoked when the user takes the Stop Recording action on a
     /// notification. Set by whoever owns the session.
     var onStopRequested: (() -> Void)?
     var onCallRecordingRequested: ((String) -> Void)?
     var onCallStopRequested: ((String) -> Void)?
+    var onReviewTranscript: ((String) -> Void)?
 
     private let bundled = Bundle.main.bundleURL.pathExtension == "app"
     private var hasAsked = false
@@ -76,6 +80,17 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
                         identifier: Self.stopAction,
                         title: "Stop Recording",
                         options: []
+                    )
+                ],
+                intentIdentifiers: []
+            ),
+            UNNotificationCategory(
+                identifier: Self.transcriptReadyCategory,
+                actions: [
+                    UNNotificationAction(
+                        identifier: Self.reviewTranscriptAction,
+                        title: "Review",
+                        options: [.foreground]
                     )
                 ],
                 intentIdentifiers: []
@@ -170,6 +185,26 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         )
     }
 
+    func postTranscriptReady(session: URL) {
+        guard bundled else {
+            postViaOSAScript(
+                title: "Transcript ready",
+                body: SessionName.spoken(session)
+            )
+            return
+        }
+        let content = UNMutableNotificationContent()
+        content.title = "Transcript ready"
+        content.body = SessionName.spoken(session)
+        content.categoryIdentifier = Self.transcriptReadyCategory
+        content.userInfo = [Self.reviewTranscriptKey: session.path]
+        UNUserNotificationCenter.current().add(
+            UNNotificationRequest(
+                identifier: UUID().uuidString, content: content, trigger: nil
+            )
+        )
+    }
+
     func removeCallEnded(recordingToken: UUID) {
         let identifier = Self.callEndIdentifier(recordingToken)
         let center = UNUserNotificationCenter.current()
@@ -194,6 +229,9 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         let callRecording = response.notification.request.content.userInfo[
             Self.callRecordingKey
         ] as? String
+        let reviewTranscript = response.notification.request.content.userInfo[
+            Self.reviewTranscriptKey
+        ] as? String
         Task { @MainActor in
             if action == Self.stopCallAction, let callRecording {
                 Notifier.shared.onCallStopRequested?(callRecording)
@@ -201,6 +239,10 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
                 Notifier.shared.onStopRequested?()
             } else if action == Self.startCallAction, let callPrompt {
                 Notifier.shared.onCallRecordingRequested?(callPrompt)
+            } else if let reviewTranscript,
+                      action == Self.reviewTranscriptAction
+                        || action == UNNotificationDefaultActionIdentifier {
+                Notifier.shared.onReviewTranscript?(reviewTranscript)
             } else if let path {
                 NSWorkspace.shared.open(URL(fileURLWithPath: path))
             }

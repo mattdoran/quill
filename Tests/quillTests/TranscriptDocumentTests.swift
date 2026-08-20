@@ -23,6 +23,9 @@ import Testing
             encoding: .utf8
         )
         #expect(markdown.components(separatedBy: "Alice").count == 3)
+        #expect(!markdown.contains("engine:"))
+        #expect(!markdown.contains("diarizer:"))
+        #expect(markdown.hasPrefix("# "))
     }
 
     @Test func blankNameRestoresTheMachineLabel() throws {
@@ -30,6 +33,51 @@ import Testing
         try transcript.applyVoiceNames(["system:1": "  "])
         #expect(transcript.voices["system:1"]?.name == nil)
         #expect(transcript.segments[0].speaker == "them 1")
+    }
+
+    @Test func separatedSourceContextDoesNotEnterMarkdown() {
+        let voice = TranscriptDocument.Voice(
+            source: "mic",
+            audio_file: "Source Audio/Local.m4a",
+            machine_label: "Voice 1",
+            name: nil,
+            samples: []
+        )
+        let transcript = TranscriptDocument(
+            schema_version: 1,
+            engine: "parakeet",
+            model: "test",
+            diarizer: "test",
+            created_at: "2026-08-20T00:00:00Z",
+            voices: ["mic:1": voice],
+            segments: [
+                .init(
+                    speaker: "Voice 1", voice_id: "mic:1",
+                    start_ms: 0, end_ms: 1_000, text: "Hello"
+                ),
+            ]
+        )
+
+        let markdown = transcript.rendered(title: "Test")
+        #expect(markdown.contains("**[0:00] Voice 1:** Hello"))
+        #expect(!markdown.localizedCaseInsensitiveContains("in room"))
+        #expect(!markdown.localizedCaseInsensitiveContains("remote"))
+    }
+
+    @Test func groupNameCarriesOnlyToOneSeparatedVoice() {
+        var transcript = fixture()
+        transcript.voices.removeValue(forKey: "system:2")
+        transcript.voices["system:1"]?.name = "Alice"
+
+        #expect(transcript.nameToCarry(
+            source: "system", separatedVoiceCount: 1
+        ) == "Alice")
+        #expect(transcript.nameToCarry(
+            source: "system", separatedVoiceCount: 2
+        ) == nil)
+        #expect(transcript.nameToCarry(
+            source: "mic", separatedVoiceCount: 1
+        ) == "Matt")
     }
 
     @Test func newerSchemaCannotBeOverwritten() throws {
@@ -72,15 +120,15 @@ import Testing
             created_at: "2026-08-19T00:00:00Z",
             voices: [
                 "system:1": .init(
-                    source: "system", audio_file: "Source Audio/Call.m4a",
+                    source: "system", audio_file: "Source Audio/Remote.m4a",
                     machine_label: "them 1", name: name, samples: [sample]
                 ),
                 "system:2": .init(
-                    source: "system", audio_file: "Source Audio/Call.m4a",
+                    source: "system", audio_file: "Source Audio/Remote.m4a",
                     machine_label: "them 2", name: nil, samples: [sample]
                 ),
                 "mic:1": .init(
-                    source: "mic", audio_file: "Source Audio/Microphone.m4a",
+                    source: "mic", audio_file: "Source Audio/Local.m4a",
                     machine_label: "me", name: "Matt", samples: [sample]
                 ),
             ],

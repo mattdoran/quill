@@ -25,11 +25,11 @@ import Testing
         #expect(controller.presentationIsCollapsed)
     }
 
-    @Test func pointerInteractionHoldsExpandedControls() async throws {
+    @Test func pointerInteractionExtendsButDoesNotPreventCollapse() async throws {
         _ = NSApplication.shared
         let controller = MeetingCompanionController(
             initialCollapseDelay: 0.05,
-            reopenedCollapseDelay: 0.05
+            reopenedCollapseDelay: 0.2
         )
         defer { controller.dismiss() }
 
@@ -38,8 +38,19 @@ import Testing
         try await Task.sleep(for: .milliseconds(80))
         #expect(!controller.presentationIsCollapsed)
 
-        controller.endInteraction()
+        try await Task.sleep(for: .milliseconds(150))
+        #expect(controller.presentationIsCollapsed)
+    }
+
+    @Test func manualRecordingCollapsesWithoutPointerInteraction() async throws {
+        _ = NSApplication.shared
+        let controller = MeetingCompanionController(initialCollapseDelay: 0.05)
+        defer { controller.dismiss() }
+
+        controller.handle(.startRequested(nil))
+        controller.handle(.recordingStarted(nil))
         try await Task.sleep(for: .milliseconds(80))
+
         #expect(controller.presentationIsCollapsed)
     }
 
@@ -59,9 +70,9 @@ import Testing
         }
     }
 
-    @Test func processingPanelHandsOffAfterDeadline() async throws {
+    @Test func processingPanelRemainsUntilDismissed() async throws {
         _ = NSApplication.shared
-        let controller = MeetingCompanionController(processingTimeout: 0.05)
+        let controller = MeetingCompanionController()
         defer { controller.dismiss() }
 
         controller.handle(.recordingStarted(application))
@@ -70,7 +81,7 @@ import Testing
         #expect(controller.isVisible)
 
         try await Task.sleep(for: .milliseconds(80))
-        #expect(!controller.isVisible)
+        #expect(controller.isVisible)
         #expect(controller.state.phase == .processing)
     }
 
@@ -88,6 +99,45 @@ import Testing
             Issue.record("Close dismissed the recording companion")
             return
         }
+    }
+
+    @Test func collapseAndExpansionPreserveTheRightEdge() {
+        _ = NSApplication.shared
+        let controller = MeetingCompanionController()
+        defer { controller.dismiss() }
+
+        controller.handle(.recordingStarted(application))
+        let expandedRightEdge = controller.presentationFrame.maxX
+        controller.closeCompanion()
+        #expect(abs(controller.presentationFrame.maxX - expandedRightEdge) < 0.5)
+
+        controller.showRecordingControls()
+        #expect(abs(controller.presentationFrame.maxX - expandedRightEdge) < 0.5)
+    }
+
+    @Test func draggedPositionLastsOnlyForTheCurrentSession() throws {
+        _ = NSApplication.shared
+        let controller = MeetingCompanionController()
+        defer { controller.dismiss() }
+
+        controller.handle(.callDetected(application, token: UUID()))
+        let defaultOrigin = controller.presentationFrame.origin
+        let panel = try #require(NSApp.windows.first {
+            $0.isVisible
+                && $0.accessibilityLabel() == "Quill meeting controls"
+                && $0.frame.origin == defaultOrigin
+        })
+        let draggedOrigin = NSPoint(x: defaultOrigin.x - 120, y: defaultOrigin.y - 80)
+        panel.setFrameOrigin(draggedOrigin)
+        controller.windowDidMove(Notification(name: NSWindow.didMoveNotification, object: panel))
+
+        controller.handle(.startRequested(application))
+        controller.handle(.recordingStarted(application))
+        #expect(controller.presentationFrame.origin == draggedOrigin)
+
+        controller.handle(.reset)
+        controller.handle(.callDetected(application, token: UUID()))
+        #expect(controller.presentationFrame.origin == defaultOrigin)
     }
 
     @Test func closeAtPossibleEndMeansKeepRecordingAndCollapse() {

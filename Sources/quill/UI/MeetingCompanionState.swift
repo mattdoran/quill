@@ -9,7 +9,7 @@ struct MeetingCompanionState: Equatable, Sendable {
         case possibleEnd(application: CallApplication, elapsed: String)
         case finalizing
         case processing
-        case ready(transcript: URL)
+        case ready(session: URL)
         case failed(message: String)
     }
 
@@ -112,9 +112,9 @@ struct MeetingCompanionState: Equatable, Sendable {
             guard case .finalizing = phase else { return }
             phase = .processing
 
-        case .transcriptReady(let transcript):
+        case .transcriptReady(let session):
             guard !wasDismissedDuringSession else { return }
-            phase = .ready(transcript: transcript)
+            phase = .ready(session: session)
 
         case .failed(let message):
             guard !wasDismissedDuringSession else { return }

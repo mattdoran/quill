@@ -2,12 +2,130 @@
 
 Dated product and architecture decisions. Newest first.
 
+## 2026-08-20: Make recording confidence converge on one pill
+
+**Decision:** Active recording uses the same red `circle.fill` symbol in the
+menu bar, expanded companion and collapsed pill. Expanded recording uses a
+right chevron to collapse toward its anchored edge; `X` is reserved for actual
+dismissal. Pointer hover extends expanded controls to eight seconds but cannot
+hold them open indefinitely.
+
+**Why:** Different SF Symbol configurations made one nominal recording glyph
+look like a donut and another like a solid dot. `X` also promised closure when
+recording actually remained visible. Indefinite hover made a manual menu start
+look as if automatic pillification had failed when the panel appeared beneath
+the pointer.
+
+**Consequence:** Manual and detected recordings share the same collapse rules.
+Deliberate interaction buys enough time to use Stop without turning incidental
+pointer position into persistent window state.
+
+## 2026-08-20: Give transcript review normal app presence
+
+**Decision:** Quill remains one application and one process. It normally uses
+the accessory activation policy. Opening transcript review temporarily switches
+to the regular policy so Quill appears in the Dock and Command-Tab switcher;
+closing review restores the accessory policy.
+
+**Why:** The menu-bar companion is transient utility UI, but transcript review
+is a focused task window that people need to leave and return to like any other
+Mac window. Excluding it from Command-Tab makes an open window unnecessarily
+hard to recover.
+
+**Consequence:** `LSUIElement` remains the launch default. No helper application
+or second bundle is introduced, and Quill has no permanent Dock presence.
+
+## 2026-08-20: Show meeting context, not capture plumbing
+
+**Decision:** The expanded recording companion uses the detected application as
+its subtitle. Manual recordings have no subtitle. Normal recording does not
+display `microphone and computer audio`; a capture failure may use that space
+for an actionable exception.
+
+**Why:** The companion provides recording confidence and immediate control.
+Repeating the internal capture sources adds visual weight without helping that
+task, while the meeting application identifies which session the timer belongs
+to.
+
+**Consequence:** Source detail remains available through permissions,
+documentation and the retained `Local` and `Remote` files, not as persistent
+recording chrome.
+
+## 2026-08-20: Keep companion placement session-scoped
+
+**Decision:** Every new recording session places the meeting companion at its
+default top-right position near system notifications. Dragging moves it for the
+remainder of that session only. All state changes, including expansion and
+collapse, retain the dragged position and preserve the right edge.
+
+**Why:** A drag is normally a response to the layout of the current call. Making
+that position permanent causes a later prompt to appear wherever the previous
+meeting happened to need it, rather than where notification-like UI is expected.
+
+**Consequence:** Detection and a manual start from idle reset placement. Starting
+a detected recording does not, because detection and recording are one session.
+Display changes still clamp the companion on-screen.
+
+## 2026-08-20: Separate voice identity from source context
+
+**Decision:** Before individual speaker separation, microphone speech is
+labelled `Me` and system-audio speech is labelled `Them`. Both coarse groups
+can be sampled and named directly. `Separate Voices` is optional. After
+separation, unnamed voices become globally numbered `Voice 1`, `Voice 2` and so
+on. The native review shows `local` or `remote` as quiet secondary context;
+source context does not enter Markdown after separation. The transcript review
+has standard macOS window controls and a footer with file actions, `Close` and
+`Save Names`.
+
+**Why:** Coarse labels describe groups, while voice labels describe fallible
+identity clusters. `Me` and `Them` make the common one-to-one transcript
+immediately legible and nameable without running another model. Keeping source
+context separate after analysis makes a false split visible, such as two local
+voices when only one person used the microphone, without forcing source
+terminology into speaker names. An explicit Close action makes the task
+window's exit discoverable without removing standard window chrome.
+The retained source files use the same neutral source vocabulary:
+`Source Audio/Local.m4a`, `Local Cleaned.m4a` and `Remote.m4a`.
+
+**Consequence:** Voice numbers are unique across both source tracks. A coarse
+group name carries through separation only when that source produces exactly
+one voice; a split source remains unnamed. Unsaved names are saved before
+separation. Naming two voices identically gives them one readable transcript
+label without rewriting the underlying clusters. Closing with unsaved names
+offers Save, Don't Save and Cancel. Old transcripts are not rewritten.
+
+## 2026-08-20: Complete transcription in one review flow
+
+**Decision:** `Saving recording…` and `Creating transcript…` remain in the
+meeting companion until work completes or the person dismisses it. Completion
+becomes `Transcript ready` with a `Review` action. That action and the native
+completion notification open the same read-only Quill transcript window. The
+transcript is primary; optional speaker separation, sample playback and naming
+sit beside it. `Open Transcript File` exposes the editable and portable
+Markdown artifact.
+
+**Why:** A timer-based handoff could remove useful progress while someone was
+waiting for it. Opening Markdown at completion also split the review job from
+the only surface capable of speaker analysis and audio playback. The person has
+just entered transcript-review mode, so this is the right moment to expose that
+optional work without complicating recording.
+
+**Consequence:** Dismissing progress never cancels processing. It changes only
+the completion surface from the companion to a native notification. The review
+window does not edit transcript prose. Collapse and expansion preserve the
+companion's right edge so its initial top-right placement remains stable.
+Engine and diarizer provenance remains in `.quill/transcript.json`; the
+human-facing Markdown contains only its title and transcript.
+
 ## 2026-08-20: Separate speakers only during transcript review
+
+*Speaker labels in this decision were superseded by "Separate voice identity
+from source context" above.*
 
 **Decision:** Every completed recording produces a baseline transcript with
 `In the room` and `On the call` labels. Recording has no meeting profile,
-diarisation control or transcription switch. `Review Speakers in Last
-Transcript…` optionally analyses both retained source tracks, reassigns the
+diarisation control or transcription switch. `Review Last Transcript…`
+optionally analyses both retained source tracks, reassigns the
 existing timed transcript segments, then lets the user name speakers from
 short samples.
 
@@ -29,7 +147,7 @@ the activity pill. The pill is one click-or-drag target: clicking anywhere
 expands it and dragging anywhere moves it. Other companion phases retain X as
 dismiss. Initial placement is at the top right near the system notification
 area; an explicit drag still wins over automatic placement. Recording collapses
-to the pill one second after capture starts; an explicit reopen lasts eight
+to the pill three seconds after capture starts; an explicit reopen lasts eight
 seconds.
 
 **Why:** A close glyph on controls reads as closing those controls, not as
@@ -125,7 +243,7 @@ audio.
 
 **Decision:** Continue writing AAC into CAF while a recording is active. After
 a clean stop, produce `Meeting Audio.m4a` at the session root and place the
-separate `Microphone.m4a` and `Call.m4a` tracks under `Source Audio/`. Keep the
+separate `Local.m4a` and `Remote.m4a` tracks under `Source Audio/`. Keep the
 CAF inputs until every replacement has been opened and its duration verified.
 Recover and finalize surviving CAF files after a crash. Do not offer WAV export.
 

@@ -120,7 +120,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menu.addItem(lastTranscriptItem)
 
         identifyVoicesItem = NSMenuItem(
-            title: "Review Speakers in Last Transcript…",
+            title: "Review Last Transcript…",
             action: #selector(identifyVoicesClicked),
             keyEquivalent: ""
         )
@@ -239,7 +239,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             button.contentTintColor = nil
             button.setAccessibilityTitle("Quill, idle")
         case (true, false):
-            button.image = Self.coloredSymbol("record.circle.fill", "recording", .systemRed)
+            button.image = Self.coloredSymbol("circle.fill", "recording", .systemRed)
             button.contentTintColor = nil
             button.setAccessibilityTitle("Quill, recording, \(Self.spoken(clock))")
         case (true, true):
@@ -307,7 +307,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         let hasVoiceReview = hasVoiceReview?() ?? false
         identifyVoicesItem.isHidden = !hasVoiceReview
         identifyVoicesItem.isEnabled = hasVoiceReview && !isRecording
-        identifyVoicesItem.title = "Review Speakers in Last Transcript…"
+        identifyVoicesItem.title = "Review Last Transcript…"
         openFolderItem.toolTip = recordingsPath?()
     }
 

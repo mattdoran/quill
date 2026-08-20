@@ -26,8 +26,8 @@ Work that remains. Product and architecture decisions live in
 
 - [x] **Build the meeting companion as one stateful surface.** Prove detected,
       recording, recovered-end, stopping, short processing and ready states.
-      Verify non-activation, full-screen Spaces, multiple displays, VoiceOver
-      and the ten-second handoff before replacing native call prompts.
+      Verify non-activation, full-screen Spaces, multiple displays and
+      VoiceOver before replacing native call prompts.
 - [x] **Move speaker separation into transcript review.** Recording and initial
       transcription have no meeting profile. Optional review diarises both
       retained source tracks without rerunning speech recognition.
@@ -39,3 +39,6 @@ Work that remains. Product and architecture decisions live in
       representative source-audio samples, let a person name a stable voice ID,
       and apply that label across its cluster without becoming a general
       transcript editor.
+- [x] **Unify transcript completion and review.** Keep processing visible until
+      dismissal or completion, then route both companion and native notification
+      actions into one read-only transcript and speaker review window.

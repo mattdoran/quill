@@ -32,8 +32,15 @@ import Testing
         #expect(DiarizationEngine.labels(
             for: segments,
             spans: spans,
-            solo: "On the call",
+            solo: "Remote",
             shared: "Speaker"
-        ) == ["On the call", "On the call"])
+        ) == ["Remote", "Remote"])
+    }
+
+    @Test func separatedVoicesAreNumberedGlobally() {
+        var labels = VoiceLabelSequence()
+        #expect([
+            labels.next(), labels.next(), labels.next(), labels.next(),
+        ] == ["Voice 1", "Voice 2", "Voice 3", "Voice 4"])
     }
 }

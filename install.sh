@@ -74,6 +74,15 @@ if /usr/bin/pgrep -x quill >/dev/null 2>&1; then
     done
 fi
 /usr/bin/pkill -x quill >/dev/null 2>&1 || true
+attempts=0
+while /usr/bin/pgrep -x quill >/dev/null 2>&1 && [ "$attempts" -lt 40 ]; do
+    sleep 0.25
+    attempts=$((attempts + 1))
+done
+if /usr/bin/pgrep -x quill >/dev/null 2>&1; then
+    echo "existing Quill did not stop" >&2
+    exit 1
+fi
 
 rollback_needed=yes
 if [ -d "$target_app" ]; then

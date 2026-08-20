@@ -6,9 +6,9 @@ actor AudioFinalizer {
 
     static let meetingAudioPath = "Meeting Audio.m4a"
     static let sourceAudioDirectory = "Source Audio"
-    static let microphonePath = "Source Audio/Microphone.m4a"
-    static let callPath = "Source Audio/Call.m4a"
-    static let cleanedMicrophonePath = "Source Audio/Microphone Cleaned.m4a"
+    static let localPath = "Source Audio/Local.m4a"
+    static let remotePath = "Source Audio/Remote.m4a"
+    static let cleanedLocalPath = "Source Audio/Local Cleaned.m4a"
 
     enum FinalizationError: Error, CustomStringConvertible {
         case missingMetadata(URL)
@@ -81,16 +81,16 @@ actor AudioFinalizer {
 
         var published = files
         if let microphoneSource {
-            let output = session.appendingPathComponent(Self.microphonePath)
+            let output = session.appendingPathComponent(Self.localPath)
             try await remuxAAC(from: microphoneSource, to: output, in: session)
-            published["mic"] = Self.microphonePath
+            published["mic"] = Self.localPath
         } else {
             published.removeValue(forKey: "mic")
         }
         if let callSource {
-            let output = session.appendingPathComponent(Self.callPath)
+            let output = session.appendingPathComponent(Self.remotePath)
             try await remuxAAC(from: callSource, to: output, in: session)
-            published["system"] = Self.callPath
+            published["system"] = Self.remotePath
         } else {
             published.removeValue(forKey: "system")
         }
@@ -114,9 +114,9 @@ actor AudioFinalizer {
         }
 
         if let cleanedSource {
-            let output = session.appendingPathComponent(Self.cleanedMicrophonePath)
+            let output = session.appendingPathComponent(Self.cleanedLocalPath)
             try await remuxAAC(from: cleanedSource, to: output, in: session)
-            published["mic_cleaned"] = Self.cleanedMicrophonePath
+            published["mic_cleaned"] = Self.cleanedLocalPath
         }
 
         let offsets = metadata["start_offset_ms"] as? [String: Int] ?? [:]

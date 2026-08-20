@@ -18,7 +18,7 @@ import Testing
             .possibleEnd(application: application, elapsed: "12:34:56"),
             .finalizing,
             .processing,
-            .ready(transcript: URL(fileURLWithPath: "/tmp/2026.08.19-1432/transcript.md")),
+            .ready(session: URL(fileURLWithPath: "/tmp/2026.08.19-1432")),
         ]
 
         for state in states {

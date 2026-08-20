@@ -1,5 +1,14 @@
 import Foundation
 
+struct VoiceLabelSequence {
+    private var nextNumber = 1
+
+    mutating func next() -> String {
+        defer { nextNumber += 1 }
+        return "Voice \(nextNumber)"
+    }
+}
+
 struct TranscriptDocument: Codable, Sendable {
     static let currentSchemaVersion = 1
 
@@ -49,6 +58,13 @@ struct TranscriptDocument: Codable, Sendable {
             .sorted(by: Self.voiceOrder)
     }
 
+    func nameToCarry(source: String, separatedVoiceCount: Int) -> String? {
+        guard separatedVoiceCount == 1 else { return nil }
+        let sourceVoices = voices.values.filter { $0.source == source }
+        guard sourceVoices.count == 1 else { return nil }
+        return sourceVoices[0].name?.nilIfBlank
+    }
+
     mutating func applyVoiceNames(_ names: [String: String]) throws {
         guard canEditVoices else { throw TranscriptStore.StoreError.unsupportedSchema }
         for (id, name) in names {
@@ -66,9 +82,7 @@ struct TranscriptDocument: Codable, Sendable {
     }
 
     func rendered(title: String) -> String {
-        var lines = ["# \(title)", "", "engine: \(engine) (\(model))"]
-        if let diarizer { lines.append("diarizer: \(diarizer)") }
-        lines.append("")
+        var lines = ["# \(title)", ""]
         for segment in segments {
             lines.append("**[\(Self.clock(segment.start_ms))] \(segment.speaker):** \(segment.text)")
             lines.append("")

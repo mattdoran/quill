@@ -25,5 +25,11 @@ is not in play.
   `on_stop` terminates. The source audio is otherwise still in use.
 - Build and test with `QUILL_HOME` pointing to an isolated directory. The normal
   config file is authoritative user state.
+- Keep Quill `.accessory` by default, `.regular` while transcript review is
+  visible, and restore `.accessory` when it closes. This is what gives the task
+  window Command-Tab presence without a permanent Dock icon.
+- Wait for forced process termination before replacing or reopening the app.
+  Skipping the post-`pkill` wait produced LaunchServices error `-600` during an
+  otherwise valid signed install.
 - `docs/ux.md` is the design authority. Record new settled choices in
   `docs/decisions.md`, not in this file.

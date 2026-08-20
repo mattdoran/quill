@@ -40,7 +40,7 @@ struct RetentionHarness {
         }
         let sources = session.appendingPathComponent("Source Audio", isDirectory: true)
         try FileManager.default.createDirectory(at: sources, withIntermediateDirectories: true)
-        for track in ["Microphone.m4a", "Call.m4a", "Microphone Cleaned.m4a"] {
+        for track in ["Local.m4a", "Remote.m4a", "Local Cleaned.m4a"] {
             try Data(track.utf8).write(to: sources.appendingPathComponent(track))
         }
         try Data("meeting".utf8).write(

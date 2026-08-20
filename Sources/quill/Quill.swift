@@ -61,6 +61,9 @@ struct Run: ParsableCommand {
         Notifier.shared.onCallStopRequested = { [weak controller] recordingToken in
             controller?.stopDetectedCall(recordingToken: recordingToken)
         }
+        Notifier.shared.onReviewTranscript = { [weak controller] path in
+            controller?.reviewTranscript(at: URL(fileURLWithPath: path))
+        }
 
         let sigint = DispatchSource.makeSignalSource(signal: SIGINT, queue: .main)
         sigint.setEventHandler {
@@ -114,7 +117,7 @@ final class AppController {
     private var ticker: Timer?
     private var retentionTimer: Timer?
     private var processingSession: URL?
-    private var pendingReadyTranscript: URL?
+    private var pendingReadySession: URL?
 
     /// The session whose transcription failed, so its log can be opened and
     /// the job re-queued without quitting the app.
@@ -129,7 +132,10 @@ final class AppController {
         menuBar.onOpenFolder = { [weak self] in self?.openFolder() }
         menuBar.onQuit = { [weak self] in self?.shutdown() }
         menuBar.onOpenLastTranscript = { [weak self] in self?.openLastTranscript() }
-        menuBar.onIdentifyVoices = { [weak self] in self?.identifyVoices() }
+        menuBar.onIdentifyVoices = { [weak self] in
+            guard let session = self?.voiceReviewSession() else { return }
+            self?.reviewTranscript(at: session)
+        }
         menuBar.hasVoiceReview = { [weak self] in self?.voiceReviewSession() != nil }
         menuBar.hasTranscript = { [weak self] in
             guard let self else { return false }
@@ -177,14 +183,14 @@ final class AppController {
             self?.startDetectedCall(promptToken: token.uuidString)
         }
         companion.onReadyDismissed = { [weak self] in
-            self?.pendingReadyTranscript = nil
+            self?.pendingReadySession = nil
         }
         companion.onStop = { [weak self] in self?.requestStopSession() }
         companion.onDismiss = { [weak self] in self?.companionDismissed() }
-        companion.onOpenTranscript = { [weak self] transcript in
-            self?.pendingReadyTranscript = nil
+        companion.onReviewTranscript = { [weak self] session in
+            self?.pendingReadySession = nil
             self?.companion.handle(.reset)
-            NSWorkspace.shared.open(transcript)
+            self?.reviewTranscript(at: session)
         }
         companion.onVisibilityChanged = { [weak self] visible in
             self?.menuBar.updateCompanionVisible(visible)
@@ -518,42 +524,29 @@ final class AppController {
     }
 
     private func transcriptFinished(_ dir: URL) {
-        let transcript = SessionFiles.transcriptMarkdown(dir)
         guard processingSession == dir, session == nil else {
             if processingSession == dir {
                 processingSession = nil
             }
-            notifyTranscriptReady(transcript)
+            notifyTranscriptReady(dir)
             return
         }
         processingSession = nil
         guard companion.isVisible else {
             companion.handle(.reset)
-            notifyTranscriptReady(transcript)
+            notifyTranscriptReady(dir)
             return
         }
-        pendingReadyTranscript = transcript
-        companion.handle(.transcriptReady(transcript))
-        DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
-            guard self?.pendingReadyTranscript == transcript else { return }
-            self?.pendingReadyTranscript = nil
-            self?.companion.handle(.reset)
-            self?.notifyTranscriptReady(transcript)
-        }
+        pendingReadySession = dir
+        companion.handle(.transcriptReady(dir))
     }
 
     private func companionDismissed() {
-        guard let transcript = pendingReadyTranscript else { return }
-        pendingReadyTranscript = nil
-        notifyTranscriptReady(transcript)
+        pendingReadySession = nil
     }
 
-    private func notifyTranscriptReady(_ transcript: URL) {
-        notifyUser(
-            title: "Transcript ready",
-            body: SessionName.spoken(transcript.deletingLastPathComponent()),
-            opens: transcript
-        )
+    private func notifyTranscriptReady(_ session: URL) {
+        Notifier.shared.postTranscriptReady(session: session)
     }
 
     /// Newest session holding a transcript. Re-derived from disk rather than
@@ -589,8 +582,7 @@ final class AppController {
         return session
     }
 
-    private func identifyVoices() {
-        guard let session = voiceReviewSession() else { return }
+    func reviewTranscript(at session: URL) {
         if voiceReview?.sessionURL == session {
             voiceReview?.show()
             return
