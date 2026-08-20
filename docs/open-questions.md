@@ -149,3 +149,58 @@ prompt work. Chrome Meet also prompted correctly. Dismissing Chrome's start
 prompt and leaving produced neither a recording nor an end prompt. Remaining
 browser evidence is mute and device switching during a real meeting. The
 application-by-application false-transition rate is not known.
+
+## Live transcription
+
+Quill transcribes after the recording stops: `TranscriptionCoordinator` is a
+post-recording queue of session folders, and the companion shows a processing
+state until the transcript exists. Granola transcribes during the call and shows
+text as it arrives.
+
+The open question is whether Quill should follow. Watching the transcript build
+during a meeting is the visible half; the larger consequence is that a live
+transcript is the only way to offer anything mid-call, and that a partial
+transcript exists if the machine dies before the session is finished.
+
+Against it: streaming recognition is a different engine contract from batch
+Parakeet, it runs the model for the whole meeting rather than once at the end,
+and the current design deliberately keeps diarisation and speaker naming as a
+post-hoc review step over retained source tracks, which a live stream cannot
+feed. Whatever is shown live would have to be reconciled with the batch
+transcript that follows, or the batch pass has to go, and the batch pass is
+what makes re-transcription and speaker separation possible.
+
+Questions:
+
+- Is the live transcript worth showing at all, or is the real prize a mid-call
+  capability that does not exist yet?
+- Can a streaming pass and the existing batch pass coexist without the user
+  seeing two different transcripts of the same meeting?
+- What happens to transcript review and voice identification, both of which
+  assume a completed recording and both source tracks?
+
+## System-audio tap format changes
+
+`SystemAudioRecorder.attach()` reads `kAudioTapPropertyFormat` once and closes
+over that format in the IOProc block. Every later buffer is stamped with it.
+Nothing re-reads it, and the recorder raises no invalidation of its own.
+
+A global tap's format follows the output device, so switching default output
+mid-meeting, for example AirPods at 24 kHz to built-in speakers at 48 kHz, may
+change it under a running IOProc. Unverified.
+
+If it does, two things break silently:
+
+- Buffers that still parse are written at the wrong rate. `TrackWriter`
+  compares `buffer.format`, which is the stale stamp, so it never resamples.
+- Buffers that fail to parse hit the `guard let buffer` early return. But
+  `liveness.mark()` runs before that guard, so `CaptureSupervisor` still sees
+  evidence of life and the stall check never fires. The track stops growing for
+  the rest of the meeting.
+
+The second holds for any nil buffer, not just a format change, and is fixed
+independently by marking liveness after the buffer is built.
+
+To investigate: log `kAudioTapPropertyFormat` on a tick while switching default
+output between devices of different sample rates. Granola polls for this
+(`checkTapFormatChanged`), which suggests it happens.

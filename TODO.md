@@ -42,3 +42,16 @@ Work that remains. Product and architecture decisions live in
 - [x] **Unify transcript completion and review.** Keep processing visible until
       dismissal or completion, then route both companion and native notification
       actions into one read-only transcript and speaker review window.
+
+## Permissions
+
+- [ ] **Check permission state without prompting, and ask deliberately.** Today
+      the microphone and system-audio prompts fire on the first recording, so a
+      user's first meeting is the one macOS interrupts, and a denial surfaces
+      only as an `OSStatus` in `tapCreationFailed`. Read the current grant state
+      with `CGPreflightScreenCaptureAccess()` and
+      `AVCaptureDevice.authorizationStatus(for: .audio)`, both of which are
+      prompt-free, and show it in Settings. Trigger each grant from an explicit
+      Enable control: build a tap, wait for one buffer as proof the grant
+      landed, then tear it down. On refusal, deep-link the matching pane
+      (`x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture`).
