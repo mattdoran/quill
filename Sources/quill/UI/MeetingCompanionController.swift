@@ -150,16 +150,23 @@ final class MeetingCompanionController: NSObject, NSWindowDelegate {
                 content.render(state.phase)
             }
             positionIfNeeded()
+            refreshShadow()
             panel.orderFrontRegardless()
             return
         }
         if forceVisible {
             content.render(state.phase)
             positionIfNeeded()
+            refreshShadow()
             panel.orderFrontRegardless()
         } else {
             panel.orderOut(nil)
         }
+    }
+
+    private func refreshShadow() {
+        panel.contentView?.layoutSubtreeIfNeeded()
+        panel.invalidateShadow()
     }
 
     private func updatePresentation(for event: MeetingCompanionState.Event) {
