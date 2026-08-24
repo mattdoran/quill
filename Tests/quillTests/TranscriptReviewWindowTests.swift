@@ -139,12 +139,26 @@ import Testing
         let content = try #require(window.contentView)
         let fields = textFields(in: content).filter { $0.placeholderString == "Name this voice" }
         let play = buttons(in: content).filter { $0.title.hasPrefix("Play Sample") }
+        let finder = try #require(buttons(in: content).first { $0.title == "Show in Finder" })
+        let markdown = try #require(buttons(in: content).first { $0.title == "Open Transcript File" })
+        let close = try #require(buttons(in: content).first { $0.title == "Close" })
+        let save = try #require(buttons(in: content).first { $0.title == "Save Names" })
+        let transcript = try #require(textViews(in: content).first)
 
         #expect(fields.count == 2)
         #expect(play.count == 2)
         #expect(window.initialFirstResponder === fields[0])
         #expect(fields[0].nextKeyView === play[0])
         #expect(play[0].nextKeyView === fields[1])
+        #expect(fields[1].nextKeyView === play[1])
+        #expect(play[1].nextKeyView === finder)
+        #expect(finder.nextKeyView === markdown)
+        #expect(markdown.nextKeyView === close)
+        #expect(close.nextKeyView === save)
+        #expect(save.nextKeyView === transcript)
+        #expect(transcript.nextKeyView === fields[0])
+        #expect(fields[1].nextValidKeyView === play[1])
+        #expect(play[1].nextValidKeyView === finder)
         #expect(fields[0].accessibilityHelp() == "Press Return to move to the next speaker name.")
         #expect(fields[1].accessibilityHelp() == "Press Return to save speaker names.")
 
@@ -152,11 +166,23 @@ import Testing
         defer { window.orderOut(nil) }
         let firstEditor = try #require(fields[0].currentEditor())
         firstEditor.string = "Finn"
-        fields[0].sendAction(fields[0].action, to: fields[0].target)
+        firstEditor.doCommand(by: #selector(NSResponder.insertTab(_:)))
+        #expect(window.firstResponder === play[0])
+        window.selectNextKeyView(play[0])
         let secondEditor = try #require(fields[1].currentEditor())
         #expect(window.firstResponder === secondEditor)
         secondEditor.string = "Matt"
-        fields[1].sendAction(fields[1].action, to: fields[1].target)
+        secondEditor.doCommand(by: #selector(NSResponder.insertTab(_:)))
+        #expect(window.firstResponder === play[1])
+        window.selectNextKeyView(play[1])
+        #expect(window.firstResponder === finder)
+
+        window.makeFirstResponder(fields[0])
+        let refreshedFirstEditor = try #require(fields[0].currentEditor())
+        refreshedFirstEditor.doCommand(by: #selector(NSResponder.insertNewline(_:)))
+        let refreshedSecondEditor = try #require(fields[1].currentEditor())
+        #expect(window.firstResponder === refreshedSecondEditor)
+        refreshedSecondEditor.doCommand(by: #selector(NSResponder.insertNewline(_:)))
 
         let saved = try TranscriptStore(session: session).read()
         #expect(saved.voices["mic:1"]?.name == "Finn")
@@ -242,5 +268,10 @@ import Testing
     private func textFields(in view: NSView) -> [NSTextField] {
         let own = (view as? NSTextField).map { [$0] } ?? []
         return own + view.subviews.flatMap(textFields)
+    }
+
+    private func textViews(in view: NSView) -> [NSTextView] {
+        let own = (view as? NSTextView).map { [$0] } ?? []
+        return own + view.subviews.flatMap(textViews)
     }
 }

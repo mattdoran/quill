@@ -10,7 +10,9 @@ private final class TranscriptReviewRootView: NSView {
 }
 
 @MainActor
-final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate {
+final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
+    NSTextFieldDelegate
+{
     private enum SeparationState { case idle, separating, failed(String) }
     private struct Row {
         let voiceID: String
@@ -412,8 +414,7 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate {
         let field = NSTextField(string: voice.name ?? "")
         field.placeholderString = "Name this voice"
         field.setAccessibilityLabel("Name for \(context)")
-        field.target = self
-        field.action = #selector(nameCommitted(_:))
+        field.delegate = self
         let play = NSButton(title: "Play Sample", target: self, action: #selector(playClicked(_:)))
         play.bezelStyle = .rounded
         play.controlSize = .small
@@ -496,13 +497,23 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate {
         window?.makeFirstResponder(view)
     }
 
-    @objc private func nameCommitted(_ sender: NSTextField) {
-        guard let index = rows.firstIndex(where: { $0.field === sender }) else { return }
+    func control(
+        _ control: NSControl,
+        textView: NSTextView,
+        doCommandBy commandSelector: Selector
+    ) -> Bool {
+        guard
+            commandSelector == #selector(NSResponder.insertNewline(_:)),
+            let field = control as? NSTextField,
+            let index = rows.firstIndex(where: { $0.field === field })
+        else { return false }
+
         if index + 1 < rows.count {
             window?.makeFirstResponder(rows[index + 1].field)
         } else {
             _ = saveNames()
         }
+        return true
     }
 
     @objc private func separateClicked() {
