@@ -35,6 +35,14 @@ is not in play.
   `on_stop` terminates. The source audio is otherwise still in use.
 - Build and test with `QUILL_HOME` pointing to an isolated directory. The normal
   config file is authoritative user state.
+- Agent shells do not read `.zshrc`; invoke `$HOME/.swiftly/bin/swift` directly.
+  Bare `swift` selected compiler 6.3.3 against Apple's 6.3.2 SDK and failed
+  before the manifest loaded.
+- Module-cache overrides are for restricted agent builds only. Do not carry
+  them into normal or release builds, where they discard the user's warm cache.
+- Do not add `--disable-sandbox` to builds using the normal `.build` directory.
+  Switching that flag invalidated every release target, including FluidAudio;
+  run outside the outer sandbox or use a separate scratch path.
 - Keep Quill `.accessory` by default, `.regular` while transcript review is
   visible, and restore `.accessory` when it closes. This is what gives the task
   window Command-Tab presence without a permanent Dock icon.

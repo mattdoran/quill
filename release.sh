@@ -164,8 +164,6 @@ build_release() {
     [ "$#" -eq 1 ] || usage
     check_release "$1"
     tag="$1"
-    export CLANG_MODULE_CACHE_PATH="${CLANG_MODULE_CACHE_PATH:-/private/tmp/quill-clang-cache}"
-    export SWIFTPM_MODULECACHE_OVERRIDE="${SWIFTPM_MODULECACHE_OVERRIDE:-/private/tmp/quill-swiftpm-cache}"
     export QUILL_HOME="${QUILL_HOME:-/private/tmp/quill-release-home}"
     "$swift" test
     "$swift" build -c release
