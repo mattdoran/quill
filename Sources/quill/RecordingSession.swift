@@ -49,6 +49,7 @@ final class RecordingSession {
     private var ticker: Timer?
     private var journalHasOffsets = false
     private var liveAEC: LiveEchoCanceller?
+    private var liveFrames: AcceptedFrameMailbox?
     private var liveAECBegun = false
 
     private static let folderFormat: DateFormatter = {
@@ -96,13 +97,18 @@ final class RecordingSession {
         if let canceller = LiveEchoCanceller(
             session: SessionFiles.internalDirectory(dir),
             rate: MicRecorder.trackSampleRate,
-            nearName: mic.name,
-            farName: system.name,
             log: log
         ) {
-            mic.monitor(with: canceller)
-            system.monitor(with: canceller)
+            let mailbox = AcceptedFrameMailbox(
+                maxQueuedFrames: Int(MicRecorder.trackSampleRate * 30),
+                consume: { canceller.consume($0) },
+                onOverflow: { canceller.abandon("accepted-frame mailbox overflow") }
+            )
+            let fanout = AcceptedFrameFanout([mailbox])
+            mic.sendAcceptedFrames(to: fanout)
+            system.sendAcceptedFrames(to: fanout)
             liveAEC = canceller
+            liveFrames = mailbox
         }
 
         let systemSupervisor = supervise(system)
@@ -153,7 +159,9 @@ final class RecordingSession {
         supervisors = []
         captureArchiveFailures()
 
-        // After the writers close, so every frame has been handed over.
+        // After the writers close, so every accepted frame is already queued.
+        liveFrames?.finish()
+        liveFrames = nil
         if let liveAEC {
             let started = Date()
             let published = liveAEC.finish()
@@ -262,6 +270,8 @@ final class RecordingSession {
             // falling behind.
             if Date().timeIntervalSince(startedAt) > 15 {
                 liveAECBegun = true
+                liveFrames?.abandon()
+                liveFrames = nil
                 liveAEC.abandon("only one track started within 15s")
                 self.liveAEC = nil
             }
@@ -383,6 +393,8 @@ final class RecordingSession {
         guard failedArchives.insert(name).inserted else { return }
         log.warn("\(name): source archive failed permanently: \(detail)")
         report("\(name) source archive failed")
+        liveFrames?.abandon()
+        liveFrames = nil
         liveAEC?.abandon("\(name) source archive failed")
         liveAEC = nil
         liveAECBegun = true

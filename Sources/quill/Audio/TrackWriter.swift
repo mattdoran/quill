@@ -3,17 +3,6 @@
 @preconcurrency import AVFoundation
 import Foundation
 
-/// Receives every frame a track writes, silence padding included, so a monitor
-/// sees exactly the timeline that lands in the file.
-///
-/// Called on the writer's queue while it holds its lock: copy and return.
-/// Calling back into the writer from here deadlocks.
-protocol TrackMonitor: AnyObject, Sendable {
-    func trackDidWrite(
-        _ buffer: AVAudioPCMBuffer, at frame: AVAudioFramePosition, from name: String
-    )
-}
-
 /// Owns one track's output file, outliving the capture graphs that feed it.
 ///
 /// Buffers are resampled and downmixed to the file's fixed format. A gap in
@@ -68,7 +57,8 @@ final class TrackWriter: @unchecked Sendable {
     private static let maxPending = 256
 
     private let format: AVAudioFormat
-    private let name: String
+    private let track: AcceptedFrame.Track
+    private var name: String { track.rawValue }
     private let log: SessionLog
     private let lock = NSLock()
     private let work = DispatchQueue(label: "com.mattdoran.quill.track-writer", qos: .utility)
@@ -77,7 +67,7 @@ final class TrackWriter: @unchecked Sendable {
     private var droppedReported = false
     private var accepting = true
 
-    private var monitor: (any TrackMonitor)?
+    private var acceptedFrames: (any AcceptedFrameSink)?
     private var file: AVAudioFile?
     private var converter: AVAudioConverter?
     private var converterInput: AVAudioFormat?
@@ -97,13 +87,13 @@ final class TrackWriter: @unchecked Sendable {
     init(
         url: URL,
         format: AVAudioFormat,
-        name: String,
+        track: AcceptedFrame.Track,
         log: SessionLog,
         watchSilence: Bool,
         fileWrite: ((AVAudioFile, AVAudioPCMBuffer) throws -> Void)? = nil
     ) throws {
         self.format = format
-        self.name = name
+        self.track = track
         self.log = log
         self.watchSilence = watchSilence
         self.fileWrite = fileWrite ?? { file, buffer in try file.write(from: buffer) }
@@ -213,11 +203,11 @@ final class TrackWriter: @unchecked Sendable {
         }
     }
 
-    /// Set before capture starts; every frame written afterwards is reported.
-    func monitor(with monitor: any TrackMonitor) {
+    /// Set before capture starts; every successfully archived frame is offered.
+    func sendAcceptedFrames(to sink: any AcceptedFrameSink) {
         lock.lock()
         defer { lock.unlock() }
-        self.monitor = monitor
+        acceptedFrames = sink
     }
 
     /// Padding to `date` keeps a track that died early the same length as one
@@ -290,8 +280,19 @@ final class TrackWriter: @unchecked Sendable {
         guard let file else { return false }
         do {
             try fileWrite(file, buffer)
-            monitor?.trackDidWrite(buffer, at: frames, from: name)
+            let startFrame = frames
             frames += AVAudioFramePosition(buffer.frameLength)
+            if
+                let acceptedFrames,
+                acceptedFrames.isAccepting,
+                let frame = AcceptedFrame(
+                    copying: buffer,
+                    track: track,
+                    startFrame: startFrame
+                )
+            {
+                acceptedFrames.offer(frame)
+            }
             return true
         } catch {
             log.warn("\(name): write failed: \(error)")

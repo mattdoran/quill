@@ -64,7 +64,7 @@ final class SystemAudioRecorder: Capture {
     private var writer: TrackWriter?
     /// The writer waits for the first attach, so a monitor set before then is
     /// held until there is something to attach it to.
-    private var pendingMonitor: (any TrackMonitor)?
+    private var pendingAcceptedFrames: (any AcceptedFrameSink)?
     private var url: URL?
     private var log: SessionLog?
     private let queue = DispatchQueue(label: "com.mattdoran.quill.system-tap")
@@ -77,9 +77,9 @@ final class SystemAudioRecorder: Capture {
         self.log = log
     }
 
-    func monitor(with monitor: any TrackMonitor) {
-        pendingMonitor = monitor
-        writer?.monitor(with: monitor)
+    func sendAcceptedFrames(to sink: any AcceptedFrameSink) {
+        pendingAcceptedFrames = sink
+        writer?.sendAcceptedFrames(to: sink)
     }
 
     func attach() throws {
@@ -104,11 +104,13 @@ final class SystemAudioRecorder: Capture {
                     let created = try TrackWriter(
                         url: url,
                         format: Self.fileFormat,
-                        name: name,
+                        track: .system,
                         log: log,
                         watchSilence: false
                     )
-                    if let pendingMonitor { created.monitor(with: pendingMonitor) }
+                    if let pendingAcceptedFrames {
+                        created.sendAcceptedFrames(to: pendingAcceptedFrames)
+                    }
                     created.onWriteFailure = { [weak self] detail in
                         Task { @MainActor in self?.onArchiveFailed?(detail) }
                     }

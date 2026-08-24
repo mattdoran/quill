@@ -323,20 +323,25 @@ struct CheckLiveAEC: ParsableCommand {
         )!
 
         guard let canceller = LiveEchoCanceller(
-            session: internalDir, rate: Self.rate,
-            nearName: "mic", farName: "system", log: log
+            session: internalDir, rate: Self.rate, log: log
         ) else { throw ValidationError("couldn't create the canceller") }
 
         let nearWriter = try TrackWriter(
             url: SessionFiles.internalFile("mic.caf", in: directory),
-            format: outputFormat, name: "mic", log: log, watchSilence: false
+            format: outputFormat, track: .microphone, log: log, watchSilence: false
         )
         let farWriter = try TrackWriter(
             url: SessionFiles.internalFile("system.caf", in: directory),
-            format: outputFormat, name: "system", log: log, watchSilence: false
+            format: outputFormat, track: .system, log: log, watchSilence: false
         )
-        nearWriter.monitor(with: canceller)
-        farWriter.monitor(with: canceller)
+        let mailbox = AcceptedFrameMailbox(
+            maxQueuedFrames: Int(Self.rate * 30),
+            consume: { canceller.consume($0) },
+            onOverflow: { canceller.abandon("accepted-frame mailbox overflow") }
+        )
+        let fanout = AcceptedFrameFanout([mailbox])
+        nearWriter.sendAcceptedFrames(to: fanout)
+        farWriter.sendAcceptedFrames(to: fanout)
 
         // Before feeding, as the session does about a second in: the pump
         // cannot run without the offset, and audio piles up until it does.
@@ -350,6 +355,7 @@ struct CheckLiveAEC: ParsableCommand {
         let ended = Date()
         nearWriter.close(paddingTo: ended)
         farWriter.close(paddingTo: ended)
+        mailbox.finish()
 
         guard canceller.finish() else { throw ValidationError("live pass abandoned") }
         return LiveOutputs(

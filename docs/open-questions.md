@@ -162,23 +162,18 @@ layers must not prevent it: a future streaming consumer should attach after
 normalization and source encoder acceptance without entering either device
 capture implementation or changing interrupted-session recovery.
 
-### Target layer boundaries
+### Practical boundary direction
 
 This is a direction for incremental separation, not a request to build a generic
 audio graph now.
 
 | Layer | Owns | Must not own |
 |---|---|---|
-| Capture adapter | Device graph, callback adaptation and invalidation signal | File layout, AEC, ASR or retry policy |
-| Capture supervision | Stall detection, graph rebuild and outage state | Sample conversion or downstream processing |
-| Track timeline | Downmix, resampling, monotonic frame positions and silence gaps | AAC containers or consumer-specific queues |
-| Source archive | AAC/CAF encoder acceptance and process-crash recovery | Live processor lifecycle |
-| Accepted-frame fan-out | Constant-time bounded enqueue and per-consumer failure isolation | Device capture or file publication |
-| Stream processor | AEC, mixing or level analysis over canonical frames | Session metadata or human-facing filenames |
-| Artifact sink | Encode and publish one derivative stream | DSP or capture supervision |
-| Transcription session | Batch or streaming engine lifecycle and track-local hypotheses | Capture graphs, audio publication or retention |
-| Transcript assembler/store | Offset merge, revisions and canonical final document | ASR model implementation |
-| Session coordinator | Start, stop and state transitions between the layers | Audio algorithms or media conversion |
+| Capture adapter and supervision | Device graph, callback adaptation, restart policy and outage state | File layout, AEC or ASR |
+| Recorded track | Normalization, timeline repair, source archive and capture health | Optional consumer execution |
+| Accepted-frame delivery | Typed immutable frames, fan-out and per-consumer bounded mailboxes | DSP or publication |
+| Live processor and derivative sink | Alignment, AEC, mixing and internal live artifacts | Source archive or session metadata |
+| Session, publication and transcription coordinators | Lifecycle, recovery, visible artifacts and ASR jobs | Device graphs |
 
 The intended future flow is:
 
@@ -210,12 +205,11 @@ becomes degraded, live derivatives stop, and the surviving source continues.
 Failure of both archives stops the session. Future fan-out must preserve this
 session-owned policy rather than turning storage failure into a consumer event.
 
-The current monitor call is synchronous and can delay later archive writes. The
-target fan-out must perform only bounded, constant-time enqueueing on that queue;
-consumer code runs elsewhere. Every consumer needs its own overload contract.
-A missing frame may make a meter skip an update, but stateful AEC or ASR must
-explicitly abandon, reset with a discontinuity, or recover by replaying retained
-source audio.
+The accepted-frame fan-out and AEC mailbox now perform only bounded enqueueing
+on the writer queue; consumer code runs elsewhere. Every additional consumer
+still needs its own overload contract. A missing frame may make a meter skip an
+update, but stateful ASR must explicitly abandon, reset with a discontinuity or
+recover by replaying retained source audio.
 
 Track-local frame positions remain the audio contract. Microphone and system
 ASR can begin independently; their hypotheses acquire the existing
@@ -240,19 +234,16 @@ engine and product-quality decision, not a capture responsibility.
 
 ### Incremental path that does not build the feature
 
-No refactor is justified solely by the possibility of live transcription. When
-nearby audio work next touches these boundaries, the safe order is:
+No refactor is justified solely by the possibility of live transcription. The
+canonical accepted frame and isolated delivery seam now exist. Remaining work
+should happen only when an adjacent requirement reaches it:
 
-1. Name one canonical frame value carrying track identity, track-local start
-   frame, fixed audio format and PCM samples.
-2. Separate normalization and timeline repair from the AAC archive while
-   preserving file layout, timing and recovery behaviour.
-3. Expose frames only after the source encoder accepts them, using constant-time
-   bounded enqueueing rather than running consumers on the archive queue or
-   introducing a general-purpose event bus.
-4. Separate AEC and meeting mixing from their AAC encoders and filename
-   publication.
-5. Keep batch transcription unchanged until a real streaming engine is selected.
+1. Give capture journals and session manifests shared typed models.
+2. Give offline audio preparation one orchestration owner while preserving raw
+   source fallback for best-effort transcription.
+3. Separate live processing from derivative publication when either needs an
+   independent implementation or failure policy.
+4. Keep batch transcription unchanged until a real streaming engine is selected.
 
 At that point adding live ASR is a new consumer and transcript lifecycle, not a
 third recorder.

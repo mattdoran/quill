@@ -19,7 +19,7 @@ import WebRTCAudio
 /// frame `n` is always `firstBufferAt + n/rate`. Near frame `i` therefore needs
 /// far track frame `i + farOffset`, which is the same relation the offline pass
 /// derives from the journal's `start_offset_ms`.
-final class LiveEchoCanceller: TrackMonitor, @unchecked Sendable {
+final class LiveEchoCanceller: @unchecked Sendable {
     static let meetingOutputName = "meeting.caf"
 
     /// Near audio held while far has not caught up. Beyond this the far track
@@ -36,8 +36,6 @@ final class LiveEchoCanceller: TrackMonitor, @unchecked Sendable {
     /// recorder's file format without revisiting the alignment maths.
     private let rate: Double
     private let frameSize: Int
-    private let nearName: String
-    private let farName: String
     private let session: URL
     private let log: SessionLog
 
@@ -69,7 +67,7 @@ final class LiveEchoCanceller: TrackMonitor, @unchecked Sendable {
     private var abandoned = false
     private var blockedSince: Date?
 
-    init?(session: URL, rate: Double, nearName: String, farName: String, log: SessionLog) {
+    init?(session: URL, rate: Double, log: SessionLog) {
         guard [16_000.0, 32_000.0, 48_000.0].contains(rate) else {
             log.warn("live aec: unsupported rate \(rate)")
             return nil
@@ -77,8 +75,6 @@ final class LiveEchoCanceller: TrackMonitor, @unchecked Sendable {
         self.session = session
         self.rate = rate
         self.frameSize = Int(rate) / 100
-        self.nearName = nearName
-        self.farName = farName
         self.log = log
         self.published = session.appendingPathComponent(EchoCancellation.outputName)
         self.partial = session.appendingPathComponent(
@@ -181,51 +177,50 @@ final class LiveEchoCanceller: TrackMonitor, @unchecked Sendable {
         try? FileManager.default.removeItem(at: meetingPartial)
     }
 
-    // MARK: - TrackMonitor
-
-    /// Runs on the writer's queue while it holds its lock, so this copies and
-    /// returns. Nothing here may call back into the writer.
-    func trackDidWrite(
-        _ buffer: AVAudioPCMBuffer, at frame: AVAudioFramePosition, from name: String
-    ) {
-        guard let samples = buffer.floatChannelData?[0] else { return }
-        let count = Int(buffer.frameLength)
-        guard count > 0 else { return }
+    @discardableResult
+    func consume(_ frame: AcceptedFrame) -> Bool {
+        let count = frame.samples.count
+        guard count > 0 else { return true }
 
         lock.lock()
-        guard !abandoned else { lock.unlock(); return }
-        guard buffer.format.sampleRate == rate, buffer.format.channelCount == 1 else {
+        guard !abandoned else { lock.unlock(); return false }
+        guard frame.sampleRate == rate else {
             lock.unlock()
-            abandon("\(name) is \(buffer.format.short), expected 1ch \(Int(rate))Hz")
-            return
+            abandon(
+                "\(frame.track.rawValue) is \(Int(frame.sampleRate))Hz, expected \(Int(rate))Hz"
+            )
+            return false
         }
 
-        let isNear = name == nearName
+        let isNear = frame.track == .microphone
         var contiguous = true
         if isNear {
-            if near.isEmpty && nextFrame == 0 && nearBase == 0 && frame >= 0 {
-                nearBase = frame
-                nextFrame = frame
+            if near.isEmpty && nextFrame == 0 && nearBase == 0 && frame.startFrame >= 0 {
+                nearBase = frame.startFrame
+                nextFrame = frame.startFrame
             }
-            contiguous = frame == nearBase + Int64(near.count)
-            if contiguous { near.append(contentsOf: UnsafeBufferPointer(start: samples, count: count)) }
+            contiguous = frame.startFrame == nearBase + Int64(near.count)
+            if contiguous { near.append(contentsOf: frame.samples) }
         } else {
-            if far.isEmpty && farBase == 0 && frame >= 0 { farBase = frame }
-            contiguous = frame == farBase + Int64(far.count)
-            if contiguous { far.append(contentsOf: UnsafeBufferPointer(start: samples, count: count)) }
+            if far.isEmpty && farBase == 0 && frame.startFrame >= 0 {
+                farBase = frame.startFrame
+            }
+            contiguous = frame.startFrame == farBase + Int64(far.count)
+            if contiguous { far.append(contentsOf: frame.samples) }
         }
         let buffered = Double(near.count) / rate
         lock.unlock()
 
         guard contiguous else {
-            abandon("\(name) frames arrived out of order")
-            return
+            abandon("\(frame.track.rawValue) frames arrived out of order")
+            return false
         }
         guard buffered < Self.maxBufferedSeconds else {
             abandon("\(String(format: "%.0f", buffered))s of near audio unprocessed")
-            return
+            return false
         }
         schedulePump()
+        return true
     }
 
     // MARK: -

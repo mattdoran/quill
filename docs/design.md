@@ -44,6 +44,13 @@ AVAudioEngine tap                  Core Audio process tap
         +------- successful PCM writes ----+
                            |
                            v
+                    AcceptedFrame
+            typed track, frame position, PCM
+                           |
+                           v
+              fan-out + bounded AEC mailbox
+                           |
+                           v
                  LiveEchoCanceller
                 WebRTC AEC3, 10 ms blocks
                     |             |
@@ -70,11 +77,11 @@ AVAudioEngine tap                  Core Audio process tap
 The arrows into `LiveEchoCanceller` do not reread the CAF files. `TrackWriter`
 reports the normalized PCM buffer after its file write succeeds. Live processing
 therefore sees the same frames and silence padding as the retained track, before
-AAC encoding has altered the samples. The monitor runs synchronously on the
-writer queue while the writer lock is held. It cannot undo the accepted frame,
-but a slow monitor can delay later source writes and contribute to queue
-overflow. Current fan-out is therefore ordered after source acceptance, but not
-isolated from it.
+AAC encoding has altered the samples. `AcceptedFrame` copies the mono PCM with a
+typed track identity and track-local start frame. An immutable fan-out offers it
+to a bounded mailbox for each consumer. Consumer code runs on the mailbox queue,
+never on the source writer queue. If the AEC mailbox fills, it abandons the live
+pass and source recording continues.
 
 ### 2.1 Current responsibility boundaries
 
@@ -85,7 +92,8 @@ more than one architectural responsibility:
 |---|---|
 | `MicRecorder`, `SystemAudioRecorder` | Device graph, callback adaptation, invalidation signals and creation or ownership of the source writer |
 | `CaptureSupervisor` | Stall detection, graph restart policy and outage state |
-| `TrackWriter` | PCM copying, normalization, timeline repair, AAC persistence, level state and live fan-out |
+| `TrackWriter` | PCM copying, normalization, timeline repair, AAC persistence, level state and accepted-frame production |
+| `AcceptedFrameFanout`, `AcceptedFrameMailbox` | Per-consumer queue isolation and bounded overload policy |
 | `LiveEchoCanceller` | Stream alignment, AEC3, meeting mixing, two AAC encoders and internal publication |
 | `RecordingSession` | Lifecycle orchestration, journal and metadata creation, alerts and live-processing coordination |
 | `AudioFinalizer` | Recovery, validation, remuxing, fallback DSP, mixing, artifact publication and metadata transition |
@@ -128,7 +136,7 @@ input side and AAC in a CAF container on disk. It:
 - keeps an `AVAudioConverter` until the source format changes;
 - records the wall-clock arrival of the first and latest buffers;
 - pads observed capture gaps and an early-ending track with silence; and
-- reports only successfully written normalized buffers to the live monitor.
+- offers only successfully written normalized buffers to accepted-frame consumers.
 
 The first AAC write failure is terminal for that source writer. It closes the
 encoder, leaves prior bytes for a recovery attempt and reports once to
@@ -201,6 +209,7 @@ beyond the microphone track. The cleaned track follows the microphone length.
 
 The live path is bounded and fail-open:
 
+- its mailbox abandons the pass if 30 seconds of accepted PCM awaits delivery;
 - it waits at most five seconds for lagging far-end audio before using silence;
 - it abandons if unprocessed microphone audio reaches 30 seconds;
 - a format, ordering, AEC or derivative-write failure abandons the live pass;
@@ -208,10 +217,11 @@ The live path is bounded and fail-open:
 - the two source CAF files continue recording unchanged.
 
 On stop, the source writers drain and pad to the shared wall-clock end first.
-`LiveEchoCanceller.finish()` then drains its queue, closes both AAC writers and
-renames both live partials to their internal final names. A normal publication
-makes both available. Because the two renames are sequential, a failure on the
-second can leave the first available for the finalizer to discover independently.
+The accepted-frame mailbox then drains before `LiveEchoCanceller.finish()`
+drains the processor queue, closes both AAC writers and renames both live
+partials to their internal final names. A normal publication makes both
+available. Because the two renames are sequential, a failure on the second can
+leave the first available for the finalizer to discover independently.
 
 ## 5. Audio finalization
 
@@ -318,17 +328,17 @@ inside one recorder.
 
 ## 9. Verification boundaries
 
-Unit tests exercise timeline padding, terminal source-write failure, finalizer
-retry and single-flight behavior, rejection of truncated cleaned audio, finished
-layout, mono meeting output, and the choice between live and offline meeting
-artifacts.
+Unit tests exercise timeline padding, terminal source-write failure, isolation
+from a stalled live consumer, finalizer retry and single-flight behavior,
+rejection of truncated cleaned audio, finished layout, mono meeting output, and
+the choice between live and offline meeting artifacts.
 
 The hidden `check-live-aec` command adds an integration path. Synthetic mode
-feeds controlled near and far signals through real `TrackWriter` monitors and
-`LiveEchoCanceller`; replay mode streams retained real-session audio through the
-same path and compares its AEC result with a previously published offline result.
-With `--finalize`, it also invokes the production `AudioFinalizer` and validates
-the published meeting file.
+feeds controlled near and far signals through the real `TrackWriter`,
+accepted-frame mailbox and `LiveEchoCanceller`; replay mode streams retained
+real-session audio through the same path and compares its AEC result with a
+previously published offline result. With `--finalize`, it also invokes the
+production `AudioFinalizer` and validates the published meeting file.
 
 That command does not exercise the physical `AVAudioEngine` tap, the Core Audio
 process tap, capture-graph rebuilding, the menu/UI stop path, TCC permission
@@ -342,9 +352,9 @@ describe current tradeoffs, not established defects or settled changes.
 
 1. **Responsibility concentration.** `TrackWriter`, `LiveEchoCanceller`,
    `AudioFinalizer` and `TranscriptionCoordinator` each combine orchestration
-   with media processing or persistence. Adding another live consumer directly
-   to those types would make lifecycle, timing and failure policy harder to
-   reason about.
+   with media processing or persistence. The accepted-frame boundary isolates
+   live consumers, but the remaining lifecycle and publication boundaries are
+   still broad.
 2. **Clock quality.** Alignment uses non-monotonic wall-clock buffer arrival and
    one-sided silence correction. It does not use Core Audio host timestamps,
    correct overlap or estimate long-term drift between independent device
@@ -362,16 +372,16 @@ describe current tradeoffs, not established defects or settled changes.
 6. **Backpressure policy.** A capture callback may drop input after 256 queued
    buffers. The next accepted buffer turns elapsed wall time into a silent gap.
    This preserves timing while losing content, and makes slow storage a quality
-   failure rather than an unbounded-memory failure. The synchronous monitor can
-   delay the archive queue, and a future bounded consumer contract still needs
-   to define what stateful AEC or ASR does after a dropped frame.
+   failure rather than an unbounded-memory failure. Each optional consumer also
+   needs an explicit mailbox overflow outcome. AEC abandons its live pass;
+   future ASR must choose abandonment, reset or retained-source replay.
 7. **Publication boundary.** Individual M4As precede the atomic metadata update.
    Recovery is idempotent, but the session directory is not transactionally
    replaced as a unit.
-8. **Stop latency.** Source queues and the live AEC queue are drained
-   synchronously during `RecordingSession.stop()`. Normal operation leaves
-   little work, but a near-limit backlog can delay the UI's transition into
-   asynchronous finalization.
+8. **Stop latency.** Source queues, the accepted-frame mailbox and the live AEC
+   queue are drained synchronously during `RecordingSession.stop()`. Normal
+   operation leaves little work, but a near-limit backlog can delay the UI's
+   transition into asynchronous finalization.
 9. **Best-effort degradation.** AEC or one-track transcription failure produces
    the best remaining artifact and records the loss in logs. This favors getting
    a result, but quality degradation is less visible than total capture failure.

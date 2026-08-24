@@ -28,7 +28,7 @@ import Testing
         let writer = try TrackWriter(
             url: output,
             format: fileFormat,
-            name: "system",
+            track: .system,
             log: SessionLog(dir: directory),
             watchSilence: false
         )
@@ -86,7 +86,7 @@ import Testing
         let writer = try TrackWriter(
             url: output,
             format: format,
-            name: "mic",
+            track: .microphone,
             log: SessionLog(dir: directory),
             watchSilence: false,
             fileWrite: { file, buffer in
@@ -130,7 +130,7 @@ import Testing
         let writer = try TrackWriter(
             url: directory.appendingPathComponent("mic.caf"),
             format: format,
-            name: "mic",
+            track: .microphone,
             log: SessionLog(dir: directory),
             watchSilence: false,
             fileWrite: { file, buffer in
@@ -153,6 +153,82 @@ import Testing
         #expect(writer.writeFailure != nil)
         #expect(failures.values.count == 1)
         #expect(attempts.value == 2)
+    }
+
+    @Test func stalledLiveConsumerCannotDelaySourceArchive() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: directory, withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let output = directory.appendingPathComponent("mic.caf")
+        let format = try #require(AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: 48_000,
+            channels: 1,
+            interleaved: false
+        ))
+        let enteredConsumer = DispatchSemaphore(value: 0)
+        let releaseConsumer = DispatchSemaphore(value: 0)
+        let overflows = LockedCounter()
+        let healthyDeliveries = LockedCounter()
+        let healthyOverflows = LockedCounter()
+        let mailbox = AcceptedFrameMailbox(
+            maxQueuedFrames: 4_800,
+            consume: { _ in
+                enteredConsumer.signal()
+                releaseConsumer.wait()
+                return true
+            },
+            onOverflow: { _ = overflows.increment() }
+        )
+        let healthyMailbox = AcceptedFrameMailbox(
+            maxQueuedFrames: 48_000,
+            consume: { _ in
+                _ = healthyDeliveries.increment()
+                return true
+            },
+            onOverflow: { _ = healthyOverflows.increment() }
+        )
+        let writer = try TrackWriter(
+            url: output,
+            format: format,
+            track: .microphone,
+            log: SessionLog(dir: directory),
+            watchSilence: false
+        )
+        writer.sendAcceptedFrames(to: AcceptedFrameFanout([mailbox, healthyMailbox]))
+
+        let buffer = try #require(AVAudioPCMBuffer(
+            pcmFormat: format,
+            frameCapacity: 4_800
+        ))
+        buffer.frameLength = 4_800
+        writer.write(buffer)
+        #expect(enteredConsumer.wait(timeout: .now() + 1) == .success)
+
+        writer.write(buffer)
+        writer.write(buffer)
+        let closed = DispatchSemaphore(value: 0)
+        DispatchQueue.global().async {
+            writer.close(paddingTo: Date())
+            closed.signal()
+        }
+        let closedWithoutConsumer = closed.wait(timeout: .now() + 1)
+        releaseConsumer.signal()
+        if closedWithoutConsumer == .timedOut {
+            _ = closed.wait(timeout: .now() + 5)
+        }
+        mailbox.finish()
+        healthyMailbox.finish()
+
+        #expect(closedWithoutConsumer == .success)
+        #expect(overflows.value == 1)
+        #expect(healthyDeliveries.value == 3)
+        #expect(healthyOverflows.value == 0)
+        #expect(try AVAudioFile(forReading: output).length == 14_400)
     }
 }
 

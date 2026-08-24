@@ -2,6 +2,24 @@
 
 Dated product and architecture decisions. Newest first.
 
+## 2026-08-24: Isolate optional live consumers from source archival
+
+**Decision:** After a source encoder accepts a normalized frame, `TrackWriter`
+creates one immutable `AcceptedFrame` and offers it to an immutable fan-out.
+Each consumer owns a bounded mailbox and runs on its own queue. The AEC mailbox
+holds at most 30 seconds of accepted PCM; overflow abandons live AEC and mixing.
+
+**Why:** Independent review confirmed that the synchronous AEC monitor could
+wait for the processor lock while holding the source writer lock. That allowed
+optional processing to delay later archive writes and eventually contribute to
+source queue overflow.
+
+**Consequence:** Consumer work and consumer locks no longer run on source
+archive queues. A stalled-consumer regression test closes a complete source
+file while its AEC-like consumer remains blocked. Source encoder acceptance
+still precedes fan-out, and offline processing remains the recovery path for an
+abandoned live consumer.
+
 ## 2026-08-24: Preserve the surviving source after an archive failure
 
 **Decision:** The first AAC write failure permanently closes that source track,

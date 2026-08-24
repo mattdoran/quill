@@ -16,6 +16,9 @@ is not in play.
 
 - Audio tap and IO closures must remain `@Sendable`. Main-actor isolation on a
   Core Audio callback compiled cleanly and then trapped on the realtime thread.
+- Optional accepted-frame consumers must run through their own bounded mailbox.
+  Synchronous AEC once held the source writer lock until its archive queue could
+  drop audio.
 - Treat signing as a functional audio change. Hardened runtime without
   `com.apple.security.device.audio-input` produced correctly sized silent files.
 - Keep `com.apple.WebKit.GPU` normalized as Safari; the coverage tradeoff is

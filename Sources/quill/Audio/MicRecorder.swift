@@ -58,7 +58,11 @@ final class MicRecorder: Capture {
         self.log = log
         do {
             let writer = try TrackWriter(
-                url: url, format: Self.fileFormat, name: name, log: log, watchSilence: true
+                url: url,
+                format: Self.fileFormat,
+                track: .microphone,
+                log: log,
+                watchSilence: true
             )
             writer.onProlongedSilence = { [weak self] in
                 Task { @MainActor in self?.onInvalidated?("capturing digital silence") }
@@ -73,8 +77,8 @@ final class MicRecorder: Capture {
     }
 
     /// Set after `prepare` and before capture starts.
-    func monitor(with monitor: any TrackMonitor) {
-        writer?.monitor(with: monitor)
+    func sendAcceptedFrames(to sink: any AcceptedFrameSink) {
+        writer?.sendAcceptedFrames(to: sink)
     }
 
     func attach() throws {
