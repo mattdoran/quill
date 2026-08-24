@@ -20,6 +20,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private let downloadModelsItem: NSMenuItem
     private let openFolderItem: NSMenuItem
     private let changeFolderItem: NSMenuItem
+    private let checkForUpdatesItem: NSMenuItem
     private let quitItem: NSMenuItem
     private var isRecording = false
     private var companionVisible = false
@@ -34,6 +35,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     var onRetryTranscription: (() -> Void)?
     var onDownloadModels: (() -> Void)?
     var onSettings: (() -> Void)?
+    var onCheckForUpdates: (() -> Void)?
     var onQuit: (() -> Void)?
 
     /// Whether a transcript exists to open, re-asked each time the menu opens
@@ -157,6 +159,13 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         )
         menu.addItem(settings)
 
+        checkForUpdatesItem = NSMenuItem(
+            title: "Check for Updates…",
+            action: #selector(checkForUpdatesClicked),
+            keyEquivalent: ""
+        )
+        menu.addItem(checkForUpdatesItem)
+
         let about = NSMenuItem(
             title: "About Quill",
             action: #selector(aboutClicked),
@@ -179,6 +188,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             downloadModelsItem,
             transcriptionLabel,
             settings,
+            checkForUpdatesItem,
         ] {
             item.target = self
         }
@@ -216,6 +226,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     ) {
         precondition(!recording || elapsed != nil)
         isRecording = recording
+        checkForUpdatesItem.isEnabled = !recording
         toggleItem.isEnabled = true
         let clock = elapsed ?? "0:00"
         stateLabel.title =
@@ -260,6 +271,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         stateLabel.title = "Starting recording…"
         toggleItem.title = "Starting Recording…"
         toggleItem.isEnabled = false
+        checkForUpdatesItem.isEnabled = false
         quitItem.title = "Quit Quill"
         statusItem.button?.title = ""
         troubleLabel.title = ""
@@ -377,6 +389,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     }
 
     @objc private func settingsClicked() { onSettings?() }
+    @objc private func checkForUpdatesClicked() { onCheckForUpdates?() }
 
     @objc private func aboutClicked() {
         NSApp.activate(ignoringOtherApps: true)

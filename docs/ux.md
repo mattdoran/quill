@@ -78,6 +78,7 @@ Review Last Transcript…
 Open Recordings Folder
 ────────────────────────────────────────────
 Settings…
+Check for Updates…
 About Quill
 Quit Quill                                      ⌘Q
 ```
@@ -101,6 +102,7 @@ Review Last Transcript…                                ⟨disabled⟩
 Open Recordings Folder
 ────────────────────────────────────────────
 Settings…
+Check for Updates…                                  ⟨disabled⟩
 About Quill
 Stop Recording and Quit                         ⌘Q
 ```
@@ -109,6 +111,10 @@ During audio-device attachment, the status line reads `Starting recording…`
 and the command beneath it reads `Starting Recording…` disabled. The menu-bar
 glyph changes immediately, but its title stays empty so startup does not widen
 and then shrink the status item.
+
+Update checks are disabled while recording starts or runs. An update accepted
+before capture began may finish installing, but Quill postpones its relaunch
+until capture has stopped and its recoverable source state is on disk.
 
 ### Recording, degraded
 
@@ -133,6 +139,7 @@ Transcribing 2:14 PM recording — 1 queued           ⟨disabled⟩
 Start Recording
 Open Last Transcript
 …
+Check for Updates…
 Quit Quill                                      ⌘Q
 ```
 
@@ -579,7 +586,7 @@ the human-facing Markdown.
 | A general transcript editor | `transcript.md` remains the editable and export artifact. Quill's native window is read-only review plus speaker identification. |
 | A permanent Dock icon | Quill is normally a menu bar accessory. It becomes a regular app only while transcript review is open, so that task window participates in Command-Tab. |
 | Our own sounds | The system's notification sound is the only sound quill makes. |
-| A first-run wizard | Permissions prompt themselves and the menu is thirteen items. If onboarding is needed, the menu is wrong. |
+| A first-run wizard | Permissions prompt themselves and the operational menu is already the onboarding surface. If more onboarding is needed, the menu is wrong. |
 | Live transcription during the meeting | Doubles the compute during the one moment the machine is busy, to show text nobody reads while talking. |
 | Progress in the status item | See principle 1. The bar reports recording. |
 | Any cloud, any account, any telemetry | Nothing leaves the machine. This is the product. |

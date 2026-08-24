@@ -59,6 +59,63 @@ the first launch rather than afterwards.
 virtual device, no kernel extension). Apple Silicon recommended for
 transcription speed.
 
+### Updates
+
+The installed app checks its signed Sparkle feed every 24 hours and reports an
+available update without downloading or installing it silently. **Check for
+Updates…** in the menu runs the same check immediately. Quill postpones any
+updater-driven relaunch until capture has stopped and its recoverable source
+state is on disk.
+
+The source plist names the exact release being developed, such as
+`0.4.0-dev`. A release tag supplies the packaged version:
+
+```sh
+./release.sh check v0.4.0-beta.1
+./release.sh build v0.4.0-beta.1
+./release.sh publish
+
+./release.sh check v0.4.0
+./release.sh build v0.4.0
+./release.sh publish
+```
+
+`build` runs tests in release configuration, runs the AEC controls, creates a
+Developer ID signed and notarized ZIP, signs it with Sparkle and writes
+`.build/publish/release.json`. It does not change GitHub. `publish` is the
+external boundary: it creates and pushes the tag, publishes the GitHub Release
+asset, generates the appcast, then commits and pushes the appcast last to
+activate the update.
+
+After `0.4.0` is published, prepare the next development train explicitly:
+
+```sh
+./release.sh prepare-next 0.5.0
+```
+
+This edits the plist to `0.5.0-dev` and does not commit it. Published build
+ordering comes from the first-parent commit count on `master`; every beta and
+stable artifact therefore has a unique increasing `CFBundleVersion` without a
+separate counter file.
+
+GitHub Pages serves `docs/updates/appcast.xml` from the `master` branch's
+`/docs` directory. Beta GitHub Releases are prereleases and their appcast items
+use Sparkle's `beta` channel. Stable bundles ignore them; a beta bundle sees
+both beta and stable updates.
+
+The Sparkle private key is in the login Keychain. Back it up outside the
+repository with:
+
+```sh
+.build/artifacts/sparkle/Sparkle/bin/generate_keys -x <private-key-file>
+```
+
+The exported file is equivalent to a password and must never be committed.
+For future CI, a tag-triggered macOS job calls the same `check`, `build` and
+`publish` commands. It imports the Developer ID and Sparkle keys into a
+temporary Keychain; after `publish`, the workflow deploys `docs/` as its Pages
+artifact instead of creating an appcast commit.
+
 ## How to use
 
 1. **Run it** (`quill` in a terminal, or launch `Quill.app`).

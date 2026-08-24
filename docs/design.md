@@ -320,8 +320,7 @@ The implementation relies on these cross-layer invariants:
 - both source writers produce mono 48 kHz timelines;
 - a track's frame positions remain monotonic across graph rebuilds;
 - gaps are silence in the retained track and in live processing;
-- every consumer uses the same track-start relationship, while the current live
-  and persisted paths quantize that relationship differently;
+- every consumer uses the same rounded-millisecond track-start relationship;
 - live derivatives are never substitutes for retained sources;
 - a derivative is published only after its encoder closes cleanly;
 - metadata paths, rather than filename inference, select downstream inputs; and
@@ -349,6 +348,29 @@ That command does not exercise the physical `AVAudioEngine` tap, the Core Audio
 process tap, capture-graph rebuilding, the menu/UI stop path, TCC permission
 state, or signing entitlements. A signed live recording remains the end-to-end
 test for those boundaries.
+
+### 9.1 Signed update boundary
+
+Sparkle is retained by `AppController` and uses its standard update interface.
+It checks the HTTPS appcast periodically and exposes the same operation through
+the menu. Stable clients use the default appcast channel; beta bundles opt into
+both `beta` and default items through a bundle-only channel marker. An update
+may be discovered during capture, but its relaunch handler stays behind
+`UpdateRelaunchGate` until source archives close and recoverable capture state
+is on disk.
+
+The source plist carries a development train such as `0.4.0-dev`. A release tag
+selects `0.4.0-beta.N` or `0.4.0` for the output bundle, while the first-parent
+commit count supplies Sparkle's strictly increasing numeric build. The release
+archive contains the complete app bundle, including `Sparkle.framework`, and
+is protected independently by Developer ID signing, Apple notarization and
+Sparkle EdDSA signing.
+
+`release.sh build` is local-only and produces a receipt binding the archive to
+its tag, commit, build, hash and signature. `release.sh publish` verifies that
+receipt before creating the tag and GitHub Release. The appcast is published
+last, so a client cannot discover an archive that is not already public and
+verified.
 
 ## 10. Critique surface
 

@@ -18,6 +18,8 @@ is not in play.
   Core Audio callback compiled cleanly and then trapped on the realtime thread.
 - Derive live alignment through `SessionTimeline` from the persisted millisecond
   offsets. Direct `Date`-to-sample conversion makes live and recovery disagree.
+- Preserve `Sparkle.framework` symlinks and sign its nested helpers inside-out
+  before Quill. Flattening or deep-signing it produces an invalid update bundle.
 - Optional accepted-frame consumers must run through their own bounded mailbox.
   Synchronous AEC once held the source writer lock until its archive queue could
   drop audio.

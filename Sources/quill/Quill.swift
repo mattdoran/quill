@@ -100,6 +100,7 @@ struct Doctor: ParsableCommand {
 final class AppController {
     private var root: URL
     private let menuBar = MenuBarController()
+    private let updater = UpdaterController()
     private let companion = MeetingCompanionController()
     private let transcription = TranscriptionCoordinator()
     private let models = ModelDownload()
@@ -180,6 +181,11 @@ final class AppController {
             Task { [models] in await models.fetchIfNeeded(force: true) }
         }
         menuBar.onSettings = { [weak self] in self?.showSettings() }
+        menuBar.onCheckForUpdates = { [weak self] in self?.updater.checkForUpdates() }
+        updater.shouldPostponeRelaunch = { [weak self] in
+            guard let self else { return false }
+            return isStarting || session != nil || stoppingTask != nil
+        }
         companion.onRecord = { [weak self] token in
             self?.startDetectedCall(promptToken: token.uuidString)
         }
@@ -303,6 +309,7 @@ final class AppController {
                     + "Recordings Folder… in the menu to grant it."
             )
             companion.handle(.reset)
+            updater.resumePostponedRelaunchIfPossible()
             return
         }
         do {
@@ -345,12 +352,14 @@ final class AppController {
                     """
             )
             companion.handle(.reset)
+            updater.resumePostponedRelaunchIfPossible()
             return
         }
 
         isStarting = false
         startingCallApplication = nil
         startingCallToken = nil
+        updater.resumePostponedRelaunchIfPossible()
         refreshMenuStatus()
         let ticker = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
@@ -423,6 +432,7 @@ final class AppController {
             guard let self else { return }
             await stopSession()
             stoppingTask = nil
+            updater.resumePostponedRelaunchIfPossible()
         }
         stoppingTask = task
         return task

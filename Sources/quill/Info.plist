@@ -12,10 +12,24 @@
         <string>quill</string>
         <key>CFBundlePackageType</key>
         <string>APPL</string>
+        <key>LSMinimumSystemVersion</key>
+        <string>15.0</string>
         <key>CFBundleShortVersionString</key>
-        <string>0.4-dev</string>
+        <string>0.4.0-dev</string>
         <key>CFBundleVersion</key>
         <string>4</string>
+        <key>SUFeedURL</key>
+        <string>https://mattdoran.github.io/quill/updates/appcast.xml</string>
+        <key>SUPublicEDKey</key>
+        <string>vePY0QBjJknQDuDB5t9xHfGMRJzfJetDAMUpKuetFoo=</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUScheduledCheckInterval</key>
+	<integer>86400</integer>
+	<key>SUAutomaticallyUpdate</key>
+	<false/>
+	<key>SUAllowsAutomaticUpdates</key>
+	<false/>
         <key>NSHumanReadableCopyright</key>
         <string>Copyright (c) 2026 Andrew Jones, Matt Doran. MIT licensed.</string>
         <!-- Menu-bar only. setActivationPolicy(.accessory) does this at runtime

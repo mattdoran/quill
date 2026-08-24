@@ -2,6 +2,26 @@
 
 Dated product and architecture decisions. Newest first.
 
+## 2026-08-24: Publish signed updates from one resumable release script
+
+**Decision:** Quill uses Sparkle's standard updater with periodic checks and a
+manual menu action. Source versions name the exact `X.Y.Z-dev` release train;
+release tags select stable or `beta.N` artifacts, and the first-parent commit
+count is their numeric build. One `release.sh` checks, builds and publishes
+locally now and remains the implementation called by a future tag-triggered
+GitHub Actions workflow.
+
+**Why:** Appcast order is not update order, and separate local and CI release
+implementations would drift across versioning, signing and publication. A
+receipt lets the external publish step prove it is exposing the exact archive
+that passed tests, notarization and Sparkle signing.
+
+**Consequence:** GitHub Releases hold immutable ZIPs and GitHub Pages holds one
+stable HTTPS appcast. Beta items share that feed through Sparkle's channel
+mechanism. The appcast is the activation boundary and is published last. Update
+installation can never relaunch Quill while a recording or its stop drain is
+active.
+
 ## 2026-08-24: Make stop an asynchronous lifecycle boundary
 
 **Decision:** Stop detaches both realtime capture graphs on the main actor, then
