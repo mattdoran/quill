@@ -15,7 +15,6 @@ actor AudioFinalizer {
     enum FinalizationError: Error, CustomStringConvertible {
         case missingMetadata(URL)
         case missingAudio(URL)
-        case unsafePath(String)
         case exportUnavailable(String)
         case invalidAudio(String)
 
@@ -23,7 +22,6 @@ actor AudioFinalizer {
             switch self {
             case .missingMetadata(let url): "missing session metadata at \(url.path)"
             case .missingAudio(let url): "missing source audio at \(url.path)"
-            case .unsafePath(let path): "unsafe session audio path \(path)"
             case .exportUnavailable(let detail): "audio export unavailable: \(detail)"
             case .invalidAudio(let detail): "invalid audio: \(detail)"
             }
@@ -83,8 +81,13 @@ actor AudioFinalizer {
             return
         }
 
-        let microphoneSource = try sourceURL(for: files.microphone, in: session)
-        let callSource = try sourceURL(for: files.system, in: session)
+        let prepared = try AudioPreparation.prepare(
+            session: session,
+            manifest: metadata,
+            log: { appendLog(session, $0) }
+        )
+        let microphoneSource = prepared.microphone
+        let callSource = prepared.system
         guard microphoneSource != nil || callSource != nil else {
             throw FinalizationError.missingAudio(session)
         }
@@ -114,24 +117,7 @@ actor AudioFinalizer {
             published.system = nil
         }
 
-        var cleanedSource = microphoneSource.flatMap {
-            existingCleanedMicrophone(in: session, matching: $0)
-        }
-        if cleanedSource == nil, let microphoneSource, let callSource {
-            do {
-                appendLog(session, "cleaning speaker playback before audio finalization")
-                let workingDirectory = try SessionFiles.prepare(session)
-                cleanedSource = try EchoCancellation.clean(
-                    mic: microphoneSource,
-                    micOffsetMs: metadata.startOffsets.microphone,
-                    system: callSource,
-                    systemOffsetMs: metadata.startOffsets.system,
-                    in: workingDirectory
-                )
-            } catch {
-                appendLog(session, "echo cancellation failed before finalization: \(error)")
-            }
-        }
+        let cleanedSource = prepared.cleanedMicrophone
 
         if let cleanedSource {
             let output = session.appendingPathComponent(Self.cleanedLocalPath)
@@ -267,16 +253,7 @@ actor AudioFinalizer {
     }
 
     private func sourceURL(for path: String?, in session: URL) throws -> URL? {
-        guard let path, !path.isEmpty else { return nil }
-        let components = (path as NSString).pathComponents
-        guard !path.hasPrefix("/"), !components.contains("..") else {
-            throw FinalizationError.unsafePath(path)
-        }
-        let url = session.appendingPathComponent(path).standardizedFileURL
-        let root = session.standardizedFileURL.path + "/"
-        guard url.path.hasPrefix(root) else { throw FinalizationError.unsafePath(path) }
-        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
-        return url
+        try AudioPreparation.url(for: path, in: session)
     }
 
     private func removeStaleJournal(_ session: URL) {
@@ -522,19 +499,6 @@ actor AudioFinalizer {
             try FileManager.default.removeItem(at: output)
         }
         try FileManager.default.moveItem(at: partial, to: output)
-    }
-
-    private func existingCleanedMicrophone(in session: URL, matching microphone: URL) -> URL? {
-        let legacy = SessionFiles.internalFile(EchoCancellation.outputName, in: session)
-        guard FileManager.default.fileExists(atPath: legacy.path) else { return nil }
-        do {
-            try EchoCancellation.validateCleaned(legacy, matching: microphone)
-            return legacy
-        } catch {
-            appendLog(session, "cleaned microphone unusable, rebuilding: \(error)")
-            try? FileManager.default.removeItem(at: legacy)
-            return nil
-        }
     }
 
     private func existingLiveMeeting(in session: URL) -> URL? {

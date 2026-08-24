@@ -2,6 +2,23 @@
 
 Dated product and architecture decisions. Newest first.
 
+## 2026-08-24: Give offline audio preparation one owner
+
+**Decision:** `AudioPreparation` resolves safe source paths, validates cleaned
+microphone audio, runs offline AEC when needed and returns one prepared input
+set. Finalization, baseline transcription and speaker separation consume that
+same result. Cleanup failure returns the raw microphone rather than failing a
+usable transcript.
+
+**Why:** `AudioFinalizer` and `TranscriptionCoordinator` independently selected
+cleaned inputs and invoked AEC. Their policies could drift, while transcription
+still needed graceful degradation when publication failed.
+
+**Consequence:** `EchoCancellation.clean()` has one production caller and
+transcription no longer owns audio cleanup policy. Invalid disposable internal
+derivatives may be rebuilt; invalid human-facing audio is preserved as evidence.
+Best-effort raw transcription remains the explicit failure behavior.
+
 ## 2026-08-24: Give persisted session state one typed owner
 
 **Decision:** `SessionManifest.swift` owns the Codable schema and atomic IO for

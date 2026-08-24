@@ -235,15 +235,13 @@ engine and product-quality decision, not a capture responsibility.
 ### Incremental path that does not build the feature
 
 No refactor is justified solely by the possibility of live transcription. The
-canonical accepted frame, isolated delivery seam and typed session manifest now
-exist. Remaining work should happen only when an adjacent requirement reaches
-it:
+canonical accepted frame, isolated delivery seam, typed session manifest and
+shared offline audio preparation now exist. Remaining work should happen only
+when an adjacent requirement reaches it:
 
-1. Give offline audio preparation one orchestration owner while preserving raw
-   source fallback for best-effort transcription.
-2. Separate live processing from derivative publication when either needs an
+1. Separate live processing from derivative publication when either needs an
    independent implementation or failure policy.
-3. Keep batch transcription unchanged until a real streaming engine is selected.
+2. Keep batch transcription unchanged until a real streaming engine is selected.
 
 At that point adding live ASR is a new consumer and transcript lifecycle, not a
 third recorder.

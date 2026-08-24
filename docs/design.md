@@ -97,8 +97,9 @@ more than one architectural responsibility:
 | `LiveEchoCanceller` | Stream alignment, AEC3, meeting mixing, two AAC encoders and internal publication |
 | `RecordingSession` | Lifecycle orchestration, typed journal and manifest creation, alerts and live-processing coordination |
 | `SessionManifest`, `SessionMetadataStore` | Persisted capture and session schema, compatibility defaults and atomic JSON IO |
-| `AudioFinalizer` | Recovery, validation, remuxing, fallback DSP, mixing, artifact publication and typed metadata transition |
-| `TranscriptionCoordinator` | Job queue, fallback AEC, ASR orchestration over typed session inputs, transcript assembly, hooks and retention handoff |
+| `AudioPreparation` | Safe source resolution, cleaned-input validation, offline AEC and raw-microphone fallback |
+| `AudioFinalizer` | Recovery, remuxing, offline mixing, artifact publication and typed metadata transition |
+| `TranscriptionCoordinator` | Job queue, ASR orchestration over prepared inputs, transcript assembly, hooks and retention handoff |
 
 These are accurate descriptions of the code, not the desired final layer
 boundaries. The first seam to preserve is the one already implicit inside
@@ -239,9 +240,9 @@ Finalization is restartable and follows these stages:
 1. Read `meta.json`, or reconstruct it from `capture.json` and surviving CAFs.
 2. Passthrough-remux source AAC from CAF into `Source Audio/Local.m4a` and
    `Source Audio/Remote.m4a`. This changes the container, not the encoded audio.
-3. Use the live cleaned microphone if present. Otherwise rerun AEC3 offline from
-   the retained source tracks and their offsets. AEC failure falls back to the
-   raw microphone for the meeting mix.
+3. Ask `AudioPreparation` for the validated cleaned microphone. It uses the
+   live result when valid, otherwise reruns AEC3 offline from retained sources.
+   AEC failure returns the raw microphone for mixing and transcription.
 4. Passthrough-remux the cleaned microphone into
    `Source Audio/Local Cleaned.m4a` when one exists.
 5. Validate the live meeting mix against the expected global duration and use
@@ -270,15 +271,14 @@ and is re-enqueued on launch.
 
 For a baseline transcript it:
 
-1. resolves source paths and offsets from `meta.json`;
-2. uses the published cleaned microphone when available;
-3. independently retries offline AEC if the cleaned microphone is missing;
-4. transcribes microphone and system tracks separately;
-5. shifts each segment by its track's start offset;
-6. merges segments by global timestamp with coarse `Me` and `Them` identities;
-7. atomically publishes canonical `.quill/transcript.json` and rendered
+1. reads typed source paths and offsets from `meta.json`;
+2. consumes the validated cleaned or raw inputs from `AudioPreparation`;
+3. transcribes microphone and system tracks separately;
+4. shifts each segment by its track's start offset;
+5. merges segments by global timestamp with coarse `Me` and `Them` identities;
+6. atomically publishes canonical `.quill/transcript.json` and rendered
    `transcript.md`; and
-8. runs the configured `on_stop` command, then applies source-audio retention.
+7. runs the configured `on_stop` command, then applies source-audio retention.
 
 One bad or missing track is logged and skipped rather than discarding a usable
 transcript from the other. If audio finalization failed immediately after stop,
@@ -386,11 +386,7 @@ describe current tradeoffs, not established defects or settled changes.
 9. **Best-effort degradation.** AEC or one-track transcription failure produces
    the best remaining artifact and records the loss in logs. This favors getting
    a result, but quality degradation is less visible than total capture failure.
-10. **Duplicated recovery responsibility.** Both `AudioFinalizer` and
-    `TranscriptionCoordinator` can run offline AEC. This protects transcription
-    after partial finalization, while creating two orchestration sites for the
-    same fallback.
-11. **Health versus metering.** Audible-level reporting is optional product
+10. **Health versus metering.** Audible-level reporting is optional product
     state, but exact digital silence on the microphone can trigger capture graph
     rebuilding. A future consumer split must keep capture-health evidence on a
     reliable path rather than treating all level analysis as droppable metering.

@@ -149,42 +149,16 @@ actor TranscriptionCoordinator {
         let engine = try await preparedEngine()
         publish(.transcribing(session: session, queued: queue.count))
 
-        var cleanedMic = meta.files.cleanedMicrophone.map {
-            dir.appendingPathComponent($0)
-        }.flatMap { FileManager.default.fileExists(atPath: $0.path) ? $0 : nil }
-        if cleanedMic == nil,
-            let mic = meta.sourceAudio.first(where: { $0.track == .microphone }),
-            let system = meta.sourceAudio.first(where: { $0.track == .system })
-        {
-            let micAudio = dir.appendingPathComponent(mic.file)
-            let systemAudio = dir.appendingPathComponent(system.file)
-            if
-                FileManager.default.fileExists(atPath: micAudio.path),
-                FileManager.default.fileExists(atPath: systemAudio.path)
-            {
-                do {
-                    log(dir, "cleaning speaker playback from \(mic.file) (AEC3)")
-                    let workingDirectory = try SessionFiles.prepare(dir)
-                    cleanedMic = try EchoCancellation.clean(
-                        mic: micAudio,
-                        micOffsetMs: mic.offsetMilliseconds,
-                        system: systemAudio,
-                        systemOffsetMs: system.offsetMilliseconds,
-                        in: workingDirectory
-                    )
-                    log(dir, "cleaned microphone written to \(EchoCancellation.outputName)")
-                } catch {
-                    log(dir, "echo cancellation failed, using \(mic.file): \(error)")
-                }
-            }
-        }
+        let prepared = try AudioPreparation.prepare(
+            session: dir,
+            manifest: meta,
+            log: { log(dir, $0) }
+        )
 
         var merged: [TranscriptDocument.Segment] = []
         var voices: [String: TranscriptDocument.Voice] = [:]
         for track in meta.sourceAudio {
-            let source = dir.appendingPathComponent(track.file)
-            let audio = track.track == .microphone ? cleanedMic ?? source : source
-            guard FileManager.default.fileExists(atPath: audio.path) else {
+            guard let audio = prepared.transcriptionSource(for: track.track) else {
                 log(dir, "skipping missing track \(track.file)")
                 continue
             }
@@ -256,6 +230,11 @@ actor TranscriptionCoordinator {
             throw TranscriptStore.StoreError.unsupportedSchema
         }
         let meta = try SessionMetadataStore.readManifest(dir)
+        let prepared = try AudioPreparation.prepare(
+            session: dir,
+            manifest: meta,
+            log: { log(dir, $0) }
+        )
         let engine = try await preparedDiarizer()
         var voices: [String: TranscriptDocument.Voice] = [:]
         var segments = current.segments
@@ -263,12 +242,7 @@ actor TranscriptionCoordinator {
         var voiceLabels = VoiceLabelSequence()
 
         for track in meta.sourceAudio {
-            let source = dir.appendingPathComponent(track.file)
-            let cleaned = meta.files.cleanedMicrophone.map { dir.appendingPathComponent($0) }
-            let audio = track.track == .microphone && cleaned.map({
-                FileManager.default.fileExists(atPath: $0.path)
-            }) == true ? cleaned! : source
-            guard FileManager.default.fileExists(atPath: audio.path) else {
+            guard let audio = prepared.transcriptionSource(for: track.track) else {
                 throw SpeakerSeparationError.sourceAudioUnavailable
             }
             let indices = segments.indices.filter { index in
