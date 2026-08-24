@@ -92,10 +92,12 @@ installed directly from its GitHub Release page.
 
 **Decision:** Quill uses Sparkle's standard updater with periodic checks and a
 manual menu action. Source versions name the exact `X.Y.Z-dev` release train;
-release tags select stable or `beta.N` artifacts, and the first-parent commit
-count is their numeric build. One `release.sh` checks, builds and publishes
-locally now and remains the implementation called by a future tag-triggered
-GitHub Actions workflow.
+release tags select stable or `beta.N` artifacts. Trunk builds use the
+first-parent commit count. A `release/X.Y` maintenance branch derives dotted
+builds from the latest stable item in the published appcast: stable build `80`
+is followed by maintenance builds `80.1`, `80.2` and so on. One `release.sh`
+checks, builds and publishes locally now and remains the implementation called
+by a future tag-triggered GitHub Actions workflow.
 
 **Why:** Appcast order is not update order, and separate local and CI release
 implementations would drift across versioning, signing and publication. A
@@ -104,9 +106,12 @@ that passed tests, notarization and Sparkle signing.
 
 **Consequence:** GitHub Releases hold immutable ZIPs and GitHub Pages holds one
 stable HTTPS appcast. Beta items share that feed through Sparkle's channel
-mechanism. The appcast is the activation boundary and is published last. Update
-installation can never relaunch Quill while a recording or its stop drain is
-active.
+mechanism. Maintenance branches must match their release line, descend from its
+latest stable tag and match their pushed remote. Their dotted builds update
+stable clients without replacing a newer trunk beta. Maintenance publication
+activates the appcast through a separate `master` worktree. The appcast remains
+the last publication boundary. Update installation can never relaunch Quill
+while a recording or its stop drain is active.
 
 ## 2026-08-24: Make stop an asynchronous lifecycle boundary
 

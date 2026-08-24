@@ -105,10 +105,32 @@ After `0.4.0` is published, prepare the next development train explicitly:
 ./release.sh prepare-next 0.5.0
 ```
 
-This edits the plist to `0.5.0-dev` and does not commit it. Published build
-ordering comes from the first-parent commit count on `master`; every beta and
-stable artifact therefore has a unique increasing `CFBundleVersion` without a
+This edits the plist to `0.5.0-dev` and does not commit it. Trunk build ordering
+comes from the first-parent commit count on `master`; every beta and stable
+artifact on that train therefore has an increasing `CFBundleVersion` without a
 separate counter file.
+
+If `master` has moved beyond a released version that needs a small fix, create
+and push `release/X.Y` from the latest stable tag on that line. Prepare the patch
+version, commit the fix, and use the normal release commands:
+
+```sh
+git switch --create release/0.4 v0.4.0
+git push --set-upstream origin release/0.4
+./release.sh prepare-next 0.4.1
+# commit the version and fix, then push the branch
+./release.sh check v0.4.1
+./release.sh build v0.4.1
+./release.sh publish
+```
+
+The script reads the published appcast and derives maintenance builds beneath
+the stable build: stable build `80` produces `80.1`, then `80.2`. Those builds
+are newer for stable users but remain older than trunk build `81`. It rejects a
+branch that is not named for the release line, does not descend from the latest
+stable tag, is not pushed, or has stale appcast ancestry. Maintenance
+publication commits the generated appcast to `master`, which remains the GitHub
+Pages source. Apply the fix to `master` as well.
 
 GitHub Pages serves `docs/updates/appcast.xml` from the `master` branch's
 `/docs` directory. Beta GitHub Releases are prereleases and their appcast items

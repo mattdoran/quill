@@ -52,6 +52,10 @@ is not in play.
 - Do not run `swift test -c release` in the normal `.build` directory. It adds
   `-enable-testing` to release dependencies, so the next production build
   recompiles FluidAudio; use normal debug tests or a separate scratch path.
+- Do not replace release build derivation with one global counter. Trunk uses
+  its first-parent count; `release/X.Y` derives dotted maintenance builds from
+  the latest stable appcast item so a hotfix updates stable users without
+  replacing a newer beta.
 - Use `./build.sh` for shared debug and release builds. It fixes SwiftPM's
   TTY-dependent diagnostic mode; direct terminal and non-terminal builds
   otherwise invalidate each other's artifacts.

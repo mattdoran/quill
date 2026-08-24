@@ -41,9 +41,10 @@ while [ "$#" -gt 0 ]; do
     shift
 done
 
-case "$build" in
-    ""|*[!0-9]*) [ -z "$build" ] || { echo "--build must be an integer" >&2; exit 64; } ;;
-esac
+if [ -n "$build" ] && ! printf '%s\n' "$build" | grep -Eq '^[0-9]+(\.[0-9]+){0,2}$'; then
+    echo "--build must contain one to three numeric components" >&2
+    exit 64
+fi
 case "$channel" in
     ""|beta) ;;
     *) echo "--channel must be beta" >&2; exit 64 ;;
