@@ -2,6 +2,59 @@
 
 Dated product and architecture decisions. Newest first.
 
+## 2026-08-24: Normalize terminal and non-terminal Swift builds
+
+**Decision:** Shared builds run through `build.sh`, which selects Apple Swift
+with `xcrun` and passes `--no-color-diagnostics`. Release tests pass the same
+diagnostic setting explicitly.
+
+**Why:** SwiftPM selected colored diagnostics in Terminal and non-colored
+diagnostics for agent processes, then treated that presentation difference as
+a changed compiler invocation and repeatedly rebuilt FluidAudio. Forcing color
+did not work without a TTY. Forcing non-color reused the same isolated probe
+cache across non-terminal and PTY builds.
+
+**Consequence:** Humans, agents and CI share `.build` without changing compiler
+fingerprints according to their output device. Direct `swift build` is not a
+supported project command.
+
+## 2026-08-24: Compile optimized Quill sources in parallel
+
+**Decision:** The Quill executable disables whole-module optimization in
+release builds while retaining `-O`. Dependency products keep their own release
+settings.
+
+**Why:** SwiftPM's default release configuration compiled the entire executable
+in one compiler process after a source edit. It took 77.79 seconds despite ten
+configured jobs. Without whole-module optimization, the same complete Quill
+compile took 12.55 seconds, and a subsequent source edit took 9.69 seconds.
+
+**Consequence:** Quill gives up cross-file optimization within its orchestration
+executable. FluidAudio, WebRTC and other dependency products retain their
+production build settings, and the Quill compile can use the configured job
+parallelism. Release-configured tests use a separate scratch directory so their
+`-enable-testing` modules cannot invalidate the production release cache.
+
+## 2026-08-24: Use the Apple Command Line Tools Swift compiler
+
+**Decision:** Local and release builds use the Swift compiler selected by
+`xcrun` from the active Apple Command Line Tools installation. Quill does not
+carry a Swiftly version pin. CI may still supply an explicit `SWIFT` executable.
+
+**Why:** Swiftly and Apple Swift provided two compiler identities writing to the
+same SwiftPM build directory. Switching from Swiftly 6.3.2 to Apple Swift 6.3.3
+invalidated every target and caused a 96.78-second rebuild. The installed Apple
+Swift 6.3.3 compiler builds and runs against the installed macOS 26.5 SDK in an
+unrestricted cold probe. A restricted probe instead failed when the sandbox
+blocked module-cache writes, so that failure was not evidence that a second
+compiler was required.
+
+**Consequence:** Updating Command Line Tools may require one clean recompilation;
+ordinary builds no longer switch toolchains according to shell startup
+behavior. The test target pins the official Swift Testing source release because
+CLT's bundled framework failed both module import and test discovery. That
+dependency is test-only and is not linked into Quill.
+
 ## 2026-08-24: Keep complete keyboard access and add a fast naming path
 
 **Decision:** Transcript review gives initial focus to the first speaker name.

@@ -35,11 +35,26 @@ is not in play.
   `on_stop` terminates. The source audio is otherwise still in use.
 - Build and test with `QUILL_HOME` pointing to an isolated directory. The normal
   config file is authoritative user state.
-- Agent shells do not read `.zshrc`; invoke `$HOME/.swiftly/bin/swift` directly.
-  Bare `swift` selected compiler 6.3.3 against Apple's 6.3.2 SDK and failed
-  before the manifest loaded.
-- Module-cache overrides are for restricted agent builds only. Do not carry
-  them into normal or release builds, where they discard the user's warm cache.
+- Use `xcrun swift` so builds consistently use the active Apple Command Line
+  Tools installation. A second Swiftly compiler identity caused full release
+  rebuilds whenever commands crossed between the two.
+- A sandboxed Swift process that cannot write its module cache may also report
+  that the SDK is unsupported. Do not install, switch or pin a compiler from
+  that result. Repeat the same cold probe outside the outer sandbox before
+  diagnosing a compiler/SDK mismatch.
+- Keep Quill's release-only `-no-whole-module-optimization` target setting.
+  Default release WMO turned one source edit into a 77.79-second, effectively
+  single-core rebuild; dependencies retain their own optimized settings.
+- Keep the test target's pinned Swift Testing dependency. Apple Swift 6.3.3's
+  CLT framework first failed to import, then loaded but discovered zero tests;
+  the source package also needs CLT's nonstandard `_TestingInterop` library
+  directory at link and runtime.
+- Do not run `swift test -c release` in the normal `.build` directory. It adds
+  `-enable-testing` to release dependencies, so the next production build
+  recompiles FluidAudio; use normal debug tests or a separate scratch path.
+- Use `./build.sh` for shared debug and release builds. It fixes SwiftPM's
+  TTY-dependent diagnostic mode; direct terminal and non-terminal builds
+  otherwise invalidate each other's artifacts.
 - Do not add `--disable-sandbox` to builds using the normal `.build` directory.
   Switching that flag invalidated every release target, including FluidAudio;
   run outside the outer sandbox or use a separate scratch path.

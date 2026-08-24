@@ -10,10 +10,8 @@ receipt="$publish_dir/release.json"
 repo="${GITHUB_REPOSITORY:-mattdoran/quill}"
 if [ -n "${SWIFT:-}" ]; then
     swift="$SWIFT"
-elif [ -x "$HOME/.swiftly/bin/swift" ]; then
-    swift="$HOME/.swiftly/bin/swift"
 else
-    swift=$(command -v swift)
+    swift=$(xcrun -f swift)
 fi
 sparkle_bin="$root/.build/artifacts/sparkle/Sparkle/bin"
 
@@ -165,8 +163,8 @@ build_release() {
     check_release "$1"
     tag="$1"
     export QUILL_HOME="${QUILL_HOME:-/private/tmp/quill-release-home}"
-    "$swift" test
-    "$swift" build -c release
+    SWIFT="$swift" "$root/build.sh" test
+    SWIFT="$swift" "$root/build.sh" release
     run_audio_checks
 
     [ "$publish_dir" = "$root/.build/publish" ] || die "unexpected publish directory"

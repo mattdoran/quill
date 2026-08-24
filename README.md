@@ -30,7 +30,7 @@ To build and install from a checkout:
 
 ```sh
 cd quill
-swift build -c release
+./build.sh release
 ./bundle.sh                                   # wraps the binary in Quill.app
 ./install.sh                                  # installs and restarts Quill
 ./build-dmg.sh                                # optional distributable image
@@ -44,7 +44,7 @@ For a distributable release, notarize the reviewed app before building the
 image around it:
 
 ```sh
-swift build -c release
+./build.sh release
 ./bundle.sh --notarize
 ./build-dmg.sh --notarize
 ```

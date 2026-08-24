@@ -373,6 +373,24 @@ to their tag, commit, build and hashes, plus the ZIP's Sparkle signature.
 Release. The appcast is published last, so a client cannot discover an archive
 that is not already public and verified.
 
+Builds use the Apple Swift compiler selected by `xcrun` from the active Command
+Line Tools installation. The release script permits an explicit `SWIFT`
+override for CI, but local builds do not carry a second project toolchain
+selection.
+Quill retains release optimization but disables whole-module optimization for
+its executable target, allowing the compiler to schedule its source files in
+parallel. Dependency products retain their own release build settings.
+The test target pins the official Swift Testing source release matching this
+compiler generation. Apple Command Line Tools ships a Testing framework, but
+its SwiftPM integration cannot import and discover this suite reliably. The
+test product links CLT's separately installed `_TestingInterop` support library.
+Normal tests use SwiftPM's debug configuration. A release-configured test run
+must use a separate scratch directory because `-enable-testing` changes release
+module fingerprints and would contaminate the production build cache.
+`build.sh` selects Apple Swift through `xcrun` and explicitly disables colored
+diagnostics. This keeps terminal, agent and CI compiler fingerprints identical
+while sharing the normal SwiftPM build directory.
+
 ## 10. Critique surface
 
 These are the places where an architectural review has the most leverage. They

@@ -8,6 +8,10 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.3.0"),
         .package(url: "https://github.com/FluidInference/FluidAudio.git", from: "0.7.0"),
         .package(url: "https://github.com/sparkle-project/Sparkle.git", from: "2.9.4"),
+        .package(
+            url: "https://github.com/swiftlang/swift-testing.git",
+            revision: "48d727cc1cf4eda667c858c501495f1018f69d21"
+        ),
     ],
     targets: [
         .executableTarget(
@@ -19,6 +23,12 @@ let package = Package(
                 "WebRTCAudio",
             ],
             exclude: ["AppIcon.icns", "AppIcon.svg", "Info.plist", "quill.entitlements"],
+            swiftSettings: [
+                .unsafeFlags(
+                    ["-no-whole-module-optimization"],
+                    .when(configuration: .release)
+                ),
+            ],
             linkerSettings: [
                 // Keeps `swift run` and the raw binary working: TCC can still
                 // attribute microphone and system-audio capture without the
@@ -61,7 +71,17 @@ let package = Package(
         ),
         .testTarget(
             name: "quillTests",
-            dependencies: ["quill"]
+            dependencies: [
+                "quill",
+                .product(name: "Testing", package: "swift-testing"),
+            ],
+            linkerSettings: [
+                .unsafeFlags([
+                    "-L/Library/Developer/CommandLineTools/Library/Developer/usr/lib",
+                    "-Xlinker", "-rpath",
+                    "-Xlinker", "/Library/Developer/CommandLineTools/Library/Developer/usr/lib",
+                ]),
+            ]
         ),
     ],
     cxxLanguageStandard: .cxx17

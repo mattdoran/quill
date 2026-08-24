@@ -55,7 +55,7 @@ app="$root/.build/$config/Quill.app"
 sparkle="$root/.build/$config/Sparkle.framework"
 
 if [ ! -x "$binary" ]; then
-    echo "build first:  swift build -c $config" >&2
+    echo "build first:  ./build.sh $config" >&2
     exit 1
 fi
 if [ ! -d "$sparkle" ]; then
