@@ -57,7 +57,7 @@ final class TrackWriter: @unchecked Sendable {
     private static let maxPending = 256
 
     private let format: AVAudioFormat
-    private let track: AcceptedFrame.Track
+    private let track: SourceTrack
     private var name: String { track.rawValue }
     private let log: SessionLog
     private let lock = NSLock()
@@ -87,7 +87,7 @@ final class TrackWriter: @unchecked Sendable {
     init(
         url: URL,
         format: AVAudioFormat,
-        track: AcceptedFrame.Track,
+        track: SourceTrack,
         log: SessionLog,
         watchSilence: Bool,
         fileWrite: ((AVAudioFile, AVAudioPCMBuffer) throws -> Void)? = nil

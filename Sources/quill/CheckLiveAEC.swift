@@ -57,12 +57,9 @@ struct CheckLiveAEC: ParsableCommand {
             throw ValidationError("missing \(url.lastPathComponent)")
         }
 
-        var meta = try JSONSerialization.jsonObject(
-            with: Data(contentsOf: SessionFiles.metadata(recording))
-        ) as? [String: Any] ?? [:]
-        let offsets = meta["start_offset_ms"] as? [String: Int] ?? [:]
-        let nearOffset = offsets["mic"] ?? 0
-        let farOffset = offsets["system"] ?? 0
+        var meta = try SessionMetadataStore.readManifest(recording)
+        let nearOffset = meta.startOffsets.microphone
+        let farOffset = meta.startOffsets.system
 
         let nearFile = try AVAudioFile(forReading: nearURL)
         let farFile = try AVAudioFile(forReading: farURL)
@@ -122,27 +119,20 @@ struct CheckLiveAEC: ParsableCommand {
 
         if finalizeOutput {
             let replay = URL(fileURLWithPath: out, isDirectory: true)
-            meta["files"] = [
-                "mic": SessionFiles.internalPath("mic.caf"),
-                "system": SessionFiles.internalPath("system.caf"),
-            ]
-            meta.removeValue(forKey: "audio_state")
-            if var tracks = meta["tracks"] as? [String: [String: Any]] {
-                if var microphone = tracks["mic"] {
-                    microphone["file"] = SessionFiles.internalPath("mic.caf")
-                    tracks["mic"] = microphone
-                }
-                if var system = tracks["system"] {
-                    system["file"] = SessionFiles.internalPath("system.caf")
-                    tracks["system"] = system
-                }
-                meta["tracks"] = tracks
-            }
-            let data = try JSONSerialization.data(
-                withJSONObject: meta,
-                options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+            meta.files = SessionAudioFiles(
+                microphone: SessionFiles.internalPath("mic.caf"),
+                system: SessionFiles.internalPath("system.caf")
             )
-            try data.write(to: SessionFiles.metadata(replay), options: .atomic)
+            meta.audioState = nil
+            if var microphone = meta.tracks.microphone {
+                microphone.file = SessionFiles.internalPath("mic.caf")
+                meta.tracks.microphone = microphone
+            }
+            if var system = meta.tracks.system {
+                system.file = SessionFiles.internalPath("system.caf")
+                meta.tracks.system = system
+            }
+            try SessionMetadataStore.writeManifest(meta, to: replay)
 
             let started = Date()
             try finalize(replay)

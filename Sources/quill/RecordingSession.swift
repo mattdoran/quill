@@ -181,19 +181,19 @@ final class RecordingSession {
         let systemStart = system.firstBufferAt ?? startedAt
         let earliest = min(micStart, systemStart)
 
-        var files: [String: String] = [:]
-        var tracks: [String: [String: Any]] = [:]
+        var files = SessionAudioFiles()
+        var tracks = SessionTracks()
         if mic.duration > 0 {
-            files["mic"] = SessionFiles.internalPath("mic.caf")
-            tracks["mic"] = trackMeta(
+            files.microphone = SessionFiles.internalPath("mic.caf")
+            tracks.microphone = trackMeta(
                 file: SessionFiles.internalPath("mic.caf"),
                 duration: mic.duration,
                 gaps: mic.gaps
             )
         }
         if system.duration > 0 {
-            files["system"] = SessionFiles.internalPath("system.caf")
-            tracks["system"] = trackMeta(
+            files.system = SessionFiles.internalPath("system.caf")
+            tracks.system = trackMeta(
                 file: SessionFiles.internalPath("system.caf"),
                 duration: system.duration,
                 gaps: system.gaps
@@ -210,29 +210,20 @@ final class RecordingSession {
             )
         }
 
-        var meta: [String: Any] = [
-            "started": iso.string(from: startedAt),
-            "ended": iso.string(from: ended),
-            "duration_seconds": Int(ended.timeIntervalSince(startedAt)),
-            "files": files,
-            "start_offset_ms": [
-                "mic": Int(micStart.timeIntervalSince(earliest) * 1000),
-                "system": Int(systemStart.timeIntervalSince(earliest) * 1000),
-            ],
-            // `captured_seconds` excludes silence padded over gaps, so a track
-            // that runs full length but recorded three minutes says so.
-            "tracks": tracks,
-        ]
-        if files.isEmpty { meta["audio_state"] = "empty" }
+        let meta = SessionManifest(
+            started: iso.string(from: startedAt),
+            ended: iso.string(from: ended),
+            durationSeconds: Int(ended.timeIntervalSince(startedAt)),
+            files: files,
+            startOffsets: SessionTrackOffsets(
+                microphone: Int(micStart.timeIntervalSince(earliest) * 1000),
+                system: Int(systemStart.timeIntervalSince(earliest) * 1000)
+            ),
+            tracks: tracks,
+            audioState: files.hasSourceAudio ? nil : .empty
+        )
         do {
-            let data = try JSONSerialization.data(
-                withJSONObject: meta,
-                options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-            )
-            try data.write(
-                to: SessionFiles.metadata(dir),
-                options: .atomic
-            )
+            try SessionMetadataStore.writeManifest(meta, to: dir)
             try? FileManager.default.removeItem(at: SessionFiles.captureJournal(dir))
         } catch {
             log.warn("couldn't publish meta.json: \(error)")
@@ -246,7 +237,7 @@ final class RecordingSession {
             mic.duration, mic.gaps.count, system.duration, system.gaps.count
         ))
         log.close()
-        return !files.isEmpty
+        return files.hasSourceAudio
     }
 
     // MARK: -
@@ -295,27 +286,22 @@ final class RecordingSession {
 
     private func publishCaptureJournal() throws {
         let earliest = min(mic.firstBufferAt ?? startedAt, system.firstBufferAt ?? startedAt)
-        let journal: [String: Any] = [
-            "started": ISO8601DateFormatter().string(from: startedAt),
-            "files": [
-                "mic": SessionFiles.internalPath("mic.caf"),
-                "system": SessionFiles.internalPath("system.caf"),
-            ],
-            "start_offset_ms": [
-                "mic": Int((mic.firstBufferAt ?? earliest).timeIntervalSince(earliest) * 1000),
-                "system": Int(
-                    (system.firstBufferAt ?? earliest).timeIntervalSince(earliest) * 1000
+        let journal = CaptureJournal(
+            started: ISO8601DateFormatter().string(from: startedAt),
+            files: SessionAudioFiles(
+                microphone: SessionFiles.internalPath("mic.caf"),
+                system: SessionFiles.internalPath("system.caf")
+            ),
+            startOffsets: SessionTrackOffsets(
+                microphone: Int(
+                    (mic.firstBufferAt ?? earliest).timeIntervalSince(earliest) * 1000
                 ),
-            ],
-        ]
-        let data = try JSONSerialization.data(
-            withJSONObject: journal,
-            options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+                system: Int(
+                    (system.firstBufferAt ?? earliest).timeIntervalSince(earliest) * 1000
+                )
+            )
         )
-        try data.write(
-            to: SessionFiles.captureJournal(dir),
-            options: .atomic
-        )
+        try SessionMetadataStore.writeJournal(journal, to: dir)
     }
 
     /// A track that has been down past the threshold is announced once. Both
@@ -421,13 +407,17 @@ final class RecordingSession {
 
     private func trackMeta(
         file: String, duration: TimeInterval, gaps: [TrackWriter.Gap]
-    ) -> [String: Any] {
+    ) -> SessionTrackMetadata {
         let padded = gaps.reduce(0) { $0 + $1.seconds }
-        return [
-            "file": file,
-            "duration_seconds": Int(duration.rounded()),
-            "captured_seconds": Int((duration - padded).rounded()),
-            "gaps": gaps.map { ["at": Int($0.at.rounded()), "seconds": Int($0.seconds.rounded())] },
-        ]
+        return SessionTrackMetadata(
+            file: file,
+            durationSeconds: Int(duration.rounded()),
+            capturedSeconds: Int((duration - padded).rounded()),
+            // `capturedSeconds` excludes silence padded over gaps, so a track
+            // that runs full length but recorded three minutes says so.
+            gaps: gaps.map {
+                SessionGap(at: Int($0.at.rounded()), seconds: Int($0.seconds.rounded()))
+            }
+        )
     }
 }

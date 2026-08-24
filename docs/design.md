@@ -95,9 +95,10 @@ more than one architectural responsibility:
 | `TrackWriter` | PCM copying, normalization, timeline repair, AAC persistence, level state and accepted-frame production |
 | `AcceptedFrameFanout`, `AcceptedFrameMailbox` | Per-consumer queue isolation and bounded overload policy |
 | `LiveEchoCanceller` | Stream alignment, AEC3, meeting mixing, two AAC encoders and internal publication |
-| `RecordingSession` | Lifecycle orchestration, journal and metadata creation, alerts and live-processing coordination |
-| `AudioFinalizer` | Recovery, validation, remuxing, fallback DSP, mixing, artifact publication and metadata transition |
-| `TranscriptionCoordinator` | Job queue, fallback AEC, ASR orchestration, transcript assembly, hooks and retention handoff |
+| `RecordingSession` | Lifecycle orchestration, typed journal and manifest creation, alerts and live-processing coordination |
+| `SessionManifest`, `SessionMetadataStore` | Persisted capture and session schema, compatibility defaults and atomic JSON IO |
+| `AudioFinalizer` | Recovery, validation, remuxing, fallback DSP, mixing, artifact publication and typed metadata transition |
+| `TranscriptionCoordinator` | Job queue, fallback AEC, ASR orchestration over typed session inputs, transcript assembly, hooks and retention handoff |
 
 These are accurate descriptions of the code, not the desired final layer
 boundaries. The first seam to preserve is the one already implicit inside
@@ -352,9 +353,9 @@ describe current tradeoffs, not established defects or settled changes.
 
 1. **Responsibility concentration.** `TrackWriter`, `LiveEchoCanceller`,
    `AudioFinalizer` and `TranscriptionCoordinator` each combine orchestration
-   with media processing or persistence. The accepted-frame boundary isolates
-   live consumers, but the remaining lifecycle and publication boundaries are
-   still broad.
+   with media processing or persistence. Accepted-frame delivery and persisted
+   session state now have explicit owners, but the remaining lifecycle and
+   publication boundaries are still broad.
 2. **Clock quality.** Alignment uses non-monotonic wall-clock buffer arrival and
    one-sided silence correction. It does not use Core Audio host timestamps,
    correct overlap or estimate long-term drift between independent device

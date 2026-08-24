@@ -3,19 +3,14 @@ import Foundation
 
 /// Immutable mono PCM accepted by a source archive at a track-local position.
 struct AcceptedFrame: Sendable {
-    enum Track: String, Sendable {
-        case microphone = "mic"
-        case system
-    }
-
-    let track: Track
+    let track: SourceTrack
     let startFrame: AVAudioFramePosition
     let sampleRate: Double
     let samples: [Float]
 
     init?(
         copying buffer: AVAudioPCMBuffer,
-        track: Track,
+        track: SourceTrack,
         startFrame: AVAudioFramePosition
     ) {
         guard

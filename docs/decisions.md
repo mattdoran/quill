@@ -2,6 +2,23 @@
 
 Dated product and architecture decisions. Newest first.
 
+## 2026-08-24: Give persisted session state one typed owner
+
+**Decision:** `SessionManifest.swift` owns the Codable schema and atomic IO for
+`capture.json` and `meta.json`. Capture, recovery, finalization, transcription,
+processability checks and diagnostic replay use the same typed files, offsets,
+track health and audio-state definitions.
+
+**Why:** Raw JSON dictionaries spread legal states and default behavior across
+four production owners. A typo or a new state could compile and then be
+interpreted differently by recovery and transcription.
+
+**Consequence:** Existing JSON remains compatible and missing legacy optional
+fields keep their previous defaults. An unknown future `audio_state` fails
+decoding instead of being silently rewritten by older code. The session folder
+remains the persistence unit; one small document does not justify a database or
+a migration framework.
+
 ## 2026-08-24: Isolate optional live consumers from source archival
 
 **Decision:** After a source encoder accepts a normalized frame, `TrackWriter`

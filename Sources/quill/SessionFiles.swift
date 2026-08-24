@@ -43,11 +43,9 @@ enum SessionFiles {
 
     static func hasProcessableAudio(_ session: URL) -> Bool {
         guard
-            let data = try? Data(contentsOf: metadata(session)),
-            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-            json["audio_state"] as? String != "empty",
-            let files = json["files"] as? [String: String]
+            let manifest = try? SessionMetadataStore.readManifest(session),
+            manifest.audioState != .empty
         else { return false }
-        return files["mic"] != nil || files["system"] != nil
+        return manifest.files.hasSourceAudio
     }
 }

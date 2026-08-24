@@ -142,19 +142,19 @@ actor TranscriptionCoordinator {
     }
 
     private func transcribe(_ dir: URL, session: String) async throws {
-        let meta = try SessionMeta.read(from: dir)
+        let meta = try SessionMetadataStore.readManifest(dir)
         // Model loading happens before any audio is read, and on first run
         // that is a 600 MB download.
         if engine == nil { publish(.preparing) }
         let engine = try await preparedEngine()
         publish(.transcribing(session: session, queued: queue.count))
 
-        var cleanedMic = meta.cleanedMicrophoneFile.map {
+        var cleanedMic = meta.files.cleanedMicrophone.map {
             dir.appendingPathComponent($0)
         }.flatMap { FileManager.default.fileExists(atPath: $0.path) ? $0 : nil }
         if cleanedMic == nil,
-            let mic = meta.tracks.first(where: { $0.kind == "mic" }),
-            let system = meta.tracks.first(where: { $0.kind == "system" })
+            let mic = meta.sourceAudio.first(where: { $0.track == .microphone }),
+            let system = meta.sourceAudio.first(where: { $0.track == .system })
         {
             let micAudio = dir.appendingPathComponent(mic.file)
             let systemAudio = dir.appendingPathComponent(system.file)
@@ -167,9 +167,9 @@ actor TranscriptionCoordinator {
                     let workingDirectory = try SessionFiles.prepare(dir)
                     cleanedMic = try EchoCancellation.clean(
                         mic: micAudio,
-                        micOffsetMs: mic.offsetMs,
+                        micOffsetMs: mic.offsetMilliseconds,
                         system: systemAudio,
-                        systemOffsetMs: system.offsetMs,
+                        systemOffsetMs: system.offsetMilliseconds,
                         in: workingDirectory
                     )
                     log(dir, "cleaned microphone written to \(EchoCancellation.outputName)")
@@ -181,9 +181,9 @@ actor TranscriptionCoordinator {
 
         var merged: [TranscriptDocument.Segment] = []
         var voices: [String: TranscriptDocument.Voice] = [:]
-        for track in meta.tracks {
+        for track in meta.sourceAudio {
             let source = dir.appendingPathComponent(track.file)
-            let audio = track.kind == "mic" ? cleanedMic ?? source : source
+            let audio = track.track == .microphone ? cleanedMic ?? source : source
             guard FileManager.default.fileExists(atPath: audio.path) else {
                 log(dir, "skipping missing track \(track.file)")
                 continue
@@ -198,10 +198,10 @@ actor TranscriptionCoordinator {
                 log(dir, "skipping \(track.file): \(error)")
                 continue
             }
-            let speaker = track.kind == "mic" ? "Me" : "Them"
+            let speaker = track.track == .microphone ? "Me" : "Them"
             let speakers = segments.map { _ in speaker }
-            let offset = TimeInterval(track.offsetMs) / 1000
-            let voiceIDs = [speaker: "\(track.kind):1"]
+            let offset = TimeInterval(track.offsetMilliseconds) / 1000
+            let voiceIDs = [speaker: "\(track.track.rawValue):1"]
             let audioFile = audio.path.replacingOccurrences(of: dir.path + "/", with: "")
             for (speaker, id) in voiceIDs {
                 var candidates: [(sample: TranscriptDocument.Voice.Sample, score: Int)] = []
@@ -217,7 +217,7 @@ actor TranscriptionCoordinator {
                 }
                 candidates.sort { $0.score > $1.score }
                 voices[id] = TranscriptDocument.Voice(
-                    source: track.kind,
+                    source: track.track.rawValue,
                     audio_file: audioFile,
                     machine_label: speaker,
                     name: nil,
@@ -255,17 +255,17 @@ actor TranscriptionCoordinator {
         guard current.canEditVoices else {
             throw TranscriptStore.StoreError.unsupportedSchema
         }
-        let meta = try SessionMeta.read(from: dir)
+        let meta = try SessionMetadataStore.readManifest(dir)
         let engine = try await preparedDiarizer()
         var voices: [String: TranscriptDocument.Voice] = [:]
         var segments = current.segments
         var processedTrack = false
         var voiceLabels = VoiceLabelSequence()
 
-        for track in meta.tracks.sorted(by: { Self.trackOrder($0.kind) < Self.trackOrder($1.kind) }) {
+        for track in meta.sourceAudio {
             let source = dir.appendingPathComponent(track.file)
-            let cleaned = meta.cleanedMicrophoneFile.map { dir.appendingPathComponent($0) }
-            let audio = track.kind == "mic" && cleaned.map({
+            let cleaned = meta.files.cleanedMicrophone.map { dir.appendingPathComponent($0) }
+            let audio = track.track == .microphone && cleaned.map({
                 FileManager.default.fileExists(atPath: $0.path)
             }) == true ? cleaned! : source
             guard FileManager.default.fileExists(atPath: audio.path) else {
@@ -276,12 +276,12 @@ actor TranscriptionCoordinator {
                     let voiceID = segments[index].voice_id,
                     let voice = current.voices[voiceID]
                 else { return false }
-                return voice.source == track.kind
+                return voice.source == track.track.rawValue
             }
             guard !indices.isEmpty else { continue }
             processedTrack = true
 
-            let offset = TimeInterval(track.offsetMs) / 1000
+            let offset = TimeInterval(track.offsetMilliseconds) / 1000
             let timed = indices.map { index in
                 TranscriptSegment(
                     start: max(0, TimeInterval(segments[index].start_ms) / 1000 - offset),
@@ -300,14 +300,14 @@ actor TranscriptionCoordinator {
             let audioFile = audio.path.replacingOccurrences(of: dir.path + "/", with: "")
 
             if ordinals.isEmpty {
-                let id = "\(track.kind):1"
+                let id = "\(track.track.rawValue):1"
                 let label = voiceLabels.next()
                 var voice = makeVoice(
-                    source: track.kind, audioFile: audioFile,
+                    source: track.track.rawValue, audioFile: audioFile,
                     label: label, indices: Array(timed.indices), segments: timed
                 )
                 voice.name = current.nameToCarry(
-                    source: track.kind, separatedVoiceCount: 1
+                    source: track.track.rawValue, separatedVoiceCount: 1
                 )
                 voices[id] = voice
                 for index in indices {
@@ -318,15 +318,15 @@ actor TranscriptionCoordinator {
             }
 
             for (speaker, ordinal) in ordinals.sorted(by: { $0.value < $1.value }) {
-                let id = "\(track.kind):\(ordinal)"
+                let id = "\(track.track.rawValue):\(ordinal)"
                 let label = voiceLabels.next()
                 let positions = assignments.indices.filter { assignments[$0] == speaker }
                 var voice = makeVoice(
-                    source: track.kind, audioFile: audioFile,
+                    source: track.track.rawValue, audioFile: audioFile,
                     label: label, indices: positions, segments: timed
                 )
                 voice.name = current.nameToCarry(
-                    source: track.kind, separatedVoiceCount: ordinals.count
+                    source: track.track.rawValue, separatedVoiceCount: ordinals.count
                 )
                 voices[id] = voice
             }
@@ -339,7 +339,7 @@ actor TranscriptionCoordinator {
                     segments[index].voice_id = nil
                     continue
                 }
-                let id = "\(track.kind):\(ordinal)"
+                let id = "\(track.track.rawValue):\(ordinal)"
                 segments[index].speaker = voices[id]?.displayName ?? "Voice \(ordinal)"
                 segments[index].voice_id = id
             }
@@ -382,10 +382,6 @@ actor TranscriptionCoordinator {
             name: nil,
             samples: candidates.prefix(3).map(\.0)
         )
-    }
-
-    private static func trackOrder(_ kind: String) -> Int {
-        kind == "mic" ? 0 : 1
     }
 
     private enum SpeakerSeparationError: LocalizedError {
@@ -466,54 +462,5 @@ actor TranscriptionCoordinator {
 
     private func publish(_ status: Status) {
         statusHandler?(status)
-    }
-}
-
-/// The slice of meta.json the coordinator needs: which files exist, who they
-/// represent, and how far each track started after the earliest one.
-private struct SessionMeta {
-    struct Track {
-        let file: String
-        let offsetMs: Int
-        /// Config key for this track's diarization settings and its label
-        /// defaults: "mic" or "system".
-        let kind: String
-    }
-
-    let tracks: [Track]
-    let cleanedMicrophoneFile: String?
-
-    enum MetaError: Error, CustomStringConvertible {
-        case unreadable(URL)
-
-        var description: String {
-            switch self {
-            case .unreadable(let url): return "can't parse \(url.path)"
-            }
-        }
-    }
-
-    static func read(from dir: URL) throws -> SessionMeta {
-        let url = SessionFiles.metadata(dir)
-        guard
-            let data = try? Data(contentsOf: url),
-            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-            let files = json["files"] as? [String: String]
-        else { throw MetaError.unreadable(url) }
-
-        // Sessions recorded before offsets were captured default to 0 —
-        // tracks start within tens of milliseconds of each other anyway.
-        let offsets = json["start_offset_ms"] as? [String: Int] ?? [:]
-        var tracks: [Track] = []
-        if let mic = files["mic"] {
-            tracks.append(Track(file: mic, offsetMs: offsets["mic"] ?? 0, kind: "mic"))
-        }
-        if let system = files["system"] {
-            tracks.append(Track(file: system, offsetMs: offsets["system"] ?? 0, kind: "system"))
-        }
-        return SessionMeta(
-            tracks: tracks,
-            cleanedMicrophoneFile: files["mic_cleaned"]
-        )
     }
 }

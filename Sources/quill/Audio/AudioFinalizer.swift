@@ -44,7 +44,7 @@ actor AudioFinalizer {
             let needsFinalization =
                 FileManager.default.fileExists(atPath: meta.path)
                 && SessionFiles.hasProcessableAudio(session)
-                && (try? readJSON(meta)["audio_state"] as? String) != "finalized"
+                && (try? SessionMetadataStore.readManifest(session).audioState) != .finalized
             guard hasInterruptedCapture || needsFinalization else { continue }
             do {
                 try await finalize(session: session)
@@ -68,23 +68,23 @@ actor AudioFinalizer {
 
     private func performFinalization(session: URL) async throws {
         var metadata = try recoverMetadataIfNeeded(session: session)
-        if metadata["audio_state"] as? String == "empty" {
+        if metadata.audioState == .empty {
             removeStaleJournal(session)
             return
         }
-        let files = metadata["files"] as? [String: String] ?? [:]
+        let files = metadata.files
 
         if
-            metadata["audio_state"] as? String == "finalized",
-            files["meeting"] == Self.meetingAudioPath
+            metadata.audioState == .finalized,
+            files.meeting == Self.meetingAudioPath
         {
             try validatePublishedOutputs(session: session, files: files)
             removeStaleJournal(session)
             return
         }
 
-        let microphoneSource = try sourceURL(for: files["mic"], in: session)
-        let callSource = try sourceURL(for: files["system"], in: session)
+        let microphoneSource = try sourceURL(for: files.microphone, in: session)
+        let callSource = try sourceURL(for: files.system, in: session)
         guard microphoneSource != nil || callSource != nil else {
             throw FinalizationError.missingAudio(session)
         }
@@ -102,31 +102,30 @@ actor AudioFinalizer {
         if let microphoneSource {
             let output = session.appendingPathComponent(Self.localPath)
             try await remuxAAC(from: microphoneSource, to: output, in: session)
-            published["mic"] = Self.localPath
+            published.microphone = Self.localPath
         } else {
-            published.removeValue(forKey: "mic")
+            published.microphone = nil
         }
         if let callSource {
             let output = session.appendingPathComponent(Self.remotePath)
             try await remuxAAC(from: callSource, to: output, in: session)
-            published["system"] = Self.remotePath
+            published.system = Self.remotePath
         } else {
-            published.removeValue(forKey: "system")
+            published.system = nil
         }
 
         var cleanedSource = microphoneSource.flatMap {
             existingCleanedMicrophone(in: session, matching: $0)
         }
         if cleanedSource == nil, let microphoneSource, let callSource {
-            let offsets = metadata["start_offset_ms"] as? [String: Int] ?? [:]
             do {
                 appendLog(session, "cleaning speaker playback before audio finalization")
                 let workingDirectory = try SessionFiles.prepare(session)
                 cleanedSource = try EchoCancellation.clean(
                     mic: microphoneSource,
-                    micOffsetMs: offsets["mic"] ?? 0,
+                    micOffsetMs: metadata.startOffsets.microphone,
                     system: callSource,
-                    systemOffsetMs: offsets["system"] ?? 0,
+                    systemOffsetMs: metadata.startOffsets.system,
                     in: workingDirectory
                 )
             } catch {
@@ -137,17 +136,16 @@ actor AudioFinalizer {
         if let cleanedSource {
             let output = session.appendingPathComponent(Self.cleanedLocalPath)
             try await remuxAAC(from: cleanedSource, to: output, in: session)
-            published["mic_cleaned"] = Self.cleanedLocalPath
+            published.cleanedMicrophone = Self.cleanedLocalPath
         }
 
-        let offsets = metadata["start_offset_ms"] as? [String: Int] ?? [:]
         let meetingOutput = session.appendingPathComponent(Self.meetingAudioPath)
         let meetingCandidates: [MixInput] = [
             MixInput(
                 url: cleanedSource ?? microphoneSource,
-                offsetMilliseconds: offsets["mic"] ?? 0
+                offsetMilliseconds: metadata.startOffsets.microphone
             ),
-            MixInput(url: callSource, offsetMilliseconds: offsets["system"] ?? 0),
+            MixInput(url: callSource, offsetMilliseconds: metadata.startOffsets.system),
         ]
         let meetingInputs = meetingCandidates.filter { $0.url != nil }
         let expectedMeetingDuration = try meetingDuration(inputs: meetingInputs)
@@ -166,22 +164,19 @@ actor AudioFinalizer {
         if liveMeetingSource == nil {
             try mix(inputs: meetingInputs, to: meetingOutput, in: session)
         }
-        published["meeting"] = Self.meetingAudioPath
+        published.meeting = Self.meetingAudioPath
 
-        metadata["files"] = published
-        metadata["audio_state"] = "finalized"
-        if var tracks = metadata["tracks"] as? [String: [String: Any]] {
-            if var microphone = tracks["mic"], published["mic"] != nil {
-                microphone["file"] = published["mic"]
-                tracks["mic"] = microphone
-            }
-            if var system = tracks["system"], published["system"] != nil {
-                system["file"] = published["system"]
-                tracks["system"] = system
-            }
-            metadata["tracks"] = tracks
+        metadata.files = published
+        metadata.audioState = .finalized
+        if var microphone = metadata.tracks.microphone, let path = published.microphone {
+            microphone.file = path
+            metadata.tracks.microphone = microphone
         }
-        try writeMetadata(metadata, to: SessionFiles.metadata(session))
+        if var system = metadata.tracks.system, let path = published.system {
+            system.file = path
+            metadata.tracks.system = system
+        }
+        try SessionMetadataStore.writeManifest(metadata, to: session)
         removeStaleJournal(session)
 
         for source in [
@@ -199,86 +194,76 @@ actor AudioFinalizer {
 
     // MARK: - Recovery and metadata
 
-    private func recoverMetadataIfNeeded(session: URL) throws -> [String: Any] {
+    private func recoverMetadataIfNeeded(session: URL) throws -> SessionManifest {
         let meta = SessionFiles.metadata(session)
         if FileManager.default.fileExists(atPath: meta.path) {
-            return try readJSON(meta)
+            return try SessionMetadataStore.readManifest(session)
         }
 
         let journalURL = SessionFiles.captureJournal(session)
         guard FileManager.default.fileExists(atPath: journalURL.path) else {
             throw FinalizationError.missingMetadata(meta)
         }
-        var journal = try readJSON(journalURL)
-        var files = journal["files"] as? [String: String] ?? [:]
-        let offsets = journal["start_offset_ms"] as? [String: Int] ?? [:]
-        let microphone = try sourceURL(for: files["mic"], in: session)
-        let call = try sourceURL(for: files["system"], in: session)
-        if files["mic"]?.isEmpty == false, microphone == nil {
+        let journal = try SessionMetadataStore.readJournal(session)
+        var files = journal.files
+        let microphone = try sourceURL(for: files.microphone, in: session)
+        let call = try sourceURL(for: files.system, in: session)
+        if files.microphone?.isEmpty == false, microphone == nil {
             throw FinalizationError.missingAudio(session)
         }
-        if files["system"]?.isEmpty == false, call == nil {
+        if files.system?.isEmpty == false, call == nil {
             throw FinalizationError.missingAudio(session)
         }
         let microphoneDuration = try microphone.map(recoveryAudioDuration) ?? 0
         let callDuration = try call.map(recoveryAudioDuration) ?? 0
 
-        if microphoneDuration == 0 { files.removeValue(forKey: "mic") }
-        if callDuration == 0 { files.removeValue(forKey: "system") }
+        if microphoneDuration == 0 { files.microphone = nil }
+        if callDuration == 0 { files.system = nil }
 
         let duration = max(
-            Double(offsets["mic"] ?? 0) / 1000 + microphoneDuration,
-            Double(offsets["system"] ?? 0) / 1000 + callDuration
+            Double(journal.startOffsets.microphone) / 1000 + microphoneDuration,
+            Double(journal.startOffsets.system) / 1000 + callDuration
         )
         let iso = ISO8601DateFormatter()
-        let started = (journal["started"] as? String).flatMap(iso.date(from:)) ?? Date()
-        journal["ended"] = iso.string(from: started.addingTimeInterval(duration))
-        journal["duration_seconds"] = Int(duration.rounded())
-        journal["recovered_after_interruption"] = true
-        journal["files"] = files
-        var tracks: [String: [String: Any]] = [:]
+        let started = iso.date(from: journal.started) ?? Date()
+        var tracks = SessionTracks()
         if microphoneDuration > 0 {
-            tracks["mic"] = recoveredTrack(file: files["mic"], duration: microphoneDuration)
+            tracks.microphone = recoveredTrack(
+                file: files.microphone!,
+                duration: microphoneDuration
+            )
         }
         if callDuration > 0 {
-            tracks["system"] = recoveredTrack(file: files["system"], duration: callDuration)
+            tracks.system = recoveredTrack(file: files.system!, duration: callDuration)
         }
-        journal["tracks"] = tracks
-        if tracks.isEmpty { journal["audio_state"] = "empty" }
-        try writeMetadata(journal, to: meta)
+        let manifest = SessionManifest(
+            started: journal.started,
+            ended: iso.string(from: started.addingTimeInterval(duration)),
+            durationSeconds: Int(duration.rounded()),
+            files: files,
+            startOffsets: journal.startOffsets,
+            tracks: tracks,
+            recoveredAfterInterruption: true,
+            audioState: files.hasSourceAudio ? nil : .empty
+        )
+        try SessionMetadataStore.writeManifest(manifest, to: session)
         removeStaleJournal(session)
         appendLog(
             session,
-            tracks.isEmpty
-                ? "recovered interrupted capture with no audio"
-                : "recovered interrupted capture metadata"
+            files.hasSourceAudio
+                ? "recovered interrupted capture metadata"
+                : "recovered interrupted capture with no audio"
         )
-        return journal
+        return manifest
     }
 
-    private func recoveredTrack(file: String?, duration: TimeInterval) -> [String: Any] {
-        [
-            "file": file ?? "",
-            "duration_seconds": Int(duration.rounded()),
-            "captured_seconds": Int(duration.rounded()),
-            "gaps_known": false,
-        ]
-    }
-
-    private func readJSON(_ url: URL) throws -> [String: Any] {
-        let data = try Data(contentsOf: url)
-        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw FinalizationError.missingMetadata(url)
-        }
-        return json
-    }
-
-    private func writeMetadata(_ json: [String: Any], to url: URL) throws {
-        let data = try JSONSerialization.data(
-            withJSONObject: json,
-            options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+    private func recoveredTrack(file: String, duration: TimeInterval) -> SessionTrackMetadata {
+        SessionTrackMetadata(
+            file: file,
+            durationSeconds: Int(duration.rounded()),
+            capturedSeconds: Int(duration.rounded()),
+            gapsKnown: false
         )
-        try data.write(to: url, options: .atomic)
     }
 
     private func sourceURL(for path: String?, in session: URL) throws -> URL? {
@@ -453,12 +438,16 @@ actor AudioFinalizer {
         return duration
     }
 
-    private func validatePublishedOutputs(session: URL, files: [String: String]) throws {
-        guard files["mic"] != nil || files["system"] != nil else {
+    private func validatePublishedOutputs(session: URL, files: SessionAudioFiles) throws {
+        guard files.hasSourceAudio else {
             throw FinalizationError.missingAudio(session)
         }
-        for key in ["mic", "system", "mic_cleaned", "meeting"] {
-            guard let path = files[key] else { continue }
+        for path in [
+            files.microphone,
+            files.system,
+            files.cleanedMicrophone,
+            files.meeting,
+        ].compactMap({ $0 }) {
             guard let url = try sourceURL(for: path, in: session) else {
                 throw FinalizationError.missingAudio(session.appendingPathComponent(path))
             }
