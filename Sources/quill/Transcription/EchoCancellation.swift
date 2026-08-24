@@ -9,12 +9,14 @@ enum EchoCancellation {
         case unsupportedFormat(String)
         case initializationFailed
         case processingFailed
+        case invalidOutput(String)
 
         var description: String {
             switch self {
             case .unsupportedFormat(let detail): "unsupported audio format: \(detail)"
             case .initializationFailed: "AEC3 initialization failed"
             case .processingFailed: "AEC3 processing failed"
+            case .invalidOutput(let detail): "invalid cleaned audio: \(detail)"
             }
         }
     }
@@ -27,8 +29,13 @@ enum EchoCancellation {
         in session: URL
     ) throws -> URL {
         let output = session.appendingPathComponent(outputName)
-        if let file = try? AVAudioFile(forReading: output), file.length > 0 {
-            return output
+        if FileManager.default.fileExists(atPath: output.path) {
+            do {
+                try validateCleaned(output, matching: mic)
+                return output
+            } catch {
+                try? FileManager.default.removeItem(at: output)
+            }
         }
 
         let partial = session.appendingPathComponent("\(outputName).partial")
@@ -41,6 +48,7 @@ enum EchoCancellation {
                 systemOffsetMs: systemOffsetMs,
                 output: partial
             )
+            try validateCleaned(partial, matching: mic)
             if FileManager.default.fileExists(atPath: output.path) {
                 try FileManager.default.removeItem(at: output)
             }
@@ -49,6 +57,47 @@ enum EchoCancellation {
         } catch {
             try? FileManager.default.removeItem(at: partial)
             throw error
+        }
+    }
+
+    static func validateCleaned(_ cleaned: URL, matching microphone: URL) throws {
+        let cleanedFile = try AVAudioFile(forReading: cleaned)
+        let microphoneFile = try AVAudioFile(forReading: microphone)
+        guard
+            cleanedFile.fileFormat.sampleRate > 0,
+            microphoneFile.fileFormat.sampleRate > 0,
+            cleanedFile.length > 0,
+            microphoneFile.length > 0
+        else {
+            throw CancellationError.invalidOutput(cleaned.lastPathComponent)
+        }
+
+        let cleanedDuration = Double(cleanedFile.length) / cleanedFile.fileFormat.sampleRate
+        let microphoneDuration =
+            Double(microphoneFile.length) / microphoneFile.fileFormat.sampleRate
+        guard abs(cleanedDuration - microphoneDuration) <= 0.05 else {
+            throw CancellationError.invalidOutput(
+                "duration \(cleanedDuration), expected \(microphoneDuration)"
+            )
+        }
+
+        guard let buffer = AVAudioPCMBuffer(
+            pcmFormat: cleanedFile.processingFormat,
+            frameCapacity: 16_384
+        ) else {
+            throw CancellationError.invalidOutput("couldn't allocate decoder buffer")
+        }
+        var decoded: AVAudioFramePosition = 0
+        while cleanedFile.framePosition < cleanedFile.length {
+            buffer.frameLength = 0
+            try cleanedFile.read(into: buffer, frameCount: buffer.frameCapacity)
+            guard buffer.frameLength > 0 else {
+                throw CancellationError.invalidOutput("truncated \(cleaned.lastPathComponent)")
+            }
+            decoded += AVAudioFramePosition(buffer.frameLength)
+        }
+        guard decoded > 0 else {
+            throw CancellationError.invalidOutput(cleaned.lastPathComponent)
         }
     }
 

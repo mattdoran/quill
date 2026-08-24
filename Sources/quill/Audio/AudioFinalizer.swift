@@ -4,6 +4,8 @@ import Foundation
 actor AudioFinalizer {
     static let shared = AudioFinalizer()
 
+    private var inFlight: [URL: Task<Void, any Error>] = [:]
+
     static let meetingAudioPath = "Meeting Audio.m4a"
     static let sourceAudioDirectory = "Source Audio"
     static let localPath = "Source Audio/Local.m4a"
@@ -41,6 +43,7 @@ actor AudioFinalizer {
             let hasInterruptedCapture = FileManager.default.fileExists(atPath: journal.path)
             let needsFinalization =
                 FileManager.default.fileExists(atPath: meta.path)
+                && SessionFiles.hasProcessableAudio(session)
                 && (try? readJSON(meta)["audio_state"] as? String) != "finalized"
             guard hasInterruptedCapture || needsFinalization else { continue }
             do {
@@ -52,7 +55,23 @@ actor AudioFinalizer {
     }
 
     func finalize(session: URL) async throws {
+        let session = session.standardizedFileURL
+        if let existing = inFlight[session] {
+            return try await existing.value
+        }
+
+        let task = Task { try await performFinalization(session: session) }
+        inFlight[session] = task
+        defer { inFlight[session] = nil }
+        try await task.value
+    }
+
+    private func performFinalization(session: URL) async throws {
         var metadata = try recoverMetadataIfNeeded(session: session)
+        if metadata["audio_state"] as? String == "empty" {
+            removeStaleJournal(session)
+            return
+        }
         let files = metadata["files"] as? [String: String] ?? [:]
 
         if
@@ -95,7 +114,9 @@ actor AudioFinalizer {
             published.removeValue(forKey: "system")
         }
 
-        var cleanedSource = existingCleanedMicrophone(in: session)
+        var cleanedSource = microphoneSource.flatMap {
+            existingCleanedMicrophone(in: session, matching: $0)
+        }
         if cleanedSource == nil, let microphoneSource, let callSource {
             let offsets = metadata["start_offset_ms"] as? [String: Int] ?? [:]
             do {
@@ -129,7 +150,22 @@ actor AudioFinalizer {
             MixInput(url: callSource, offsetMilliseconds: offsets["system"] ?? 0),
         ]
         let meetingInputs = meetingCandidates.filter { $0.url != nil }
-        try await mix(inputs: meetingInputs, to: meetingOutput, in: session)
+        let expectedMeetingDuration = try meetingDuration(inputs: meetingInputs)
+        var liveMeetingSource = existingLiveMeeting(in: session)
+        if let source = liveMeetingSource {
+            do {
+                try validateMeetingAudio(source, expectedDuration: expectedMeetingDuration)
+                try await remuxAAC(from: source, to: meetingOutput, in: session)
+                appendLog(session, "published meeting mix prepared during recording")
+            } catch {
+                appendLog(session, "live meeting mix unusable, rebuilding: \(error)")
+                try? FileManager.default.removeItem(at: source)
+                liveMeetingSource = nil
+            }
+        }
+        if liveMeetingSource == nil {
+            try mix(inputs: meetingInputs, to: meetingOutput, in: session)
+        }
         published["meeting"] = Self.meetingAudioPath
 
         metadata["files"] = published
@@ -148,7 +184,9 @@ actor AudioFinalizer {
         try writeMetadata(metadata, to: SessionFiles.metadata(session))
         removeStaleJournal(session)
 
-        for source in [microphoneSource, callSource, cleanedSource].compactMap({ $0 }) {
+        for source in [
+            microphoneSource, callSource, cleanedSource, liveMeetingSource,
+        ].compactMap({ $0 }) {
             guard source.pathExtension.lowercased() == "caf" else { continue }
             do {
                 try FileManager.default.removeItem(at: source)
@@ -172,15 +210,21 @@ actor AudioFinalizer {
             throw FinalizationError.missingMetadata(meta)
         }
         var journal = try readJSON(journalURL)
-        let files = journal["files"] as? [String: String] ?? [:]
+        var files = journal["files"] as? [String: String] ?? [:]
         let offsets = journal["start_offset_ms"] as? [String: Int] ?? [:]
         let microphone = try sourceURL(for: files["mic"], in: session)
         let call = try sourceURL(for: files["system"], in: session)
-        let microphoneDuration = try microphone.map(audioDuration) ?? 0
-        let callDuration = try call.map(audioDuration) ?? 0
-        guard microphoneDuration > 0 || callDuration > 0 else {
+        if files["mic"]?.isEmpty == false, microphone == nil {
             throw FinalizationError.missingAudio(session)
         }
+        if files["system"]?.isEmpty == false, call == nil {
+            throw FinalizationError.missingAudio(session)
+        }
+        let microphoneDuration = try microphone.map(recoveryAudioDuration) ?? 0
+        let callDuration = try call.map(recoveryAudioDuration) ?? 0
+
+        if microphoneDuration == 0 { files.removeValue(forKey: "mic") }
+        if callDuration == 0 { files.removeValue(forKey: "system") }
 
         let duration = max(
             Double(offsets["mic"] ?? 0) / 1000 + microphoneDuration,
@@ -191,12 +235,24 @@ actor AudioFinalizer {
         journal["ended"] = iso.string(from: started.addingTimeInterval(duration))
         journal["duration_seconds"] = Int(duration.rounded())
         journal["recovered_after_interruption"] = true
-        journal["tracks"] = [
-            "mic": recoveredTrack(file: files["mic"], duration: microphoneDuration),
-            "system": recoveredTrack(file: files["system"], duration: callDuration),
-        ]
+        journal["files"] = files
+        var tracks: [String: [String: Any]] = [:]
+        if microphoneDuration > 0 {
+            tracks["mic"] = recoveredTrack(file: files["mic"], duration: microphoneDuration)
+        }
+        if callDuration > 0 {
+            tracks["system"] = recoveredTrack(file: files["system"], duration: callDuration)
+        }
+        journal["tracks"] = tracks
+        if tracks.isEmpty { journal["audio_state"] = "empty" }
         try writeMetadata(journal, to: meta)
-        appendLog(session, "recovered interrupted capture metadata")
+        removeStaleJournal(session)
+        appendLog(
+            session,
+            tracks.isEmpty
+                ? "recovered interrupted capture with no audio"
+                : "recovered interrupted capture metadata"
+        )
         return journal
     }
 
@@ -276,45 +332,31 @@ actor AudioFinalizer {
         let offsetMilliseconds: Int
     }
 
-    private func mix(inputs: [MixInput], to output: URL, in session: URL) async throws {
+    private func mix(inputs: [MixInput], to output: URL, in session: URL) throws {
         guard !inputs.isEmpty else { throw FinalizationError.missingAudio(output) }
 
-        var expectedDuration: TimeInterval = 0
-        let composition = AVMutableComposition()
-        let audioMix = AVMutableAudioMix()
-        var parameters: [AVMutableAudioMixInputParameters] = []
-
+        let sampleRate = 48_000.0
+        struct PreparedInput {
+            let file: AVAudioFile
+            let offset: AVAudioFramePosition
+        }
+        var prepared: [PreparedInput] = []
+        var totalFrames: AVAudioFramePosition = 0
         for input in inputs {
             guard let url = input.url else { continue }
-            let asset = AVURLAsset(url: url)
-            guard let sourceTrack = try await asset.loadTracks(withMediaType: .audio).first else {
-                throw FinalizationError.invalidAudio("no track in \(url.lastPathComponent)")
+            let file = try AVAudioFile(forReading: url)
+            guard file.processingFormat.sampleRate == sampleRate else {
+                throw FinalizationError.invalidAudio(
+                    "\(url.lastPathComponent) is \(Int(file.processingFormat.sampleRate))Hz"
+                )
             }
-            let duration = try await asset.load(.duration)
-            guard duration.isNumeric, duration.seconds > 0 else {
-                throw FinalizationError.invalidAudio("no duration in \(url.lastPathComponent)")
-            }
-            guard let destination = composition.addMutableTrack(
-                withMediaType: .audio,
-                preferredTrackID: kCMPersistentTrackID_Invalid
-            ) else {
-                throw FinalizationError.exportUnavailable("couldn't create mix track")
-            }
-            let offset = CMTime(
-                seconds: Double(input.offsetMilliseconds) / 1000,
-                preferredTimescale: 48_000
+            let offset = AVAudioFramePosition(
+                (Double(max(0, input.offsetMilliseconds)) / 1000 * sampleRate).rounded()
             )
-            try destination.insertTimeRange(
-                CMTimeRange(start: .zero, duration: duration),
-                of: sourceTrack,
-                at: offset
-            )
-            let inputParameters = AVMutableAudioMixInputParameters(track: destination)
-            inputParameters.setVolume(0.7071, at: .zero)
-            parameters.append(inputParameters)
-            expectedDuration = max(expectedDuration, offset.seconds + duration.seconds)
+            prepared.append(PreparedInput(file: file, offset: offset))
+            totalFrames = max(totalFrames, offset + file.length)
         }
-        audioMix.inputParameters = parameters
+        let expectedDuration = Double(totalFrames) / sampleRate
 
         if
             FileManager.default.fileExists(atPath: output.path),
@@ -326,16 +368,89 @@ actor AudioFinalizer {
         let partial = try partialURL(for: output, in: session)
         try? FileManager.default.removeItem(at: partial)
         defer { try? FileManager.default.removeItem(at: partial) }
-        guard let exporter = AVAssetExportSession(
-            asset: composition,
-            presetName: AVAssetExportPresetAppleM4A
+
+        guard let outputFormat = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: sampleRate,
+            channels: 1,
+            interleaved: false
         ) else {
-            throw FinalizationError.exportUnavailable("meeting mix")
+            throw FinalizationError.invalidAudio("couldn't create meeting format")
         }
-        exporter.audioMix = audioMix
-        try await exporter.export(to: partial, as: .m4a)
+        var outputFile: AVAudioFile? = try AVAudioFile(
+            forWriting: partial,
+            settings: [
+                AVFormatIDKey: kAudioFormatMPEG4AAC,
+                AVSampleRateKey: sampleRate,
+                AVNumberOfChannelsKey: 1,
+                AVEncoderBitRateKey: 64_000,
+            ],
+            commonFormat: .pcmFormatFloat32,
+            interleaved: false
+        )
+        let capacity: AVAudioFrameCount = 16_384
+        guard let outputBuffer = AVAudioPCMBuffer(
+            pcmFormat: outputFormat,
+            frameCapacity: capacity
+        ), let outputSamples = outputBuffer.floatChannelData?[0] else {
+            throw FinalizationError.invalidAudio("couldn't allocate meeting buffer")
+        }
+
+        var position: AVAudioFramePosition = 0
+        while position < totalFrames {
+            let count = Int(min(AVAudioFramePosition(capacity), totalFrames - position))
+            for frame in 0..<count { outputSamples[frame] = 0 }
+
+            for input in prepared {
+                let overlapStart = max(position, input.offset)
+                let overlapEnd = min(
+                    position + AVAudioFramePosition(count),
+                    input.offset + input.file.length
+                )
+                guard overlapStart < overlapEnd else { continue }
+                let readCount = AVAudioFrameCount(overlapEnd - overlapStart)
+                guard let inputBuffer = AVAudioPCMBuffer(
+                    pcmFormat: input.file.processingFormat,
+                    frameCapacity: readCount
+                ) else {
+                    throw FinalizationError.invalidAudio("couldn't allocate input buffer")
+                }
+                input.file.framePosition = overlapStart - input.offset
+                try input.file.read(into: inputBuffer, frameCount: readCount)
+                guard let channels = inputBuffer.floatChannelData else {
+                    throw FinalizationError.invalidAudio("couldn't decode meeting input")
+                }
+                let channelCount = Int(inputBuffer.format.channelCount)
+                let destinationStart = Int(overlapStart - position)
+                for frame in 0..<Int(inputBuffer.frameLength) {
+                    var sample: Float = 0
+                    for channel in 0..<channelCount { sample += channels[channel][frame] }
+                    outputSamples[destinationStart + frame] += sample / Float(channelCount) * 0.7071
+                }
+            }
+
+            for frame in 0..<count {
+                outputSamples[frame] = min(1, max(-1, outputSamples[frame]))
+            }
+            outputBuffer.frameLength = AVAudioFrameCount(count)
+            try outputFile?.write(from: outputBuffer)
+            position += AVAudioFramePosition(count)
+        }
+        outputFile = nil
         try validateMeetingAudio(partial, expectedDuration: expectedDuration)
         try publish(partial: partial, to: output)
+    }
+
+    private func meetingDuration(inputs: [MixInput]) throws -> TimeInterval {
+        var duration: TimeInterval = 0
+        for input in inputs {
+            guard let url = input.url else { continue }
+            duration = max(
+                duration,
+                Double(max(0, input.offsetMilliseconds)) / 1000 + (try audioDuration(url))
+            )
+        }
+        return duration
     }
 
     private func validatePublishedOutputs(session: URL, files: [String: String]) throws {
@@ -379,6 +494,14 @@ actor AudioFinalizer {
         return Double(file.length) / file.fileFormat.sampleRate
     }
 
+    private func recoveryAudioDuration(_ url: URL) throws -> TimeInterval {
+        let file = try AVAudioFile(forReading: url)
+        guard file.fileFormat.sampleRate > 0 else {
+            throw FinalizationError.invalidAudio(url.lastPathComponent)
+        }
+        return Double(file.length) / file.fileFormat.sampleRate
+    }
+
     private func decodeCompletely(_ url: URL) throws {
         let file = try AVAudioFile(forReading: url)
         guard let buffer = AVAudioPCMBuffer(
@@ -412,13 +535,22 @@ actor AudioFinalizer {
         try FileManager.default.moveItem(at: partial, to: output)
     }
 
-    private func existingCleanedMicrophone(in session: URL) -> URL? {
+    private func existingCleanedMicrophone(in session: URL, matching microphone: URL) -> URL? {
         let legacy = SessionFiles.internalFile(EchoCancellation.outputName, in: session)
-        guard
-            FileManager.default.fileExists(atPath: legacy.path),
-            (try? audioDuration(legacy)) != nil
-        else { return nil }
-        return legacy
+        guard FileManager.default.fileExists(atPath: legacy.path) else { return nil }
+        do {
+            try EchoCancellation.validateCleaned(legacy, matching: microphone)
+            return legacy
+        } catch {
+            appendLog(session, "cleaned microphone unusable, rebuilding: \(error)")
+            try? FileManager.default.removeItem(at: legacy)
+            return nil
+        }
+    }
+
+    private func existingLiveMeeting(in session: URL) -> URL? {
+        let url = SessionFiles.internalFile(LiveEchoCanceller.meetingOutputName, in: session)
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
 
     private nonisolated func appendLog(_ session: URL, _ message: String) {

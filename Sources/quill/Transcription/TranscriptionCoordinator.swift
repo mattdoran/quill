@@ -67,7 +67,7 @@ actor TranscriptionCoordinator {
         let fm = FileManager.default
         let pending = entries
             .filter {
-                fm.fileExists(atPath: SessionFiles.metadata($0).path)
+                SessionFiles.hasProcessableAudio($0)
                     && !fm.fileExists(atPath: SessionFiles.transcriptJSON($0).path)
             }
             .sorted { $0.lastPathComponent < $1.lastPathComponent }

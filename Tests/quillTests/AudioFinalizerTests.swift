@@ -12,6 +12,11 @@ import Testing
         let call = SessionFiles.internalFile("system.caf", in: session)
         try writeAAC(to: microphone, channels: 1, seconds: 0.6, frequency: 330)
         try writeAAC(to: call, channels: 2, seconds: 0.5, frequency: 660)
+        let staleLiveMeeting = SessionFiles.internalFile(
+            LiveEchoCanceller.meetingOutputName,
+            in: session
+        )
+        try Data("not audio".utf8).write(to: staleLiveMeeting)
         let microphoneLength = try AVAudioFile(forReading: microphone).length
         let callLength = try AVAudioFile(forReading: call).length
         try writeJSON(
@@ -35,18 +40,131 @@ import Testing
         #expect(!metadataText.contains("\\/"))
         #expect(!FileManager.default.fileExists(atPath: microphone.path))
         #expect(!FileManager.default.fileExists(atPath: call.path))
+        #expect(!FileManager.default.fileExists(atPath: staleLiveMeeting.path))
 
         let finalMicrophone = session.appendingPathComponent(AudioFinalizer.localPath)
         let finalCall = session.appendingPathComponent(AudioFinalizer.remotePath)
         let meeting = session.appendingPathComponent(AudioFinalizer.meetingAudioPath)
         #expect(try AVAudioFile(forReading: finalMicrophone).length == microphoneLength)
         #expect(try AVAudioFile(forReading: finalCall).length == callLength)
-        #expect(try AVAudioFile(forReading: meeting).length > 0)
+        let meetingFile = try AVAudioFile(forReading: meeting)
+        #expect(meetingFile.length > 0)
+        #expect(meetingFile.processingFormat.channelCount == 1)
         let rootItems = try FileManager.default.contentsOfDirectory(
             at: session,
             includingPropertiesForKeys: nil
         ).map(\.lastPathComponent).sorted()
         #expect(rootItems == [".quill", "Meeting Audio.m4a", "Source Audio"])
+    }
+
+    @Test func publishesMeetingMixPreparedDuringRecording() async throws {
+        let session = try temporarySession()
+        defer { try? FileManager.default.removeItem(at: session) }
+
+        try writeAAC(
+            to: SessionFiles.internalFile("mic.caf", in: session),
+            channels: 1,
+            seconds: 0.6,
+            frequency: 330
+        )
+        try writeAAC(
+            to: SessionFiles.internalFile("system.caf", in: session),
+            channels: 1,
+            seconds: 0.5,
+            frequency: 660
+        )
+        try writeAAC(
+            to: SessionFiles.internalFile(EchoCancellation.outputName, in: session),
+            channels: 1,
+            seconds: 0.6,
+            frequency: 330
+        )
+        let liveMeeting = SessionFiles.internalFile(
+            LiveEchoCanceller.meetingOutputName,
+            in: session
+        )
+        try writeAAC(to: liveMeeting, channels: 1, seconds: 0.6, frequency: 880)
+        try writeJSON(
+            metadata(microphoneOffset: 0, callOffset: 100),
+            to: SessionFiles.metadata(session)
+        )
+
+        try await AudioFinalizer.shared.finalize(session: session)
+
+        let meeting = session.appendingPathComponent(AudioFinalizer.meetingAudioPath)
+        let file = try AVAudioFile(forReading: meeting)
+        #expect(file.processingFormat.channelCount == 1)
+        #expect(file.length == AVAudioFramePosition(0.6 * 48_000))
+        #expect(!FileManager.default.fileExists(atPath: liveMeeting.path))
+        let log = try String(contentsOf: SessionFiles.sessionLog(session), encoding: .utf8)
+        #expect(log.contains("published meeting mix prepared during recording"))
+    }
+
+    @Test func rebuildsTruncatedCleanedMicrophone() async throws {
+        let session = try temporarySession()
+        defer { try? FileManager.default.removeItem(at: session) }
+
+        let microphone = SessionFiles.internalFile("mic.caf", in: session)
+        try writeAAC(to: microphone, channels: 1, seconds: 0.6, frequency: 330)
+        let microphoneLength = try AVAudioFile(forReading: microphone).length
+        try writeAAC(
+            to: SessionFiles.internalFile("system.caf", in: session),
+            channels: 1,
+            seconds: 0.6,
+            frequency: 660
+        )
+        try writeAAC(
+            to: SessionFiles.internalFile(EchoCancellation.outputName, in: session),
+            channels: 1,
+            seconds: 0.2,
+            frequency: 330
+        )
+        try writeJSON(
+            metadata(microphoneOffset: 0, callOffset: 0),
+            to: SessionFiles.metadata(session)
+        )
+
+        try await AudioFinalizer.shared.finalize(session: session)
+
+        let cleaned = session.appendingPathComponent(AudioFinalizer.cleanedLocalPath)
+        let cleanedFile = try AVAudioFile(forReading: cleaned)
+        #expect(cleanedFile.length == microphoneLength)
+        let log = try String(contentsOf: SessionFiles.sessionLog(session), encoding: .utf8)
+        #expect(log.contains("cleaned microphone unusable, rebuilding"))
+    }
+
+    @Test func concurrentRequestsShareOneFinalization() async throws {
+        let session = try temporarySession()
+        defer { try? FileManager.default.removeItem(at: session) }
+
+        try writeAAC(
+            to: SessionFiles.internalFile("mic.caf", in: session),
+            channels: 1,
+            seconds: 0.6,
+            frequency: 330
+        )
+        try writeAAC(
+            to: SessionFiles.internalFile("system.caf", in: session),
+            channels: 1,
+            seconds: 0.6,
+            frequency: 660
+        )
+        try writeJSON(
+            metadata(microphoneOffset: 0, callOffset: 0),
+            to: SessionFiles.metadata(session)
+        )
+
+        async let first: Void = AudioFinalizer.shared.finalize(session: session)
+        async let second: Void = AudioFinalizer.shared.finalize(session: session)
+        _ = try await (first, second)
+
+        let published = try readJSON(SessionFiles.metadata(session))
+        #expect(published["audio_state"] as? String == "finalized")
+        #expect(
+            FileManager.default.fileExists(
+                atPath: session.appendingPathComponent(AudioFinalizer.meetingAudioPath).path
+            )
+        )
     }
 
     @Test func interruptedCaptureJournalRecoversBeforeFinalization() async throws {
@@ -59,6 +177,7 @@ import Testing
             seconds: 0.4,
             frequency: 440
         )
+        try writeEmptyAAC(to: SessionFiles.internalFile("system.caf", in: session))
         try writeJSON(
             [
                 "started": "2026-08-19T00:00:00Z",
@@ -82,6 +201,70 @@ import Testing
                 atPath: SessionFiles.captureJournal(session).path
             )
         )
+    }
+
+    @Test func interruptedCaptureWithNoFramesBecomesTerminal() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "quill-recovery-tests-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        let session = root.appendingPathComponent("2026-08-24 120000", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: session, withIntermediateDirectories: true)
+        _ = try SessionFiles.prepare(session)
+
+        try writeEmptyAAC(to: SessionFiles.internalFile("mic.caf", in: session))
+        try writeEmptyAAC(to: SessionFiles.internalFile("system.caf", in: session))
+        try writeJSON(
+            [
+                "started": "2026-08-24T02:00:00Z",
+                "files": [
+                    "mic": SessionFiles.internalPath("mic.caf"),
+                    "system": SessionFiles.internalPath("system.caf"),
+                ],
+                "start_offset_ms": ["mic": 0, "system": 0],
+            ],
+            to: SessionFiles.captureJournal(session)
+        )
+
+        await AudioFinalizer.shared.recoverPending(in: root)
+
+        let recovered = try readJSON(SessionFiles.metadata(session))
+        #expect(recovered["audio_state"] as? String == "empty")
+        #expect(!SessionFiles.hasProcessableAudio(session))
+        #expect(!FileManager.default.fileExists(atPath: SessionFiles.captureJournal(session).path))
+        let log = try String(contentsOf: SessionFiles.sessionLog(session), encoding: .utf8)
+        #expect(log.contains("recovered interrupted capture with no audio"))
+    }
+
+    @Test func interruptedCaptureWithMissingArchivesRemainsRetryable() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "quill-recovery-tests-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        let session = root.appendingPathComponent("2026-08-24 120001", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: session, withIntermediateDirectories: true)
+        _ = try SessionFiles.prepare(session)
+
+        try writeJSON(
+            [
+                "started": "2026-08-24T02:00:01Z",
+                "files": [
+                    "mic": SessionFiles.internalPath("mic.caf"),
+                    "system": SessionFiles.internalPath("system.caf"),
+                ],
+                "start_offset_ms": ["mic": 0, "system": 0],
+            ],
+            to: SessionFiles.captureJournal(session)
+        )
+
+        await AudioFinalizer.shared.recoverPending(in: root)
+
+        #expect(!FileManager.default.fileExists(atPath: SessionFiles.metadata(session).path))
+        #expect(FileManager.default.fileExists(atPath: SessionFiles.captureJournal(session).path))
+        let log = try String(contentsOf: SessionFiles.sessionLog(session), encoding: .utf8)
+        #expect(log.contains("audio finalization deferred"))
     }
 
     @Test func corruptCAFIsPreservedWhenExportFails() async throws {
@@ -175,6 +358,19 @@ import Testing
             interleaved: false
         )
         try file.write(from: buffer)
+    }
+
+    private func writeEmptyAAC(to url: URL) throws {
+        _ = try AVAudioFile(
+            forWriting: url,
+            settings: [
+                AVFormatIDKey: kAudioFormatMPEG4AAC,
+                AVSampleRateKey: 48_000,
+                AVNumberOfChannelsKey: 1,
+            ],
+            commonFormat: .pcmFormatFloat32,
+            interleaved: false
+        )
     }
 
     private func writeJSON(_ json: [String: Any], to url: URL) throws {

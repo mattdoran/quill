@@ -2,6 +2,63 @@
 
 Dated product and architecture decisions. Newest first.
 
+## 2026-08-24: Preserve the surviving source after an archive failure
+
+**Decision:** The first AAC write failure permanently closes that source track,
+leaves its existing bytes for recovery, marks recording degraded and interrupts
+immediately. The other source continues. Live AEC and mixing are abandoned. If
+both source archives fail, Quill stops the session automatically.
+
+**Why:** Continuing to report healthy recording when device callbacks arrive
+but no bytes reach the source file is false confidence. Retrying the same AAC
+writer has no established recovery contract, while stopping both tracks for one
+failure discards a useful surviving source.
+
+**Consequence:** A partial failed track remains publishable when it contains
+audio; an empty track is omitted from finished metadata. Retry and segmented
+source files remain out of scope until a real incident justifies them.
+
+## 2026-08-24: Consumer isolation requires an explicit archive contract
+
+**Decision:** Correct the earlier committed-frame direction: the current
+monitor is ordered after source encoder acceptance, but still runs synchronously
+on the archive queue. The target boundary must enqueue consumer work in bounded,
+constant time without executing consumer code there. Each stateful consumer must
+define what a missing frame does to its own state.
+
+**Why:** Independent review found that a slow monitor can delay later archive
+writes until the capture queue overflows. It also found that `AVAudioFile.write`
+is an encoder-acceptance boundary, not proof that bytes reached stable storage.
+The earlier wording promoted intended isolation and durability into guarantees
+the current implementation does not provide.
+
+**Consequence:** Keep source acceptance before optional fan-out, but call it
+process-crash recoverability rather than immediate durability. Before adding a
+new live consumer, remove consumer execution from the archive queue and choose
+an overload outcome appropriate to that consumer.
+
+## 2026-08-24: Keep capture open to future live consumers
+
+**Decision:** Live transcription is not current scope, but audio capture must not
+assume that files are its only consumers. Preserve one normalized, timestamped
+frame boundary after source encoder acceptance. Live AEC and metering, plus
+future ASR, may consume that boundary without changing microphone capture,
+system capture or source-file recovery.
+
+**Correction:** The following consumer-isolation decision supersedes this
+entry's original use of “durable source writes.” Encoder acceptance does not
+prove power-loss durability or successful finalization after an IO error.
+
+**Why:** The current source-first recovery model is sound, but `TrackWriter`
+combines normalization, timeline reconstruction, persistence and fan-out. Adding
+live ASR directly to that type would deepen the coupling and give each consumer
+its own timing and backpressure rules.
+
+**Consequence:** Do not build live ASR or a general audio graph speculatively.
+When adjacent audio work next changes this boundary, separate canonical frame
+production from persistence and bounded consumer delivery while retaining the
+rule that optional consumers cannot delay or endanger the source archive.
+
 ## 2026-08-20: Make recording confidence converge on one pill
 
 **Decision:** Active recording uses the same red `circle.fill` symbol in the
@@ -522,3 +579,40 @@ not sample-identical, because offline reads the tracks back through AAC while
 live sees them before the encode; measured on `check-live-aec`, live holds
 14-16 dB ERLE across track skews of 0-250ms where a deliberately corrupted
 offset drops it to 6 dB.
+
+## 2026-08-24: Build the mono meeting mix during capture
+
+**Decision:** The live echo-cancellation pump also writes an aligned mono AAC
+meeting mix at 64 kbps. On clean stop, finalization verifies and remuxes that
+CAF into `Meeting Audio.m4a`. If live processing is absent or incomplete, a
+streaming offline mixer rebuilds the same mono artifact from retained tracks.
+
+**Why:** Source tracks already encode during capture and publish by passthrough
+remux. The remaining normal-path audio cost was decoding both complete tracks
+and encoding a 2-channel 248 kbps meeting file after stop, even though every
+consumer treats the call as mono. The AEC pump already holds the aligned cleaned
+microphone and far-end samples needed for that mix.
+
+**Consequence:** A normal stop closes completed AAC files and performs only
+validated container remuxes before transcription. The live mix includes
+far-end audio before the microphone starts and after it ends. Recovery retains
+the full offline path. A 58-second real-session replay produced the same
+2,786,928-frame duration at 65 kbps and 504 KB, compared with the former
+2-channel file at 251 kbps and 1.84 MB. A 15-minute replay sustained 20 times
+realtime input and finalized in 1.16 seconds.
+
+## 2026-08-24: Generate AEC alignment fixtures from one clock
+
+**Decision:** Synthetic near and far signals are generated against one global
+sample timeline, then sliced according to each track's start offset. The
+deliberate misalignment remains a separate input to the canceller.
+
+**Why:** The first fixture shifted the far signal in the same direction as its
+start offset. That made the supposedly aligned tracks inconsistent, while
+AEC3's internal delay estimator partially hid the error. It could distinguish
+zero skew from a corrupted offset but could not prove the caller's offset math.
+
+**Consequence:** Corrected controls retain 13-16 dB ERLE when either track leads
+by 250 ms, preserve the exact meeting duration, and drop to 6.3 dB when the
+offset is deliberately corrupted by 200 ms. Real-session replay results are
+unchanged.

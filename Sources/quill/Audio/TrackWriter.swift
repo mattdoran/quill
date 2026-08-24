@@ -59,6 +59,10 @@ final class TrackWriter: @unchecked Sendable {
     /// the route is probably dead but still delivering.
     var onProlongedSilence: (@Sendable () -> Void)?
 
+    /// Raised once when the source archive can no longer accept audio. The
+    /// writer becomes terminal and leaves existing bytes for recovery.
+    var onWriteFailure: (@Sendable (String) -> Void)?
+
     /// Beyond this many buffers queued, the disk is losing badly enough that
     /// holding more would only grow unbounded. Roughly 20 seconds of audio.
     private static let maxPending = 256
@@ -71,6 +75,7 @@ final class TrackWriter: @unchecked Sendable {
     private let pendingLock = NSLock()
     private var pending = 0
     private var droppedReported = false
+    private var accepting = true
 
     private var monitor: (any TrackMonitor)?
     private var file: AVAudioFile?
@@ -85,14 +90,23 @@ final class TrackWriter: @unchecked Sendable {
     private var silenceReported = false
     private var _lastAudibleAt: Date?
     private var _hasEverBeenAudible = false
+    private var _writeFailure: String?
+    private var failureCallbackSent = false
+    private let fileWrite: (AVAudioFile, AVAudioPCMBuffer) throws -> Void
 
     init(
-        url: URL, format: AVAudioFormat, name: String, log: SessionLog, watchSilence: Bool
+        url: URL,
+        format: AVAudioFormat,
+        name: String,
+        log: SessionLog,
+        watchSilence: Bool,
+        fileWrite: ((AVAudioFile, AVAudioPCMBuffer) throws -> Void)? = nil
     ) throws {
         self.format = format
         self.name = name
         self.log = log
         self.watchSilence = watchSilence
+        self.fileWrite = fileWrite ?? { file, buffer in try file.write(from: buffer) }
         // Silence and peak both walk raw sample memory as Float. The system tap
         // hands back interleaved stereo, so layout is not assumed, but the
         // sample type is.
@@ -155,15 +169,23 @@ final class TrackWriter: @unchecked Sendable {
         return _hasEverBeenAudible
     }
 
+    var writeFailure: String? {
+        lock.lock()
+        defer { lock.unlock() }
+        return _writeFailure
+    }
+
     /// Called on a capture thread, which must not block: this copies the
     /// buffer, stamps its arrival and hands it off. Resampling, AAC encode and
     /// the disk write all happen on `work`, where a slow disk costs latency
     /// rather than dropped buffers.
     func write(_ buffer: AVAudioPCMBuffer) {
         let now = Date()
-        guard let copy = Self.copy(buffer) else { return }
-
         pendingLock.lock()
+        guard accepting else {
+            pendingLock.unlock()
+            return
+        }
         guard pending < Self.maxPending else {
             let firstDrop = !droppedReported
             droppedReported = true
@@ -175,6 +197,13 @@ final class TrackWriter: @unchecked Sendable {
         }
         pending += 1
         pendingLock.unlock()
+
+        guard let copy = Self.copy(buffer) else {
+            pendingLock.lock()
+            pending -= 1
+            pendingLock.unlock()
+            return
+        }
 
         work.async { [self] in
             consume(copy, at: now)
@@ -197,16 +226,19 @@ final class TrackWriter: @unchecked Sendable {
         // Drains everything already queued before closing, since `work` is
         // serial.
         work.sync { self.closeDraining(paddingTo: date) }
+        lock.lock()
+        let failure = takeUnreportedFailureLocked()
+        lock.unlock()
+        if let failure { onWriteFailure?(failure) }
     }
 
     // MARK: -
 
     private func consume(_ buffer: AVAudioPCMBuffer, at now: Date) {
         lock.lock()
-        defer { lock.unlock() }
-        guard file != nil else { return }
+        guard file != nil else { lock.unlock(); return }
 
-        guard let converted = convertLocked(buffer) else { return }
+        guard let converted = convertLocked(buffer) else { lock.unlock(); return }
         if _firstBufferAt == nil {
             _firstBufferAt = now
             log.log("\(name): first buffer at \(buffer.format.short)")
@@ -215,7 +247,10 @@ final class TrackWriter: @unchecked Sendable {
         }
         _lastBufferAt = now
         trackSilenceLocked(converted, at: now)
-        writeLocked(converted)
+        _ = writeLocked(converted)
+        let failure = takeUnreportedFailureLocked()
+        lock.unlock()
+        if let failure { onWriteFailure?(failure) }
     }
 
     /// Layout-agnostic copy: the tap's buffer is only valid for the duration of
@@ -250,15 +285,29 @@ final class TrackWriter: @unchecked Sendable {
         file = nil
     }
 
-    private func writeLocked(_ buffer: AVAudioPCMBuffer) {
-        guard let file else { return }
+    @discardableResult
+    private func writeLocked(_ buffer: AVAudioPCMBuffer) -> Bool {
+        guard let file else { return false }
         do {
-            try file.write(from: buffer)
+            try fileWrite(file, buffer)
             monitor?.trackDidWrite(buffer, at: frames, from: name)
             frames += AVAudioFramePosition(buffer.frameLength)
+            return true
         } catch {
             log.warn("\(name): write failed: \(error)")
+            if _writeFailure == nil { _writeFailure = "\(error)" }
+            self.file = nil
+            pendingLock.lock()
+            accepting = false
+            pendingLock.unlock()
+            return false
         }
+    }
+
+    private func takeUnreportedFailureLocked() -> String? {
+        guard let failure = _writeFailure, !failureCallbackSent else { return nil }
+        failureCallbackSent = true
+        return failure
     }
 
     /// AVAudioConverter does not mix channels down: asked for 2ch to 1ch it
@@ -386,7 +435,7 @@ final class TrackWriter: @unchecked Sendable {
         }
         while remaining > 0 {
             silence.frameLength = min(chunk, remaining)
-            writeLocked(silence)
+            guard writeLocked(silence) else { return }
             remaining -= silence.frameLength
         }
         _gaps.append(Gap(at: at, seconds: seconds))

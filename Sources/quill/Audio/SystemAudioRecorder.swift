@@ -44,8 +44,10 @@ final class SystemAudioRecorder: Capture {
     var duration: TimeInterval { writer?.duration ?? 0 }
     var lastAudibleAt: Date? { writer?.lastAudibleAt }
     var hasEverBeenAudible: Bool { writer?.hasEverBeenAudible ?? false }
+    var archiveFailure: String? { writer?.writeFailure }
 
     var onInvalidated: ((String) -> Void)?
+    var onArchiveFailed: ((String) -> Void)?
 
     /// Fixed for the session. The tap mixes to stereo at the output device's
     /// rate, but every consumer downstream averages the channels away: AEC uses
@@ -107,6 +109,9 @@ final class SystemAudioRecorder: Capture {
                         watchSilence: false
                     )
                     if let pendingMonitor { created.monitor(with: pendingMonitor) }
+                    created.onWriteFailure = { [weak self] detail in
+                        Task { @MainActor in self?.onArchiveFailed?(detail) }
+                    }
                     writer = created
                 } catch {
                     throw RecorderError.fileCreationFailed(error)

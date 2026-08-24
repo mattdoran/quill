@@ -14,7 +14,9 @@ final class RecordingSession {
     /// Whether a track is down *now*, as opposed to `trouble`, which records
     /// what went wrong at any point. The icon follows this so it stops warning
     /// about a fault the session has already recovered from.
-    var isDegraded: Bool { supervisors.contains { !$0.isHealthy } }
+    var isDegraded: Bool {
+        !failedArchives.isEmpty || supervisors.contains { !$0.isHealthy }
+    }
 
     /// Raised once when a track has been down long enough that it is not
     /// coming back on its own. Carries a title and body, since what to say
@@ -26,12 +28,18 @@ final class RecordingSession {
     /// recording.
     var onEveryoneGone: (() -> Void)?
 
+    /// Raised when neither source archive can accept more audio. The app owns
+    /// the stop action so this type does not call back into its own writers.
+    var onAllArchivesFailed: (() -> Void)?
+
     /// A legitimately quiet stretch runs a minute or three. Nobody speaking
     /// and nothing playing for this long is not a meeting in progress.
     private static let quietBeforeNudge: TimeInterval = 600
 
     private var reported: Set<String> = []
     private var nudged = false
+    private var failedArchives: Set<String> = []
+    private var isStopping = false
 
     private let log: SessionLog
     private let mic = MicRecorder()
@@ -78,6 +86,12 @@ final class RecordingSession {
 
         system.prepare(writingTo: SessionFiles.internalFile("system.caf", in: dir), log: log)
         try mic.prepare(writingTo: SessionFiles.internalFile("mic.caf", in: dir), log: log)
+        mic.onArchiveFailed = { [weak self] detail in
+            self?.archiveFailed(name: "mic", detail: detail)
+        }
+        system.onArchiveFailed = { [weak self] detail in
+            self?.archiveFailed(name: "system", detail: detail)
+        }
 
         if let canceller = LiveEchoCanceller(
             session: SessionFiles.internalDirectory(dir),
@@ -127,7 +141,9 @@ final class RecordingSession {
     }
 
     /// Stop both tracks and write meta.json.
-    func stop() throws {
+    @discardableResult
+    func stop() throws -> Bool {
+        isStopping = true
         ticker?.invalidate()
         ticker = nil
         deviceWatcher = nil
@@ -135,6 +151,7 @@ final class RecordingSession {
         let ended = Date()
         supervisors.forEach { $0.stop(at: ended) }
         supervisors = []
+        captureArchiveFailures()
 
         // After the writers close, so every frame has been handed over.
         if let liveAEC {
@@ -156,33 +173,49 @@ final class RecordingSession {
         let systemStart = system.firstBufferAt ?? startedAt
         let earliest = min(micStart, systemStart)
 
-        let meta: [String: Any] = [
+        var files: [String: String] = [:]
+        var tracks: [String: [String: Any]] = [:]
+        if mic.duration > 0 {
+            files["mic"] = SessionFiles.internalPath("mic.caf")
+            tracks["mic"] = trackMeta(
+                file: SessionFiles.internalPath("mic.caf"),
+                duration: mic.duration,
+                gaps: mic.gaps
+            )
+        }
+        if system.duration > 0 {
+            files["system"] = SessionFiles.internalPath("system.caf")
+            tracks["system"] = trackMeta(
+                file: SessionFiles.internalPath("system.caf"),
+                duration: system.duration,
+                gaps: system.gaps
+            )
+        }
+        if mic.duration == 0 {
+            try? FileManager.default.removeItem(
+                at: SessionFiles.internalFile("mic.caf", in: dir)
+            )
+        }
+        if system.duration == 0 {
+            try? FileManager.default.removeItem(
+                at: SessionFiles.internalFile("system.caf", in: dir)
+            )
+        }
+
+        var meta: [String: Any] = [
             "started": iso.string(from: startedAt),
             "ended": iso.string(from: ended),
             "duration_seconds": Int(ended.timeIntervalSince(startedAt)),
-            "files": [
-                "mic": SessionFiles.internalPath("mic.caf"),
-                "system": SessionFiles.internalPath("system.caf"),
-            ],
+            "files": files,
             "start_offset_ms": [
                 "mic": Int(micStart.timeIntervalSince(earliest) * 1000),
                 "system": Int(systemStart.timeIntervalSince(earliest) * 1000),
             ],
             // `captured_seconds` excludes silence padded over gaps, so a track
             // that runs full length but recorded three minutes says so.
-            "tracks": [
-                "mic": trackMeta(
-                    file: SessionFiles.internalPath("mic.caf"),
-                    duration: mic.duration,
-                    gaps: mic.gaps
-                ),
-                "system": trackMeta(
-                    file: SessionFiles.internalPath("system.caf"),
-                    duration: system.duration,
-                    gaps: system.gaps
-                ),
-            ],
+            "tracks": tracks,
         ]
+        if files.isEmpty { meta["audio_state"] = "empty" }
         do {
             let data = try JSONSerialization.data(
                 withJSONObject: meta,
@@ -205,6 +238,7 @@ final class RecordingSession {
             mic.duration, mic.gaps.count, system.duration, system.gaps.count
         ))
         log.close()
+        return !files.isEmpty
     }
 
     // MARK: -
@@ -223,9 +257,12 @@ final class RecordingSession {
     private func alignLiveEchoCancellerIfReady() {
         guard let liveAEC, !liveAECBegun else { return }
         guard let micStart = mic.firstBufferAt, let systemStart = system.firstBufferAt else {
-            if Date().timeIntervalSince(startedAt) > 30 {
+            // Comfortably inside LiveEchoCanceller's buffered-audio cap, so a
+            // one-sided start is reported as that rather than as the pump
+            // falling behind.
+            if Date().timeIntervalSince(startedAt) > 15 {
                 liveAECBegun = true
-                liveAEC.abandon("only one track started within 30s")
+                liveAEC.abandon("only one track started within 15s")
                 self.liveAEC = nil
             }
             return
@@ -326,6 +363,48 @@ final class RecordingSession {
     private func report(_ message: String) {
         reported.insert(message)
         trouble = reported.sorted().joined(separator: " · ")
+    }
+
+    private func archiveFailed(name: String, detail: String) {
+        guard !isStopping else { return }
+        recordArchiveFailure(name: name, detail: detail, notify: true)
+    }
+
+    private func captureArchiveFailures() {
+        if let detail = mic.archiveFailure {
+            recordArchiveFailure(name: "mic", detail: detail, notify: false)
+        }
+        if let detail = system.archiveFailure {
+            recordArchiveFailure(name: "system", detail: detail, notify: false)
+        }
+    }
+
+    private func recordArchiveFailure(name: String, detail: String, notify: Bool) {
+        guard failedArchives.insert(name).inserted else { return }
+        log.warn("\(name): source archive failed permanently: \(detail)")
+        report("\(name) source archive failed")
+        liveAEC?.abandon("\(name) source archive failed")
+        liveAEC = nil
+        liveAECBegun = true
+
+        guard notify else { return }
+        if failedArchives.count == 2 {
+            onTrackDead?(
+                "Recording stopped",
+                "Quill couldn't save any more audio. Quill will try to recover audio already written."
+            )
+            onAllArchivesFailed?()
+        } else if name == "mic" {
+            onTrackDead?(
+                "Microphone recording stopped",
+                "Quill couldn't save more microphone audio. The call is still being recorded."
+            )
+        } else {
+            onTrackDead?(
+                "System audio recording stopped",
+                "Quill couldn't save more call audio. Your microphone is still being recorded."
+            )
+        }
     }
 
     private func trackMeta(

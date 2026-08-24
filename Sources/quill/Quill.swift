@@ -316,6 +316,9 @@ final class AppController {
                     stopButton: true
                 )
             }
+            newSession.onAllArchivesFailed = { [weak self] in
+                self?.requestStopSession()
+            }
             try newSession.start()
             session = newSession
             recordingCallApplication = startingCallApplication
@@ -354,8 +357,9 @@ final class AppController {
 
     private func stopSession() {
         guard let session else { return }
+        var hasRecordedAudio = true
         do {
-            try session.stop()
+            hasRecordedAudio = try session.stop()
         } catch {
             FileHandle.standardError.write(Data(
                 "recording metadata publication failed: \(error)\n".utf8
@@ -375,6 +379,12 @@ final class AppController {
         ticker?.invalidate()
         ticker = nil
         menuBar.update(recording: false, elapsed: nil)
+
+        guard hasRecordedAudio else {
+            processingSession = nil
+            companion.handle(.reset)
+            return
+        }
 
         let dir = session.dir
         processingSession = dir

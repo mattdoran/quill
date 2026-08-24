@@ -189,7 +189,7 @@ on within a minute.
 | 1 | Recording failed to start | `Recording failed` | `Quill couldn't start recording. Check Microphone and Screen & System Audio Recording permissions.` | — | — | Yes | Ships; **body is a change** |
 | 2 | Transcript written | `Transcript ready` | `2:32 PM meeting, 47 minutes` | — | `transcript.md` | Yes | Ships; **body is a change** |
 | 3 | Transcription failed | `Transcription failed` | `2:32 PM recording` | `Retry` | `transcribe.log` | Yes | Ships; **body and button are changes** |
-| 4 | A track down 30s continuously | *see below* | *see below* | — | — | Yes | Ships |
+| 4 | A track down 30s continuously, or a source archive fails | *see below* | *see below* | — | — | Yes | Ships |
 | 5 | Every audible track quiet 10 minutes | `Still recording` | `No one has spoken for 10 minutes. Is the meeting over?` | `Stop Recording` | — | Yes | Ships |
 | 6 | Recognized call input active for 2s | `Meeting detected` | `Zen Browser` | `Record` | — | Yes | Ships |
 | 7 | Bound call input absent for 2s | `Meeting ended?` | `Zen Browser` | `Stop` | — | Yes | Ships |
@@ -226,6 +226,21 @@ Copy:
 | Mic | `Microphone stopped` | `Still recording the call, but nothing from your mic for 30 seconds. Reconnect your input device.` |
 | System | `System audio stopped` | `Still recording your mic, but nothing from the call for 30 seconds. Check the meeting app is still playing.` |
 | Both | `Recording is empty` | `Neither track has captured anything for 30 seconds. Quill is still running.` |
+
+A source archive failure is different from a stalled capture graph. Audio
+reached Quill but its AAC writer could not save another buffer, so waiting 30
+seconds or rebuilding the device graph cannot repair it. The affected source is
+closed permanently and the notification fires immediately:
+
+| Case | Title | Body |
+|---|---|---|
+| Mic archive | `Microphone recording stopped` | `Quill couldn't save more microphone audio. The call is still being recorded.` |
+| System archive | `System audio recording stopped` | `Quill couldn't save more call audio. Your microphone is still being recorded.` |
+| Both archives | `Recording stopped` | `Quill couldn't save any more audio. Quill will try to recover audio already written.` |
+
+One failed archive leaves the companion degraded and the surviving track
+running. Two failed archives stop the session automatically because continued
+recording would preserve nothing.
 
 ### #5 — the silence nudge (decision)
 
@@ -494,11 +509,13 @@ Source Audio/
 ```
 
 `Meeting Audio.m4a` combines the echo-cleaned microphone and call tracks for
-ordinary playback and sharing. The separate tracks support voice samples,
-verification and reprocessing. With Finder's normal hidden-file setting, the
-root presents only the three human-facing items. `.quill/` contains metadata,
-recovery journals, canonical transcript data, logs, temporary CAF capture files
-and M4A staging.
+ordinary playback and sharing. It is mono AAC because neither source retains
+spatial information. On a normal recording the live echo-cancellation pump
+builds it incrementally; recovery can rebuild the same artifact from retained
+source tracks. The separate tracks support voice samples, verification and
+reprocessing. With Finder's normal hidden-file setting, the root presents only
+the three human-facing items. `.quill/` contains metadata, recovery journals,
+canonical transcript data, logs, temporary CAF capture files and M4A staging.
 
 Finalization keeps CAF inputs until each M4A has the expected duration and
 decodes completely, then publishes new metadata atomically before deleting the

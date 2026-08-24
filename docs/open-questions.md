@@ -157,25 +157,131 @@ post-recording queue of session folders, and the companion shows a processing
 state until the transcript exists. Granola transcribes during the call and shows
 text as it arrives.
 
-The open question is whether Quill should follow. Watching the transcript build
-during a meeting is the visible half; the larger consequence is that a live
-transcript is the only way to offer anything mid-call, and that a partial
-transcript exists if the machine dies before the session is finished.
+Live transcription is not current scope. The settled constraint is that audio
+layers must not prevent it: a future streaming consumer should attach after
+normalization and source encoder acceptance without entering either device
+capture implementation or changing interrupted-session recovery.
 
-Against it: streaming recognition is a different engine contract from batch
-Parakeet, it runs the model for the whole meeting rather than once at the end,
-and the current design deliberately keeps diarisation and speaker naming as a
-post-hoc review step over retained source tracks, which a live stream cannot
-feed. Whatever is shown live would have to be reconciled with the batch
-transcript that follows, or the batch pass has to go, and the batch pass is
-what makes re-transcription and speaker separation possible.
+### Target layer boundaries
+
+This is a direction for incremental separation, not a request to build a generic
+audio graph now.
+
+| Layer | Owns | Must not own |
+|---|---|---|
+| Capture adapter | Device graph, callback adaptation and invalidation signal | File layout, AEC, ASR or retry policy |
+| Capture supervision | Stall detection, graph rebuild and outage state | Sample conversion or downstream processing |
+| Track timeline | Downmix, resampling, monotonic frame positions and silence gaps | AAC containers or consumer-specific queues |
+| Source archive | AAC/CAF encoder acceptance and process-crash recovery | Live processor lifecycle |
+| Accepted-frame fan-out | Constant-time bounded enqueue and per-consumer failure isolation | Device capture or file publication |
+| Stream processor | AEC, mixing or level analysis over canonical frames | Session metadata or human-facing filenames |
+| Artifact sink | Encode and publish one derivative stream | DSP or capture supervision |
+| Transcription session | Batch or streaming engine lifecycle and track-local hypotheses | Capture graphs, audio publication or retention |
+| Transcript assembler/store | Offset merge, revisions and canonical final document | ASR model implementation |
+| Session coordinator | Start, stop and state transitions between the layers | Audio algorithms or media conversion |
+
+The intended future flow is:
+
+```text
+capture adapter
+      |
+      v
+track timeline: mono 48 kHz, track-local frame position, explicit silence
+      |
+      v
+source archive: encoder accepts frame
+      |
+      v
+accepted-frame fan-out
+      |
+      +--> live AEC --> cleaned-mic stream --> artifact sink
+      |                                  +--> optional streaming ASR
+      +--> system stream ----------------+--> optional streaming ASR
+      +--> metering and health consumers
+```
+
+Source acceptance before fan-out retains today's conservative ordering: a live
+transcript does not run ahead of the recoverable CAF stream accepted by the
+encoder. This is not a power-loss durability guarantee. The write adds little
+meaningful latency for meeting transcription.
+
+Source rejection is already terminal per track: the archive closes, the session
+becomes degraded, live derivatives stop, and the surviving source continues.
+Failure of both archives stops the session. Future fan-out must preserve this
+session-owned policy rather than turning storage failure into a consumer event.
+
+The current monitor call is synchronous and can delay later archive writes. The
+target fan-out must perform only bounded, constant-time enqueueing on that queue;
+consumer code runs elsewhere. Every consumer needs its own overload contract.
+A missing frame may make a meter skip an update, but stateful AEC or ASR must
+explicitly abandon, reset with a discontinuity, or recover by replaying retained
+source audio.
+
+Track-local frame positions remain the audio contract. Microphone and system
+ASR can begin independently; their hypotheses acquire the existing
+`start_offset_ms` only when merged onto the meeting timeline. This avoids making
+either capture stream wait for the other merely so transcription can start.
+
+Before that frame type is stable, its clock contract must also settle:
+
+- monotonic clock or Core Audio host-time provenance;
+- mapping source timestamps onto 48 kHz frame positions;
+- explicit discontinuity and inserted-silence semantics;
+- one offset rounding rule for live and persisted consumers; and
+- overlap and long-term device-drift policy.
+
+This need not change the current clock speculatively. It must be decided before
+live hypotheses from independent tracks are merged as one timeline.
+
+Live AEC complicates microphone input selection. A streaming engine could use
+the cleaned stream and need a reset or replay if AEC abandons, or use raw
+microphone audio live and reconcile against cleaned audio after stop. That is an
+engine and product-quality decision, not a capture responsibility.
+
+### Incremental path that does not build the feature
+
+No refactor is justified solely by the possibility of live transcription. When
+nearby audio work next touches these boundaries, the safe order is:
+
+1. Name one canonical frame value carrying track identity, track-local start
+   frame, fixed audio format and PCM samples.
+2. Separate normalization and timeline repair from the AAC archive while
+   preserving file layout, timing and recovery behaviour.
+3. Expose frames only after the source encoder accepts them, using constant-time
+   bounded enqueueing rather than running consumers on the archive queue or
+   introducing a general-purpose event bus.
+4. Separate AEC and meeting mixing from their AAC encoders and filename
+   publication.
+5. Keep batch transcription unchanged until a real streaming engine is selected.
+
+At that point adding live ASR is a new consumer and transcript lifecycle, not a
+third recorder.
+
+### Decisions deliberately left open
+
+Streaming recognition is a different engine contract from batch Parakeet. It
+runs the model throughout the meeting and emits hypotheses that may be revised.
+The current document model assumes completed segments and post-hoc speaker
+review over retained source tracks.
+
+Do not choose provisional transcript storage yet. If crash-surviving live text
+becomes a requirement, it needs one per-session authoritative store with an
+explicit incomplete-to-final lifecycle. Whether that is an append-only file or
+a database depends on the revision and query model of the selected engine; a
+collection of loosely related JSON sidecars is not the default.
 
 Questions:
 
 - Is the live transcript worth showing at all, or is the real prize a mid-call
   capability that does not exist yet?
+- Does live text need to survive a process crash, or is retained audio plus
+  post-stop recovery sufficient?
+- Does a streaming engine emit immutable finalized spans, revisable hypotheses,
+  or both?
 - Can a streaming pass and the existing batch pass coexist without the user
   seeing two different transcripts of the same meeting?
+- Should live microphone ASR consume raw audio for continuity or cleaned audio
+  for quality when AEC can abandon?
 - What happens to transcript review and voice identification, both of which
   assume a completed recording and both source tracks?
 

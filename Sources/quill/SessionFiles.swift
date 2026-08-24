@@ -40,4 +40,14 @@ enum SessionFiles {
     static func transcriptMarkdown(_ session: URL) -> URL {
         session.appendingPathComponent("transcript.md")
     }
+
+    static func hasProcessableAudio(_ session: URL) -> Bool {
+        guard
+            let data = try? Data(contentsOf: metadata(session)),
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            json["audio_state"] as? String != "empty",
+            let files = json["files"] as? [String: String]
+        else { return false }
+        return files["mic"] != nil || files["system"] != nil
+    }
 }

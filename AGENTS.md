@@ -6,10 +6,11 @@ is not in play.
 ## Read next
 
 1. `README.md` for build, run and distribution commands.
-2. `docs/ux.md` for the current product and UI design.
-3. `docs/decisions.md` for settled choices and their reasons.
-4. `docs/open-questions.md` for possible product paths not yet decided.
-5. `TODO.md` for work that remains.
+2. `docs/design.md` for implementation architecture and audio flow.
+3. `docs/ux.md` for the current product and UI design.
+4. `docs/decisions.md` for settled choices and their reasons.
+5. `docs/open-questions.md` for possible product paths not yet decided.
+6. `TODO.md` for work that remains.
 
 ## Constraints and gotchas
 
@@ -31,5 +32,5 @@ is not in play.
 - Wait for forced process termination before replacing or reopening the app.
   Skipping the post-`pkill` wait produced LaunchServices error `-600` during an
   otherwise valid signed install.
-- `docs/ux.md` is the design authority. Record new settled choices in
-  `docs/decisions.md`, not in this file.
+- `docs/design.md` owns implementation and data flow; `docs/ux.md` owns product
+  behaviour and UI. Record settled choices in `docs/decisions.md`.

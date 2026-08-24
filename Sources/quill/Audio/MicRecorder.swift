@@ -41,8 +41,10 @@ final class MicRecorder: Capture {
     var duration: TimeInterval { writer?.duration ?? 0 }
     var lastAudibleAt: Date? { writer?.lastAudibleAt }
     var hasEverBeenAudible: Bool { writer?.hasEverBeenAudible ?? false }
+    var archiveFailure: String? { writer?.writeFailure }
 
     var onInvalidated: ((String) -> Void)?
+    var onArchiveFailed: ((String) -> Void)?
 
     private var engine = AVAudioEngine()
     private let liveness = LivenessClock()
@@ -60,6 +62,9 @@ final class MicRecorder: Capture {
             )
             writer.onProlongedSilence = { [weak self] in
                 Task { @MainActor in self?.onInvalidated?("capturing digital silence") }
+            }
+            writer.onWriteFailure = { [weak self] detail in
+                Task { @MainActor in self?.onArchiveFailed?(detail) }
             }
             self.writer = writer
         } catch {

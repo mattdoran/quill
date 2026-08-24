@@ -13,6 +13,7 @@ Starting a fresh session? Read these in order:
 | File | Purpose |
 |---|---|
 | `README.md` | Install, run and configure Quill. |
+| `docs/design.md` | Recorder architecture, audio flow, recovery and critique surface. |
 | `docs/ux.md` | The current product and UI design. |
 | `docs/decisions.md` | Settled decisions and their reasons. |
 | `docs/open-questions.md` | Possible product paths that still need investigation or a decision. |
@@ -80,7 +81,7 @@ Each session lands in `~/Music/Quill/<yyyy.MM.dd-HHmm>/`:
 
 | File | Contents |
 |---|---|
-| `Meeting Audio.m4a` | the meeting as one playable file |
+| `Meeting Audio.m4a` | the meeting as one mono, playable file |
 | `Source Audio/Local.m4a` | audio captured from the local microphone (AAC) |
 | `Source Audio/Remote.m4a` | audio captured from computer playback (AAC) |
 | `Source Audio/Local Cleaned.m4a` | local audio with correlated speaker playback removed (AAC) |
@@ -119,11 +120,12 @@ Core ML port, roughly 20 seconds per hour of audio on Apple Silicon. Models
 (~600 MB) download after the first unmetered launch; progress appears in the
 menu and Settings. `quill doctor` reports whether they are ready.
 
-Before publishing the finished files, WebRTC AEC3 uses the call track as a
-reference to remove correlated speaker playback from the microphone. The
-result is retained as `Source Audio/Local Cleaned.m4a`; both original
-source tracks remain unchanged. If cancellation fails, the failure is logged
-and transcription falls back to the original microphone track.
+During capture, WebRTC AEC3 uses the call track as a reference to remove
+correlated speaker playback from the microphone. It also builds the mono
+meeting mix while the audio is already in memory. The cleaned result is retained
+as `Source Audio/Local Cleaned.m4a`; both original source tracks remain
+unchanged. If live processing fails, finalization repeats the work from the
+retained source tracks.
 
 The cleaned microphone and raw system tracks are transcribed separately,
 shifted by their start offsets so both share one clock, and merged by
@@ -197,7 +199,7 @@ recording. The menu app writes its own snapshots to
 - **AVAudioEngine** — mic capture
 - **AVAudioFile** — streaming AAC encode into CAF
 - **FluidAudio / Parakeet** — on-device Core ML transcription
-- **WebRTC AEC3** — post-recording acoustic echo cancellation
+- **WebRTC AEC3**: live acoustic echo cancellation with post-recording recovery
 - **NSStatusItem + AppKit**: menu-bar controls, the meeting companion, Settings,
   and focused voice identification
 

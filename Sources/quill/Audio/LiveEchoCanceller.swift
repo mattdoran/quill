@@ -10,7 +10,8 @@ import WebRTCAudio
 /// is the unusual one. That offline pass stays as the fallback: this publishes
 /// `mic-cleaned.caf` only on a clean finish, and `EchoCancellation.clean()`
 /// returns early when it finds one, so an abandoned live pass simply means the
-/// old post-stop path runs.
+/// old post-stop path runs. The same aligned frames build the mono meeting mix,
+/// avoiding another full decode and encode after stop.
 ///
 /// `SetAudioBufferDelay(0)` in the bridge means the filter is told near and far
 /// are already sample-aligned, so alignment is this type's problem. Both tracks
@@ -19,6 +20,8 @@ import WebRTCAudio
 /// far track frame `i + farOffset`, which is the same relation the offline pass
 /// derives from the journal's `start_offset_ms`.
 final class LiveEchoCanceller: TrackMonitor, @unchecked Sendable {
+    static let meetingOutputName = "meeting.caf"
+
     /// Near audio held while far has not caught up. Beyond this the far track
     /// is treated as silent for the gap rather than stalling the pass: no
     /// cancellation over that stretch beats no transcript.
@@ -45,8 +48,11 @@ final class LiveEchoCanceller: TrackMonitor, @unchecked Sendable {
 
     private var canceller: QuillEchoCanceller?
     private var file: AVAudioFile?
+    private var meetingFile: AVAudioFile?
     private let partial: URL
     private let published: URL
+    private let meetingPartial: URL
+    private let meetingPublished: URL
 
     /// Near frame `i` reads far track frame `i + farOffset`. Unknown until both
     /// tracks have delivered a buffer, which is when the pump may start.
@@ -57,6 +63,7 @@ final class LiveEchoCanceller: TrackMonitor, @unchecked Sendable {
     private var far: [Float] = []
     private var farBase: Int64 = 0
     private var nextFrame: Int64 = 0
+    private var meetingStarted = false
 
     private var pumpScheduled = false
     private var abandoned = false
@@ -77,7 +84,12 @@ final class LiveEchoCanceller: TrackMonitor, @unchecked Sendable {
         self.partial = session.appendingPathComponent(
             "\(EchoCancellation.outputName).live"
         )
+        self.meetingPublished = session.appendingPathComponent(Self.meetingOutputName)
+        self.meetingPartial = session.appendingPathComponent(
+            "\(Self.meetingOutputName).live"
+        )
         try? FileManager.default.removeItem(at: partial)
+        try? FileManager.default.removeItem(at: meetingPartial)
 
         guard let canceller = quill_aec_create(Int32(rate)) else {
             log.warn("live aec: AEC3 initialization failed")
@@ -96,10 +108,25 @@ final class LiveEchoCanceller: TrackMonitor, @unchecked Sendable {
                 commonFormat: .pcmFormatFloat32,
                 interleaved: false
             )
+            meetingFile = try AVAudioFile(
+                forWriting: meetingPartial,
+                settings: [
+                    AVFormatIDKey: kAudioFormatMPEG4AAC,
+                    AVSampleRateKey: rate,
+                    AVNumberOfChannelsKey: 1,
+                    AVEncoderBitRateKey: 64_000,
+                ],
+                commonFormat: .pcmFormatFloat32,
+                interleaved: false
+            )
         } catch {
             quill_aec_destroy(canceller)
             self.canceller = nil
-            log.warn("live aec: couldn't open \(partial.lastPathComponent): \(error)")
+            file = nil
+            meetingFile = nil
+            try? FileManager.default.removeItem(at: partial)
+            try? FileManager.default.removeItem(at: meetingPartial)
+            log.warn("live aec: couldn't open live audio outputs: \(error)")
             return nil
         }
     }
@@ -132,6 +159,7 @@ final class LiveEchoCanceller: TrackMonitor, @unchecked Sendable {
             // No more far audio is coming, so anything still waiting on it is
             // processed against silence rather than held.
             pump(draining: true)
+            writeMeetingTail()
             publish()
         }
         lock.lock()
@@ -144,11 +172,13 @@ final class LiveEchoCanceller: TrackMonitor, @unchecked Sendable {
         guard !abandoned else { lock.unlock(); return }
         abandoned = true
         file = nil
+        meetingFile = nil
         near = []
         far = []
         lock.unlock()
-        log.warn("live aec: \(reason) — leaving the cleaned track to the offline pass")
+        log.warn("live aec: \(reason): leaving audio cleanup to offline finalization")
         try? FileManager.default.removeItem(at: partial)
+        try? FileManager.default.removeItem(at: meetingPartial)
     }
 
     // MARK: - TrackMonitor
@@ -219,6 +249,7 @@ final class LiveEchoCanceller: TrackMonitor, @unchecked Sendable {
         let batchFrames = 100
         while true {
             var output = [Float]()
+            var meetingOutput = [Float]()
             var stalled = false
             lock.lock()
             guard !abandoned, let canceller, let farOffset else { lock.unlock(); return }
@@ -295,7 +326,20 @@ final class LiveEchoCanceller: TrackMonitor, @unchecked Sendable {
                     abandon("AEC3 processing failed")
                     return
                 }
+                if !meetingStarted {
+                    if farOffset > 0 {
+                        for frame in 0..<Int(farOffset) {
+                            let farIndex = frame - Int(farBase)
+                            let sample = farIndex >= 0 && farIndex < far.count ? far[farIndex] : 0
+                            meetingOutput.append(sample * 0.7071)
+                        }
+                    }
+                    meetingStarted = true
+                }
                 output.append(contentsOf: scratchOut)
+                for frame in 0..<frameSize {
+                    meetingOutput.append(clamp((scratchOut[frame] + scratchFar[frame]) * 0.7071))
+                }
                 nextFrame += Int64(frameSize)
                 produced += 1
             }
@@ -304,6 +348,7 @@ final class LiveEchoCanceller: TrackMonitor, @unchecked Sendable {
             lock.unlock()
 
             if !output.isEmpty { write(output) }
+            if !meetingOutput.isEmpty { writeMeeting(meetingOutput) }
             if stalled || output.isEmpty { return }
         }
     }
@@ -330,6 +375,20 @@ final class LiveEchoCanceller: TrackMonitor, @unchecked Sendable {
         guard !abandoned, let file else { lock.unlock(); return }
         lock.unlock()
 
+        write(samples, to: file, label: "cleaned track")
+    }
+
+    private func writeMeeting(_ samples: [Float]) {
+        lock.lock()
+        guard !abandoned, let meetingFile else { lock.unlock(); return }
+        lock.unlock()
+
+        write(samples, to: meetingFile, label: "meeting mix")
+    }
+
+    private func write(_ samples: [Float], to file: AVAudioFile?, label: String) {
+        guard let file else { return }
+
         guard
             let format = AVAudioFormat(
                 commonFormat: .pcmFormatFloat32, sampleRate: rate, channels: 1, interleaved: false
@@ -349,8 +408,24 @@ final class LiveEchoCanceller: TrackMonitor, @unchecked Sendable {
         do {
             try file.write(from: buffer)
         } catch {
-            abandon("write failed: \(error)")
+            abandon("\(label) write failed: \(error)")
         }
+    }
+
+    private func writeMeetingTail() {
+        lock.lock()
+        guard !abandoned, meetingStarted, let farOffset else { lock.unlock(); return }
+        let start = nextFrame + farOffset
+        let offset = max(0, Int(start - farBase))
+        let samples = offset < far.count
+            ? far[offset...].map { clamp($0 * 0.7071) }
+            : []
+        lock.unlock()
+        if !samples.isEmpty { writeMeeting(samples) }
+    }
+
+    private func clamp(_ sample: Float) -> Float {
+        min(1, max(-1, sample))
     }
 
     private func publish() {
@@ -358,6 +433,7 @@ final class LiveEchoCanceller: TrackMonitor, @unchecked Sendable {
         guard !abandoned else { lock.unlock(); return }
         // Releasing the AVAudioFile is what finalizes it.
         file = nil
+        meetingFile = nil
         let seconds = Double(nextFrame) / rate
         lock.unlock()
 
@@ -366,9 +442,13 @@ final class LiveEchoCanceller: TrackMonitor, @unchecked Sendable {
                 try FileManager.default.removeItem(at: published)
             }
             try FileManager.default.moveItem(at: partial, to: published)
+            if FileManager.default.fileExists(atPath: meetingPublished.path) {
+                try FileManager.default.removeItem(at: meetingPublished)
+            }
+            try FileManager.default.moveItem(at: meetingPartial, to: meetingPublished)
             log.log(String(format: "live aec: cleaned %.1fs during the meeting", seconds))
         } catch {
-            abandon("couldn't publish the cleaned track: \(error)")
+            abandon("couldn't publish live audio outputs: \(error)")
         }
     }
 }
