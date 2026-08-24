@@ -155,10 +155,11 @@ process dies. M4A is reserved for the finished, human-facing layout.
 
 ### 3.3 The common clock
 
-The two files each begin at their own first buffer. `RecordingSession` records
-how many milliseconds each first buffer followed the earlier one as
-`start_offset_ms`. Within a track, silence padding makes frame `n` continue to
-mean `firstBufferAt + n / 48000`, including across capture outages.
+The two files each begin at their own first buffer. `SessionTimeline` rounds how
+many milliseconds each first buffer followed the earlier one to the nearest
+millisecond and records that once as `start_offset_ms`. Within a track, silence
+padding makes frame `n` continue to mean `firstBufferAt + n / 48000`, including
+across capture outages.
 
 This creates a global meeting position:
 
@@ -166,13 +167,14 @@ This creates a global meeting position:
 global position = track start offset + track frame / 48000
 ```
 
-AEC alignment, the meeting mix and transcript merging all use this same model.
+The capture journal, session manifest, live and offline AEC, meeting mix and
+transcript merging all use this same rounded-millisecond model. At 48 kHz its
+resolution is 48 frames. Accepted frames retain their track-local frame
+position and identify whether their samples were captured or inserted as
+silence.
+
 The model is based on buffer arrival `Date` values and accumulated frame counts,
-not the audio devices' host-time timestamps. Live AEC rounds the full-precision
-first-buffer difference directly to samples. Metadata truncates that difference
-to milliseconds, and offline AEC, mixing and transcript merging use the stored
-millisecond value. The paths therefore share the model but not an identical
-sample offset.
+not the audio devices' host-time timestamps.
 
 Gap repair only inserts silence when accumulated frames fall sufficiently behind
 elapsed wall time. It does not trim overlapping frames, correct a fast source
@@ -361,7 +363,8 @@ describe current tradeoffs, not established defects or settled changes.
 2. **Clock quality.** Alignment uses non-monotonic wall-clock buffer arrival and
    one-sided silence correction. It does not use Core Audio host timestamps,
    correct overlap or estimate long-term drift between independent device
-   clocks. Live and persisted offsets also use different quantization.
+   clocks. All consumers now share one rounded-millisecond offset, but that does
+   not improve the underlying clock source.
 3. **Retained source fidelity.** The durable source of truth is lossy AAC, not
    PCM. Live derivatives start from pre-encode PCM; offline recovery decodes AAC
    before AEC and mixing, so the two paths are deliberately comparable but not

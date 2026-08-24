@@ -685,3 +685,22 @@ zero skew from a corrupted offset but could not prove the caller's offset math.
 by 250 ms, preserve the exact meeting duration, and drop to 6.3 dB when the
 offset is deliberately corrupted by 200 ms. Real-session replay results are
 unchanged.
+
+## 2026-08-24: Use one persisted millisecond clock contract
+
+**Decision:** `SessionTimeline` rounds each source's first-buffer lag to the
+nearest millisecond once. The capture journal, session manifest, live and
+offline AEC, meeting mixing and transcript merging all use that value. Accepted
+frames also identify captured samples and silence inserted by `TrackWriter`.
+
+**Why:** Live AEC previously converted the full-precision `Date` difference
+directly to samples while every recoverable and offline path truncated it to
+milliseconds. The two paths could therefore disagree about alignment for the
+same session, and a future live consumer could not distinguish recorded input
+from gap repair.
+
+**Consequence:** One millisecond, 48 frames at the fixed 48 kHz rate, is the
+declared alignment resolution. The existing limitations remain explicit:
+buffer arrival uses non-monotonic wall time, overlapping frames are not trimmed,
+and independent device-clock drift is not corrected. A host-time or drift model
+requires measured need rather than being introduced for hypothetical live ASR.

@@ -231,6 +231,51 @@ import Testing
         #expect(try AVAudioFile(forReading: output).length == 14_400)
     }
 
+    @Test func acceptedFramesIdentifyCapturedAndInsertedSilence() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: directory, withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let format = try #require(AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: 48_000,
+            channels: 1,
+            interleaved: false
+        ))
+        let origins = LockedOrigins()
+        let mailbox = AcceptedFrameMailbox(
+            maxQueuedFrames: 96_000,
+            consume: {
+                origins.append($0.origin)
+                return true
+            },
+            onOverflow: {}
+        )
+        let writer = try TrackWriter(
+            url: directory.appendingPathComponent("mic.caf"),
+            format: format,
+            track: .microphone,
+            log: SessionLog(dir: directory),
+            watchSilence: false
+        )
+        writer.sendAcceptedFrames(to: mailbox)
+
+        let buffer = try #require(AVAudioPCMBuffer(
+            pcmFormat: format,
+            frameCapacity: 4_800
+        ))
+        buffer.frameLength = 4_800
+        writer.write(buffer)
+        writer.close(paddingTo: Date().addingTimeInterval(1))
+        mailbox.finish()
+
+        #expect(origins.values.first == .captured)
+        #expect(origins.values.contains(.insertedSilence))
+    }
+
     @Test @MainActor func asynchronousCloseSuspendsInsteadOfBlockingMainActor() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -328,5 +373,22 @@ private final class LockedMessages: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return messages
+    }
+}
+
+private final class LockedOrigins: @unchecked Sendable {
+    private let lock = NSLock()
+    private var origins: [AcceptedFrame.Origin] = []
+
+    func append(_ origin: AcceptedFrame.Origin) {
+        lock.lock()
+        origins.append(origin)
+        lock.unlock()
+    }
+
+    var values: [AcceptedFrame.Origin] {
+        lock.lock()
+        defer { lock.unlock() }
+        return origins
     }
 }

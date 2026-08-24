@@ -184,7 +184,10 @@ final class RecordingSession {
         // lags the earliest so transcript timestamps share one clock.
         let micStart = mic.firstBufferAt ?? startedAt
         let systemStart = system.firstBufferAt ?? startedAt
-        let earliest = min(micStart, systemStart)
+        let startOffsets = SessionTimeline.startOffsets(
+            microphoneStartedAt: micStart,
+            systemStartedAt: systemStart
+        )
 
         var files = SessionAudioFiles()
         var tracks = SessionTracks()
@@ -220,10 +223,7 @@ final class RecordingSession {
             ended: iso.string(from: ended),
             durationSeconds: Int(ended.timeIntervalSince(startedAt)),
             files: files,
-            startOffsets: SessionTrackOffsets(
-                microphone: Int(micStart.timeIntervalSince(earliest) * 1000),
-                system: Int(systemStart.timeIntervalSince(earliest) * 1000)
-            ),
+            startOffsets: startOffsets,
             tracks: tracks,
             audioState: files.hasSourceAudio ? nil : .empty
         )
@@ -277,7 +277,10 @@ final class RecordingSession {
             return
         }
         liveAECBegun = true
-        liveAEC.begin(nearStart: micStart, farStart: systemStart)
+        liveAEC.begin(startOffsets: SessionTimeline.startOffsets(
+            microphoneStartedAt: micStart,
+            systemStartedAt: systemStart
+        ))
     }
 
     private func publishJournalOffsetsIfReady() {
@@ -293,20 +296,17 @@ final class RecordingSession {
     }
 
     private func publishCaptureJournal() throws {
-        let earliest = min(mic.firstBufferAt ?? startedAt, system.firstBufferAt ?? startedAt)
+        let micStart = mic.firstBufferAt ?? startedAt
+        let systemStart = system.firstBufferAt ?? startedAt
         let journal = CaptureJournal(
             started: ISO8601DateFormatter().string(from: startedAt),
             files: SessionAudioFiles(
                 microphone: SessionFiles.internalPath("mic.caf"),
                 system: SessionFiles.internalPath("system.caf")
             ),
-            startOffsets: SessionTrackOffsets(
-                microphone: Int(
-                    (mic.firstBufferAt ?? earliest).timeIntervalSince(earliest) * 1000
-                ),
-                system: Int(
-                    (system.firstBufferAt ?? earliest).timeIntervalSince(earliest) * 1000
-                )
+            startOffsets: SessionTimeline.startOffsets(
+                microphoneStartedAt: micStart,
+                systemStartedAt: systemStart
             )
         )
         try SessionMetadataStore.writeJournal(journal, to: dir)

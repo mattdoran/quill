@@ -252,7 +252,7 @@ final class TrackWriter: @unchecked Sendable {
         }
         _lastBufferAt = now
         trackSilenceLocked(converted, at: now)
-        _ = writeLocked(converted)
+        _ = writeLocked(converted, origin: .captured)
         let failure = takeUnreportedFailureLocked()
         lock.unlock()
         if let failure { onWriteFailure?(failure) }
@@ -291,7 +291,10 @@ final class TrackWriter: @unchecked Sendable {
     }
 
     @discardableResult
-    private func writeLocked(_ buffer: AVAudioPCMBuffer) -> Bool {
+    private func writeLocked(
+        _ buffer: AVAudioPCMBuffer,
+        origin: AcceptedFrame.Origin
+    ) -> Bool {
         guard let file else { return false }
         do {
             try fileWrite(file, buffer)
@@ -303,7 +306,8 @@ final class TrackWriter: @unchecked Sendable {
                 let frame = AcceptedFrame(
                     copying: buffer,
                     track: track,
-                    startFrame: startFrame
+                    startFrame: startFrame,
+                    origin: origin
                 )
             {
                 acceptedFrames.offer(frame)
@@ -451,7 +455,7 @@ final class TrackWriter: @unchecked Sendable {
         }
         while remaining > 0 {
             silence.frameLength = min(chunk, remaining)
-            guard writeLocked(silence) else { return }
+            guard writeLocked(silence, origin: .insertedSilence) else { return }
             remaining -= silence.frameLength
         }
         _gaps.append(Gap(at: at, seconds: seconds))

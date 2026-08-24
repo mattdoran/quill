@@ -132,10 +132,15 @@ final class LiveEchoCanceller: @unchecked Sendable {
     }
 
     /// Called once both tracks have a first buffer, which fixes their offset.
-    func begin(nearStart: Date, farStart: Date) {
+    func begin(startOffsets: SessionTrackOffsets) {
         lock.lock()
         guard !abandoned, farOffset == nil else { lock.unlock(); return }
-        let offset = Int64((nearStart.timeIntervalSince(farStart) * rate).rounded())
+        let offset = SessionTimeline.frameOffset(
+            of: .microphone,
+            relativeTo: .system,
+            startOffsets: startOffsets,
+            sampleRate: rate
+        )
         farOffset = offset
         lock.unlock()
         log.log(String(

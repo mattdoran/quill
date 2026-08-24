@@ -16,6 +16,8 @@ is not in play.
 
 - Audio tap and IO closures must remain `@Sendable`. Main-actor isolation on a
   Core Audio callback compiled cleanly and then trapped on the realtime thread.
+- Derive live alignment through `SessionTimeline` from the persisted millisecond
+  offsets. Direct `Date`-to-sample conversion makes live and recovery disagree.
 - Optional accepted-frame consumers must run through their own bounded mailbox.
   Synchronous AEC once held the source writer lock until its archive queue could
   drop audio.

@@ -3,15 +3,22 @@ import Foundation
 
 /// Immutable mono PCM accepted by a source archive at a track-local position.
 struct AcceptedFrame: Sendable {
+    enum Origin: Sendable, Equatable {
+        case captured
+        case insertedSilence
+    }
+
     let track: SourceTrack
     let startFrame: AVAudioFramePosition
     let sampleRate: Double
     let samples: [Float]
+    let origin: Origin
 
     init?(
         copying buffer: AVAudioPCMBuffer,
         track: SourceTrack,
-        startFrame: AVAudioFramePosition
+        startFrame: AVAudioFramePosition,
+        origin: Origin
     ) {
         guard
             buffer.format.commonFormat == .pcmFormatFloat32,
@@ -23,6 +30,7 @@ struct AcceptedFrame: Sendable {
         self.startFrame = startFrame
         self.sampleRate = buffer.format.sampleRate
         self.samples = Array(UnsafeBufferPointer(start: source, count: Int(buffer.frameLength)))
+        self.origin = origin
     }
 }
 

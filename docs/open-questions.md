@@ -216,16 +216,15 @@ ASR can begin independently; their hypotheses acquire the existing
 `start_offset_ms` only when merged onto the meeting timeline. This avoids making
 either capture stream wait for the other merely so transcription can start.
 
-Before that frame type is stable, its clock contract must also settle:
+The current clock contract is explicit: `SessionTimeline` rounds first-buffer
+arrival offsets to the nearest millisecond, every live and persisted consumer
+uses those offsets, track positions count normalized 48 kHz frames, and accepted
+frames distinguish captured audio from inserted silence. It neither trims
+overlap nor corrects long-term device drift.
 
-- monotonic clock or Core Audio host-time provenance;
-- mapping source timestamps onto 48 kHz frame positions;
-- explicit discontinuity and inserted-silence semantics;
-- one offset rounding rule for live and persisted consumers; and
-- overlap and long-term device-drift policy.
-
-This need not change the current clock speculatively. It must be decided before
-live hypotheses from independent tracks are merged as one timeline.
+Replacing wall-clock arrival with Core Audio host time, and adding a drift
+policy, remain conditional work. They should be driven by measured alignment or
+live-transcription acceptance failures rather than changed speculatively.
 
 Live AEC complicates microphone input selection. A streaming engine could use
 the cleaned stream and need a reset or replay if AEC abandons, or use raw

@@ -335,11 +335,10 @@ struct CheckLiveAEC: ParsableCommand {
 
         // Before feeding, as the session does about a second in: the pump
         // cannot run without the offset, and audio piles up until it does.
-        let base = Date()
-        canceller.begin(
-            nearStart: base.addingTimeInterval(Double(nearOffsetMs) / 1000),
-            farStart: base.addingTimeInterval(Double(farOffsetMs) / 1000)
-        )
+        canceller.begin(startOffsets: SessionTrackOffsets(
+            microphone: nearOffsetMs,
+            system: farOffsetMs
+        ))
 
         try feed(nearWriter, farWriter)
         let ended = Date()
