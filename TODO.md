@@ -45,13 +45,25 @@ Work that remains. Product and architecture decisions live in
 
 ## Permissions
 
-- [ ] **Check permission state without prompting, and ask deliberately.** Today
-      the microphone and system-audio prompts fire on the first recording, so a
-      user's first meeting is the one macOS interrupts, and a denial surfaces
-      only as an `OSStatus` in `tapCreationFailed`. Read the current grant state
-      with `CGPreflightScreenCaptureAccess()` and
-      `AVCaptureDevice.authorizationStatus(for: .audio)`, both of which are
-      prompt-free, and show it in Settings. Trigger each grant from an explicit
-      Enable control: build a tap, wait for one buffer as proof the grant
-      landed, then tear it down. On refusal, deep-link the matching pane
-      (`x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture`).
+- [ ] **Ask for permissions deliberately, not on first record.** Today the
+      microphone and system-audio prompts fire during the first recording, and a
+      denial surfaces only as an `OSStatus` in `tapCreationFailed`. Both grants
+      should be requested from an explicit Enable control in Settings, and a
+      refusal should deep-link to its own pane:
+      `x-apple.systempreferences:com.apple.preference.security?Privacy_AudioCapture`
+      for the tap and `?Privacy_Microphone` for the microphone.
+      `Privacy_AudioCapture` is the anchor that matches `kTCCServiceAudioCapture`
+      and lands on the "System Audio Recording Only" list, which is where Quill
+      is granted. `Privacy_ScreenCapture` is a different anchor for a permission
+      Quill does not use.
+
+      The microphone side is easy: `AVCaptureDevice.authorizationStatus(for:
+      .audio)` reads the state without prompting.
+
+      The tap side has no public equivalent. It is gated by
+      `kTCCServiceAudioCapture`, confirmed in the TCC database, and no framework
+      exposes a prompt-free check for it. Granola reads it through the private
+      `TCCAccessPreflight` in TCC.framework. The alternative is to build a tap
+      and wait for one buffer, which is the request itself, so checking and
+      asking collapse into the same action. Decide which before building the
+      Settings UI, since a status display needs the check to be separable.
