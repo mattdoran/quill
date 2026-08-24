@@ -484,3 +484,20 @@ Upgrades retain the system's existing choice.
 failed, but an upgrade must not reverse a deliberate opt-out.
 
 **Consequence:** The initialization marker lives in the unified config file.
+
+## 2026-08-24: Capture the system tap as mono
+
+**Decision:** Pin the system track's file format to 1ch 48 kHz and average the
+tap's channels into it, rather than writing the tap's stereo format raw.
+
+**Why:** Every consumer already discarded the second channel. Echo cancellation
+averages the far end to a mono reference, ASR and diarization are mono, and
+`mix()` sums both tracks with no panning, so the published stereo carried
+duplicated speech at twice the size and twice the live encode cost.
+
+**Consequence:** The downmix is explicit in `TrackWriter`, because
+`AVAudioConverter` answers a 2ch to 1ch request with the left channel alone and
+would have silently dropped a right-panned participant. Single-channel content
+now lands at half amplitude, which is ordinary downmix behaviour. Sessions
+recorded before this keep their stereo system track; nothing reads the channel
+count.

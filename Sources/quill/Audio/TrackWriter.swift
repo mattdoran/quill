@@ -241,9 +241,58 @@ final class TrackWriter: @unchecked Sendable {
         }
     }
 
+    /// AVAudioConverter does not mix channels down: asked for 2ch to 1ch it
+    /// returns the left channel and discards the right, so a participant panned
+    /// right would vanish. Averaging has to happen here, before it runs.
+    private func downmixLocked(_ buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
+        let sourceChannels = Int(buffer.format.channelCount)
+        guard format.channelCount == 1, sourceChannels > 1 else { return buffer }
+
+        guard
+            let mono = AVAudioFormat(
+                commonFormat: .pcmFormatFloat32,
+                sampleRate: buffer.format.sampleRate,
+                channels: 1,
+                interleaved: false
+            ),
+            let out = AVAudioPCMBuffer(pcmFormat: mono, frameCapacity: buffer.frameLength),
+            let destination = out.floatChannelData?[0]
+        else {
+            log.warn("\(name): couldn't allocate downmix buffer")
+            return nil
+        }
+        out.frameLength = buffer.frameLength
+
+        let frames = Int(buffer.frameLength)
+        let scale = 1 / Float(sourceChannels)
+        let list = UnsafeMutableAudioBufferListPointer(
+            UnsafeMutablePointer(mutating: buffer.audioBufferList)
+        )
+        for frame in 0..<frames { destination[frame] = 0 }
+        if list.count == 1, let data = list[0].mData {
+            // Interleaved: one buffer carrying every channel.
+            let samples = data.assumingMemoryBound(to: Float.self)
+            for frame in 0..<frames {
+                var sum: Float = 0
+                for channel in 0..<sourceChannels {
+                    sum += samples[frame * sourceChannels + channel]
+                }
+                destination[frame] = sum * scale
+            }
+        } else {
+            for raw in list {
+                guard let data = raw.mData else { continue }
+                let samples = data.assumingMemoryBound(to: Float.self)
+                for frame in 0..<frames { destination[frame] += samples[frame] * scale }
+            }
+        }
+        return out
+    }
+
     /// The converter carries resampler filter state, so it is kept until the
     /// input format changes — which is exactly when a device swaps.
-    private func convertLocked(_ buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
+    private func convertLocked(_ input: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
+        guard let buffer = downmixLocked(input) else { return nil }
         if buffer.format == format { return buffer }
 
         if converterInput != buffer.format {

@@ -47,6 +47,14 @@ final class SystemAudioRecorder: Capture {
 
     var onInvalidated: ((String) -> Void)?
 
+    /// Fixed for the session. The tap mixes to stereo at the output device's
+    /// rate, but every consumer downstream averages the channels away: AEC uses
+    /// the far end as a mono reference, and ASR and diarization are mono. The
+    /// writer resamples and downmixes each tap format to this.
+    private static let fileFormat = AVAudioFormat(
+        commonFormat: .pcmFormatFloat32, sampleRate: 48000, channels: 1, interleaved: false
+    )!
+
     private var tapID = AudioObjectID(kAudioObjectUnknown)
     private var aggregateID = AudioObjectID(kAudioObjectUnknown)
     private var procID: AudioDeviceIOProcID?
@@ -78,15 +86,17 @@ final class SystemAudioRecorder: Capture {
         do {
             let format = try tapStreamFormat()
             try createAggregateDevice(tapUUID: description.uuid)
-            // Pinned to the first attach's tap format: a rebuild that comes
-            // back with a different one is resampled to this, not written raw.
             if writer == nil, let url, let log {
                 do {
                     // Silence on this track is indistinguishable from a dead
                     // tap — nobody playing anything gives exact zeroes — so it
                     // is not watched for.
                     writer = try TrackWriter(
-                        url: url, format: format, name: name, log: log, watchSilence: false
+                        url: url,
+                        format: Self.fileFormat,
+                        name: name,
+                        log: log,
+                        watchSilence: false
                     )
                 } catch {
                     throw RecorderError.fileCreationFailed(error)
