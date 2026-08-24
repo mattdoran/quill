@@ -501,3 +501,24 @@ would have silently dropped a right-panned participant. Single-channel content
 now lands at half amplitude, which is ordinary downmix behaviour. Sessions
 recorded before this keep their stereo system track; nothing reads the channel
 count.
+
+## 2026-08-24: Cancel echo live, keeping the offline pass as fallback
+
+**Decision:** Run AEC3 during the meeting from a `TrackMonitor` on both
+`TrackWriter`s, publishing `mic-cleaned.caf` only on a clean finish.
+`EchoCancellation.clean()` stays exactly as it was and runs when that file is
+absent.
+
+**Why:** Echo cancellation was ~70s of the ~126s a 53 minute meeting spent after
+stop, shown as an indeterminate spinner. AEC3 is a streaming block algorithm, so
+live is its native mode and costs about 2% of a core spread across the meeting.
+
+**Consequence:** Alignment moves from the journal's `start_offset_ms` to the
+live path, because the bridge reports zero buffer delay and so trusts the caller
+to sample-align near and far. The monitor fires inside `TrackWriter`'s write
+lock and must only copy. Live never blocks capture: it abandons and leaves the
+work to the offline pass rather than applying backpressure. The two paths are
+not sample-identical, because offline reads the tracks back through AAC while
+live sees them before the encode; measured on `check-live-aec`, live holds
+14-16 dB ERLE across track skews of 0-250ms where a deliberately corrupted
+offset drops it to 6 dB.

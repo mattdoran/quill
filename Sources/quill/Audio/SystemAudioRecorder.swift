@@ -60,6 +60,9 @@ final class SystemAudioRecorder: Capture {
     private var procID: AudioDeviceIOProcID?
     private let liveness = LivenessClock()
     private var writer: TrackWriter?
+    /// The writer waits for the first attach, so a monitor set before then is
+    /// held until there is something to attach it to.
+    private var pendingMonitor: (any TrackMonitor)?
     private var url: URL?
     private var log: SessionLog?
     private let queue = DispatchQueue(label: "com.mattdoran.quill.system-tap")
@@ -70,6 +73,11 @@ final class SystemAudioRecorder: Capture {
     func prepare(writingTo url: URL, log: SessionLog) {
         self.url = url
         self.log = log
+    }
+
+    func monitor(with monitor: any TrackMonitor) {
+        pendingMonitor = monitor
+        writer?.monitor(with: monitor)
     }
 
     func attach() throws {
@@ -91,13 +99,15 @@ final class SystemAudioRecorder: Capture {
                     // Silence on this track is indistinguishable from a dead
                     // tap — nobody playing anything gives exact zeroes — so it
                     // is not watched for.
-                    writer = try TrackWriter(
+                    let created = try TrackWriter(
                         url: url,
                         format: Self.fileFormat,
                         name: name,
                         log: log,
                         watchSilence: false
                     )
+                    if let pendingMonitor { created.monitor(with: pendingMonitor) }
+                    writer = created
                 } catch {
                     throw RecorderError.fileCreationFailed(error)
                 }

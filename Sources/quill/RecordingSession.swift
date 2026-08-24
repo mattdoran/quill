@@ -40,6 +40,8 @@ final class RecordingSession {
     private var deviceWatcher: AudioDevices.Watcher?
     private var ticker: Timer?
     private var journalHasOffsets = false
+    private var liveAEC: LiveEchoCanceller?
+    private var liveAECBegun = false
 
     private static let folderFormat: DateFormatter = {
         let f = DateFormatter()
@@ -77,6 +79,18 @@ final class RecordingSession {
         system.prepare(writingTo: SessionFiles.internalFile("system.caf", in: dir), log: log)
         try mic.prepare(writingTo: SessionFiles.internalFile("mic.caf", in: dir), log: log)
 
+        if let canceller = LiveEchoCanceller(
+            session: SessionFiles.internalDirectory(dir),
+            rate: MicRecorder.trackSampleRate,
+            nearName: mic.name,
+            farName: system.name,
+            log: log
+        ) {
+            mic.monitor(with: canceller)
+            system.monitor(with: canceller)
+            liveAEC = canceller
+        }
+
         let systemSupervisor = supervise(system)
         let micSupervisor = supervise(mic)
         do {
@@ -103,6 +117,7 @@ final class RecordingSession {
                 guard let self else { return }
                 self.supervisors.forEach { $0.tick() }
                 self.publishJournalOffsetsIfReady()
+                self.alignLiveEchoCancellerIfReady()
                 self.reportDeadTracks()
                 self.reportEveryoneGone()
             }
@@ -120,6 +135,18 @@ final class RecordingSession {
         let ended = Date()
         supervisors.forEach { $0.stop(at: ended) }
         supervisors = []
+
+        // After the writers close, so every frame has been handed over.
+        if let liveAEC {
+            let started = Date()
+            let published = liveAEC.finish()
+            self.liveAEC = nil
+            if published {
+                log.log(String(
+                    format: "live aec: drained in %.1fs", Date().timeIntervalSince(started)
+                ))
+            }
+        }
 
         let iso = ISO8601DateFormatter()
 
@@ -187,6 +214,24 @@ final class RecordingSession {
             [weak self] message in
             self?.report(message)
         }
+    }
+
+    /// The two tracks' offset is only known once both have delivered a buffer.
+    /// A system tap that never delivers leaves nothing to cancel against, and
+    /// the offline pass needs both tracks too, so give up rather than hold
+    /// audio for a meeting that is already running.
+    private func alignLiveEchoCancellerIfReady() {
+        guard let liveAEC, !liveAECBegun else { return }
+        guard let micStart = mic.firstBufferAt, let systemStart = system.firstBufferAt else {
+            if Date().timeIntervalSince(startedAt) > 30 {
+                liveAECBegun = true
+                liveAEC.abandon("only one track started within 30s")
+                self.liveAEC = nil
+            }
+            return
+        }
+        liveAECBegun = true
+        liveAEC.begin(nearStart: micStart, farStart: systemStart)
     }
 
     private func publishJournalOffsetsIfReady() {

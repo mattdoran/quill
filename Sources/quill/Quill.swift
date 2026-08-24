@@ -9,7 +9,7 @@ struct Quill: ParsableCommand {
         abstract: "Local meeting recorder + transcriber. Records mic and system audio as two tracks, then transcribes on-device.",
         subcommands: [
             Run.self, Doctor.self, Install.self, Diarize.self, WatchCalls.self,
-            PreviewCompanion.self, PreviewVoices.self,
+            PreviewCompanion.self, PreviewVoices.self, CheckLiveAEC.self,
         ],
         defaultSubcommand: Run.self
     )

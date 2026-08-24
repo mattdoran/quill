@@ -27,8 +27,11 @@ final class MicRecorder: Capture {
     /// Fixed for the session. An AAC file's rate is set at creation and the
     /// capture device's is not — AirPods arrive at 24 kHz, the built-in mic at
     /// 48 — so the writer resamples every route to this.
+    static let trackSampleRate: Double = 48000
+
     private static let fileFormat = AVAudioFormat(
-        commonFormat: .pcmFormatFloat32, sampleRate: 48000, channels: 1, interleaved: false
+        commonFormat: .pcmFormatFloat32, sampleRate: trackSampleRate,
+        channels: 1, interleaved: false
     )!
 
     let name = "mic"
@@ -62,6 +65,11 @@ final class MicRecorder: Capture {
         } catch {
             throw RecorderError.fileCreationFailed(error)
         }
+    }
+
+    /// Set after `prepare` and before capture starts.
+    func monitor(with monitor: any TrackMonitor) {
+        writer?.monitor(with: monitor)
     }
 
     func attach() throws {

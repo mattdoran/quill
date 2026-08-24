@@ -3,6 +3,17 @@
 @preconcurrency import AVFoundation
 import Foundation
 
+/// Receives every frame a track writes, silence padding included, so a monitor
+/// sees exactly the timeline that lands in the file.
+///
+/// Called on the writer's queue while it holds its lock: copy and return.
+/// Calling back into the writer from here deadlocks.
+protocol TrackMonitor: AnyObject, Sendable {
+    func trackDidWrite(
+        _ buffer: AVAudioPCMBuffer, at frame: AVAudioFramePosition, from name: String
+    )
+}
+
 /// Owns one track's output file, outliving the capture graphs that feed it.
 ///
 /// Buffers are resampled and downmixed to the file's fixed format. A gap in
@@ -61,6 +72,7 @@ final class TrackWriter: @unchecked Sendable {
     private var pending = 0
     private var droppedReported = false
 
+    private var monitor: (any TrackMonitor)?
     private var file: AVAudioFile?
     private var converter: AVAudioConverter?
     private var converterInput: AVAudioFormat?
@@ -172,6 +184,13 @@ final class TrackWriter: @unchecked Sendable {
         }
     }
 
+    /// Set before capture starts; every frame written afterwards is reported.
+    func monitor(with monitor: any TrackMonitor) {
+        lock.lock()
+        defer { lock.unlock() }
+        self.monitor = monitor
+    }
+
     /// Padding to `date` keeps a track that died early the same length as one
     /// that didn't.
     func close(paddingTo date: Date) {
@@ -235,6 +254,7 @@ final class TrackWriter: @unchecked Sendable {
         guard let file else { return }
         do {
             try file.write(from: buffer)
+            monitor?.trackDidWrite(buffer, at: frames, from: name)
             frames += AVAudioFramePosition(buffer.frameLength)
         } catch {
             log.warn("\(name): write failed: \(error)")
