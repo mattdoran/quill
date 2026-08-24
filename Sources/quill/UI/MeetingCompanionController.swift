@@ -2,8 +2,8 @@ import AppKit
 
 @MainActor
 final class MeetingCompanionController: NSObject, NSWindowDelegate {
-    private static let expandedSize = NSSize(width: 380, height: 72)
-    private static let collapsedSize = NSSize(width: 48, height: 72)
+    static let expandedSize = NSSize(width: 380, height: 72)
+    static let collapsedSize = NSSize(width: 40, height: 58)
 
     private let panel: MeetingCompanionPanel
     private let content = MeetingCompanionView()
@@ -461,7 +461,7 @@ final class MeetingCompanionView: NSVisualEffectView {
             systemSymbolName: "circle.fill",
             accessibilityDescription: nil
         )
-        collapsedSymbol.symbolConfiguration = .init(pointSize: 18, weight: .medium)
+        collapsedSymbol.symbolConfiguration = .init(pointSize: 14, weight: .medium)
         collapsedSymbol.contentTintColor = .systemRed
         collapsedSymbol.setAccessibilityElement(false)
         collapsedSymbol.isHidden = true
@@ -529,13 +529,13 @@ final class MeetingCompanionView: NSVisualEffectView {
         ]
         collapsedConstraints = [
             collapsedSymbol.centerXAnchor.constraint(equalTo: centerXAnchor),
-            collapsedSymbol.topAnchor.constraint(equalTo: topAnchor, constant: 11),
-            collapsedSymbol.widthAnchor.constraint(equalToConstant: 24),
-            collapsedSymbol.heightAnchor.constraint(equalToConstant: 24),
+            collapsedSymbol.topAnchor.constraint(equalTo: topAnchor, constant: 9),
+            collapsedSymbol.widthAnchor.constraint(equalToConstant: 20),
+            collapsedSymbol.heightAnchor.constraint(equalToConstant: 20),
             expandButton.centerXAnchor.constraint(equalTo: centerXAnchor),
-            expandButton.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -7),
-            expandButton.widthAnchor.constraint(equalToConstant: 28),
-            expandButton.heightAnchor.constraint(equalToConstant: 22),
+            expandButton.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -6),
+            expandButton.widthAnchor.constraint(equalToConstant: 24),
+            expandButton.heightAnchor.constraint(equalToConstant: 18),
         ]
         NSLayoutConstraint.activate(expandedConstraints)
         NSLayoutConstraint.activate([
@@ -685,7 +685,7 @@ final class MeetingCompanionView: NSVisualEffectView {
         isCollapsedPresentation = true
         NSLayoutConstraint.deactivate(expandedConstraints)
         NSLayoutConstraint.activate(collapsedConstraints)
-        layer?.cornerRadius = 20
+        layer?.cornerRadius = 16
         closeButton.isHidden = true
         symbol.isHidden = true
         titleLabel.isHidden = true

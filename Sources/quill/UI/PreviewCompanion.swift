@@ -43,7 +43,7 @@ struct PreviewCompanion: ParsableCommand {
             for appearance in ["light", "dark"] {
                 for (name, state) in states {
                     let view = MeetingCompanionView(
-                        frame: NSRect(x: 0, y: 0, width: 380, height: 72)
+                        frame: NSRect(origin: .zero, size: MeetingCompanionController.expandedSize)
                     )
                     view.appearance = NSAppearance(
                         named: appearance == "dark" ? .darkAqua : .aqua
@@ -67,7 +67,7 @@ struct PreviewCompanion: ParsableCommand {
                 }
 
                 let collapsed = MeetingCompanionView(
-                    frame: NSRect(x: 0, y: 0, width: 48, height: 72)
+                    frame: NSRect(origin: .zero, size: MeetingCompanionController.collapsedSize)
                 )
                 collapsed.appearance = NSAppearance(
                     named: appearance == "dark" ? .darkAqua : .aqua
@@ -89,7 +89,7 @@ struct PreviewCompanion: ParsableCommand {
             }
 
             let accessible = MeetingCompanionView(
-                frame: NSRect(x: 0, y: 0, width: 380, height: 72)
+                frame: NSRect(origin: .zero, size: MeetingCompanionController.expandedSize)
             )
             accessible.appearance = NSAppearance(named: .aqua)
             accessible.applyAccessibilityOptions(

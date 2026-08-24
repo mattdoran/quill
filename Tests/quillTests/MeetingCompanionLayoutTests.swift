@@ -23,7 +23,7 @@ import Testing
 
         for state in states {
             let view = MeetingCompanionView(
-                frame: NSRect(x: 0, y: 0, width: 380, height: 72)
+                frame: NSRect(origin: .zero, size: MeetingCompanionController.expandedSize)
             )
             view.render(state)
             view.layoutSubtreeIfNeeded()
@@ -31,7 +31,7 @@ import Testing
         }
 
         let collapsed = MeetingCompanionView(
-            frame: NSRect(x: 0, y: 0, width: 48, height: 72)
+            frame: NSRect(origin: .zero, size: MeetingCompanionController.collapsedSize)
         )
         collapsed.renderCollapsed(elapsed: "12:34:56")
         collapsed.layoutSubtreeIfNeeded()
