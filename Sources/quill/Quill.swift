@@ -106,6 +106,7 @@ final class AppController {
     private var settings: SettingsWindowController?
     private var voiceReview: VoiceReviewWindowController?
     private var session: RecordingSession?
+    private var stoppingTask: Task<Void, Never>?
     private var isStarting = false
     private var callObserver: CallObservationController?
     private var promptedCallApplication: CallApplication?
@@ -255,10 +256,13 @@ final class AppController {
 
     /// Stop any live session cleanly (finalizing files) and exit.
     func shutdown() {
-        stopSession()
         callObserver?.stop()
         retentionTimer?.invalidate()
-        NSApp.terminate(nil)
+        let stoppingTask = beginStoppingSession()
+        Task {
+            await stoppingTask?.value
+            NSApp.terminate(nil)
+        }
     }
 
     private func toggle() {
@@ -355,11 +359,18 @@ final class AppController {
         self.ticker = ticker
     }
 
-    private func stopSession() {
+    private func stopSession() async {
         guard let session else { return }
+        let dir = session.dir
+        processingSession = dir
+        ticker?.invalidate()
+        ticker = nil
+        menuBar.update(recording: false, elapsed: nil)
+        menuBar.updateTranscription("Finishing audio…")
+
         var hasRecordedAudio = true
         do {
-            hasRecordedAudio = try session.stop()
+            hasRecordedAudio = try await session.stop()
         } catch {
             FileHandle.standardError.write(Data(
                 "recording metadata publication failed: \(error)\n".utf8
@@ -376,9 +387,6 @@ final class AppController {
         self.session = nil
         recordingCallApplication = nil
         recordingCallToken = nil
-        ticker?.invalidate()
-        ticker = nil
-        menuBar.update(recording: false, elapsed: nil)
 
         guard hasRecordedAudio else {
             processingSession = nil
@@ -386,9 +394,6 @@ final class AppController {
             return
         }
 
-        let dir = session.dir
-        processingSession = dir
-        menuBar.updateTranscription("Finishing audio…")
         Task { [weak self, transcription] in
             do {
                 try await AudioFinalizer.shared.finalize(session: dir)
@@ -407,9 +412,20 @@ final class AppController {
     }
 
     private func requestStopSession() {
-        guard session != nil else { return }
+        _ = beginStoppingSession()
+    }
+
+    private func beginStoppingSession() -> Task<Void, Never>? {
+        if let stoppingTask { return stoppingTask }
+        guard session != nil else { return nil }
         companion.handle(.stopRequested)
-        DispatchQueue.main.async { [weak self] in self?.stopSession() }
+        let task = Task { [weak self] in
+            guard let self else { return }
+            await stopSession()
+            stoppingTask = nil
+        }
+        stoppingTask = task
+        return task
     }
 
     private func callStarted(_ application: CallApplication) {

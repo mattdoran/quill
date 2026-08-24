@@ -147,6 +147,10 @@ final class SystemAudioRecorder: Capture {
         writer?.close(paddingTo: date)
     }
 
+    func closeAsync(at date: Date) async {
+        await writer?.closeAsync(paddingTo: date)
+    }
+
     // MARK: -
 
     private func tapStreamFormat() throws -> AVAudioFormat {

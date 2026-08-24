@@ -128,6 +128,10 @@ final class MicRecorder: Capture {
         writer?.close(paddingTo: date)
     }
 
+    func closeAsync(at date: Date) async {
+        await writer?.closeAsync(paddingTo: date)
+    }
+
     // MARK: -
 
     /// A route change stops the engine and discards its taps, reporting nothing

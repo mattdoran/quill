@@ -147,6 +147,12 @@ final class CaptureSupervisor {
         capture.close(at: date)
     }
 
+    /// Detaches the realtime graph without draining its archive queue.
+    func detachForStop() {
+        if state != .stopped { capture.detach() }
+        state = .stopped
+    }
+
     func invalidate(_ reason: String) {
         guard state == .capturing else { return }
         log.warn("\(capture.name): \(reason)")

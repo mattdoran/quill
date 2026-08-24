@@ -19,6 +19,8 @@ is not in play.
 - Optional accepted-frame consumers must run through their own bounded mailbox.
   Synchronous AEC once held the source writer lock until its archive queue could
   drop audio.
+- Keep source, mailbox and live-processor drains off the main actor during stop.
+  A near-limit backlog otherwise freezes the controls before `Finishing audio`.
 - Treat signing as a functional audio change. Hardened runtime without
   `com.apple.security.device.audio-input` produced correctly sized silent files.
 - Keep `com.apple.WebKit.GPU` normalized as Safari; the coverage tradeoff is

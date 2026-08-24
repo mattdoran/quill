@@ -216,6 +216,21 @@ final class TrackWriter: @unchecked Sendable {
         // Drains everything already queued before closing, since `work` is
         // serial.
         work.sync { self.closeDraining(paddingTo: date) }
+        reportCloseFailure()
+    }
+
+    /// Suspends the caller while the archive queue drains.
+    func closeAsync(paddingTo date: Date) async {
+        await withCheckedContinuation { continuation in
+            work.async { [self] in
+                closeDraining(paddingTo: date)
+                reportCloseFailure()
+                continuation.resume()
+            }
+        }
+    }
+
+    private func reportCloseFailure() {
         lock.lock()
         let failure = takeUnreportedFailureLocked()
         lock.unlock()

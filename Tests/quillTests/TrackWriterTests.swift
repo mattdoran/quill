@@ -230,6 +230,70 @@ import Testing
         #expect(healthyOverflows.value == 0)
         #expect(try AVAudioFile(forReading: output).length == 14_400)
     }
+
+    @Test @MainActor func asynchronousCloseSuspendsInsteadOfBlockingMainActor() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: directory, withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let format = try #require(AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: 48_000,
+            channels: 1,
+            interleaved: false
+        ))
+        let writeStarted = DispatchSemaphore(value: 0)
+        let releaseWrite = DispatchSemaphore(value: 0)
+        let fallbackUsed = LockedCounter()
+        let writer = try TrackWriter(
+            url: directory.appendingPathComponent("mic.caf"),
+            format: format,
+            track: .microphone,
+            log: SessionLog(dir: directory),
+            watchSilence: false,
+            fileWrite: { file, buffer in
+                writeStarted.signal()
+                releaseWrite.wait()
+                try file.write(from: buffer)
+            }
+        )
+        let buffer = try #require(AVAudioPCMBuffer(
+            pcmFormat: format,
+            frameCapacity: 4_800
+        ))
+        buffer.frameLength = 4_800
+        writer.write(buffer)
+        let didStart = await Task.detached {
+            waitForSemaphore(writeStarted, timeout: .now() + 1)
+        }.value
+        #expect(didStart == .success)
+
+        let close = Task { @MainActor in
+            await writer.closeAsync(paddingTo: Date())
+        }
+        let fallback = DispatchWorkItem {
+            _ = fallbackUsed.increment()
+            releaseWrite.signal()
+        }
+        DispatchQueue.global().asyncAfter(deadline: .now() + 1, execute: fallback)
+        await Task.yield()
+
+        #expect(fallbackUsed.value == 0)
+        fallback.cancel()
+        releaseWrite.signal()
+        await close.value
+        #expect(try AVAudioFile(forReading: directory.appendingPathComponent("mic.caf")).length == 4_800)
+    }
+}
+
+private func waitForSemaphore(
+    _ semaphore: DispatchSemaphore,
+    timeout: DispatchTime
+) -> DispatchTimeoutResult {
+    semaphore.wait(timeout: timeout)
 }
 
 private final class LockedCounter: @unchecked Sendable {

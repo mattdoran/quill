@@ -2,6 +2,23 @@
 
 Dated product and architecture decisions. Newest first.
 
+## 2026-08-24: Make stop an asynchronous lifecycle boundary
+
+**Decision:** Stop detaches both realtime capture graphs on the main actor, then
+suspends while source archives close concurrently. Accepted-frame delivery,
+live AEC finishing and manifest IO also run off the main actor. Duplicate stop
+requests share the one in-progress stop task, and shutdown waits for it before
+terminating.
+
+**Why:** `RecordingSession.stop()` synchronously drained source and live queues
+on the main actor. Normal stops were quick, but a near-limit backlog could freeze
+the menu and companion at the exact moment the user requested feedback.
+
+**Consequence:** The interface enters `Finishing audio` immediately and remains
+responsive while the same close, failure reconciliation and publication order
+completes. A blocked-writer regression test proves archive draining suspends
+rather than blocks the main actor.
+
 ## 2026-08-24: Give offline audio preparation one owner
 
 **Decision:** `AudioPreparation` resolves safe source paths, validates cleaned

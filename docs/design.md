@@ -218,12 +218,14 @@ The live path is bounded and fail-open:
 - partial derivative files are removed; and
 - the two source CAF files continue recording unchanged.
 
-On stop, the source writers drain and pad to the shared wall-clock end first.
-The accepted-frame mailbox then drains before `LiveEchoCanceller.finish()`
+On stop, the realtime graphs detach on the main actor. Both source writers then
+drain concurrently and pad to the shared wall-clock end while the main actor is
+suspended. The accepted-frame mailbox drains before `LiveEchoCanceller.finish()`
 drains the processor queue, closes both AAC writers and renames both live
-partials to their internal final names. A normal publication makes both
-available. Because the two renames are sequential, a failure on the second can
-leave the first available for the finalizer to discover independently.
+partials to their internal final names. Manifest IO also runs off-main. A normal
+publication makes both derivatives available. Because the two renames are
+sequential, a failure on the second can leave the first available for the
+finalizer to discover independently.
 
 ## 5. Audio finalization
 
@@ -379,14 +381,10 @@ describe current tradeoffs, not established defects or settled changes.
 7. **Publication boundary.** Individual M4As precede the atomic metadata update.
    Recovery is idempotent, but the session directory is not transactionally
    replaced as a unit.
-8. **Stop latency.** Source queues, the accepted-frame mailbox and the live AEC
-   queue are drained synchronously during `RecordingSession.stop()`. Normal
-   operation leaves little work, but a near-limit backlog can delay the UI's
-   transition into asynchronous finalization.
-9. **Best-effort degradation.** AEC or one-track transcription failure produces
+8. **Best-effort degradation.** AEC or one-track transcription failure produces
    the best remaining artifact and records the loss in logs. This favors getting
    a result, but quality degradation is less visible than total capture failure.
-10. **Health versus metering.** Audible-level reporting is optional product
+9. **Health versus metering.** Audible-level reporting is optional product
     state, but exact digital silence on the microphone can trigger capture graph
     rebuilding. A future consumer split must keep capture-health evidence on a
     reliable path rather than treating all level analysis as droppable metering.

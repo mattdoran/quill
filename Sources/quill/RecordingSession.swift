@@ -148,23 +148,28 @@ final class RecordingSession {
 
     /// Stop both tracks and write meta.json.
     @discardableResult
-    func stop() throws -> Bool {
+    func stop() async throws -> Bool {
         isStopping = true
         ticker?.invalidate()
         ticker = nil
         deviceWatcher = nil
 
         let ended = Date()
-        supervisors.forEach { $0.stop(at: ended) }
+        supervisors.forEach { $0.detachForStop() }
         supervisors = []
+        async let microphoneClosed: Void = mic.closeAsync(at: ended)
+        async let systemClosed: Void = system.closeAsync(at: ended)
+        _ = await (microphoneClosed, systemClosed)
         captureArchiveFailures()
 
         // After the writers close, so every accepted frame is already queued.
-        liveFrames?.finish()
+        if let liveFrames {
+            await Task.detached { liveFrames.finish() }.value
+        }
         liveFrames = nil
         if let liveAEC {
             let started = Date()
-            let published = liveAEC.finish()
+            let published = await Task.detached { liveAEC.finish() }.value
             self.liveAEC = nil
             if published {
                 log.log(String(
@@ -223,7 +228,10 @@ final class RecordingSession {
             audioState: files.hasSourceAudio ? nil : .empty
         )
         do {
-            try SessionMetadataStore.writeManifest(meta, to: dir)
+            let sessionDir = dir
+            try await Task.detached {
+                try SessionMetadataStore.writeManifest(meta, to: sessionDir)
+            }.value
             try? FileManager.default.removeItem(at: SessionFiles.captureJournal(dir))
         } catch {
             log.warn("couldn't publish meta.json: \(error)")
