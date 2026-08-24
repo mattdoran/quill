@@ -1,9 +1,22 @@
-<?xml version="1.0" encoding="utf-8"?>
-<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
-  <channel>
-    <title>Quill Updates</title>
-    <link>https://github.com/mattdoran/quill</link>
-    <description>Signed updates for Quill.</description>
-    <language>en</language>
-  </channel>
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+    <channel>
+        <title>Quill Updates</title>
+        <link>https://github.com/mattdoran/quill</link>
+        <description>Signed updates for Quill.</description>
+        <language>en</language>
+        <item>
+            <title>0.4.0-beta.1</title>
+            <pubDate>Mon, 24 Aug 2026 21:07:01 +1000</pubDate>
+            <link>https://github.com/mattdoran/quill</link>
+            <sparkle:channel>beta</sparkle:channel>
+            <sparkle:version>81</sparkle:version>
+            <sparkle:shortVersionString>0.4.0-beta.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description sparkle:format="markdown"><![CDATA[**Full Changelog**: https://github.com/mattdoran/quill/commits/v0.4.0-beta.1
+]]></description>
+            <enclosure url="https://github.com/mattdoran/quill/releases/download/v0.4.0-beta.1/Quill-0.4.0-beta.1.zip" length="4799393" type="application/octet-stream" sparkle:edSignature="DZkorT/Py3NY7AA8I+U/gjCkrULI4qtJ6IIXdV/el9vfV95tC900zCptqOphsKbsKge5HioRWbECP1h8gt+VDQ=="/>
+        </item>
+    </channel>
 </rss>
