@@ -14,8 +14,8 @@ if [ "$#" -ne 0 ]; then
     exit 64
 fi
 
-SIGN_IDENTITY=""
-NOTARY_PROFILE=""
+SIGN_IDENTITY="${SIGN_IDENTITY:-}"
+NOTARY_PROFILE="${NOTARY_PROFILE:-}"
 # shellcheck source=/dev/null
 [ -f "$root/signing.conf" ] && . "$root/signing.conf"
 if [ -z "$SIGN_IDENTITY" ]; then

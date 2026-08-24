@@ -361,16 +361,17 @@ is on disk.
 
 The source plist carries a development train such as `0.4.0-dev`. A release tag
 selects `0.4.0-beta.N` or `0.4.0` for the output bundle, while the first-parent
-commit count supplies Sparkle's strictly increasing numeric build. The release
-archive contains the complete app bundle, including `Sparkle.framework`, and
-is protected independently by Developer ID signing, Apple notarization and
-Sparkle EdDSA signing.
+commit count supplies Sparkle's strictly increasing numeric build. Every beta
+and stable release packages that bundle twice: a DMG for first installation and
+a ZIP referenced by the appcast. Both contain the complete app, including
+`Sparkle.framework`. Developer ID signing and Apple notarization protect both;
+Sparkle EdDSA additionally signs the updater ZIP.
 
-`release.sh build` is local-only and produces a receipt binding the archive to
-its tag, commit, build, hash and signature. `release.sh publish` verifies that
-receipt before creating the tag and GitHub Release. The appcast is published
-last, so a client cannot discover an archive that is not already public and
-verified.
+`release.sh build` is local-only and produces a receipt binding both artifacts
+to their tag, commit, build and hashes, plus the ZIP's Sparkle signature.
+`release.sh publish` verifies that receipt before creating the tag and GitHub
+Release. The appcast is published last, so a client cannot discover an archive
+that is not already public and verified.
 
 ## 10. Critique surface
 

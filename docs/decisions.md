@@ -2,6 +2,21 @@
 
 Dated product and architecture decisions. Newest first.
 
+## 2026-08-24: Publish a DMG and updater ZIP for every release
+
+**Decision:** Every beta and stable GitHub Release contains a signed, notarized
+DMG for first installation and a ZIP for Sparkle. Both are built from the same
+version-stamped app. The appcast references only the ZIP.
+
+**Why:** A DMG provides the conventional drag-to-Applications installation,
+while ZIP is the simpler invisible updater transport. Omitting the DMG from
+betas prevents a new tester from joining the beta channel without a separate
+local build.
+
+**Consequence:** The release receipt binds both artifacts by hash, publication
+uploads and downloads both for verification, and either channel can be
+installed directly from its GitHub Release page.
+
 ## 2026-08-24: Publish signed updates from one resumable release script
 
 **Decision:** Quill uses Sparkle's standard updater with periodic checks and a

@@ -21,6 +21,13 @@ Starting a fresh session? Read these in order:
 
 ## Install
 
+For a normal first installation, download the DMG from the
+[latest stable GitHub Release](https://github.com/mattdoran/quill/releases/latest),
+open it, and drag Quill to Applications. Beta testers use the DMG attached to
+the relevant prerelease.
+
+To build and install from a checkout:
+
 ```sh
 cd quill
 swift build -c release
@@ -80,12 +87,17 @@ The source plist names the exact release being developed, such as
 ./release.sh publish
 ```
 
-`build` runs tests and the AEC controls, creates a Developer ID signed and
-notarized ZIP, signs it with Sparkle and writes
-`.build/publish/release.json`. It does not change GitHub. `publish` is the
-external boundary: it creates and pushes the tag, publishes the GitHub Release
-asset, generates the appcast, then commits and pushes the appcast last to
-activate the update.
+`build` runs tests and the AEC controls, then creates a Developer ID signed and
+notarized ZIP and DMG from the same app. It signs the ZIP with Sparkle and
+writes `.build/publish/release.json` with both artifact hashes. It does not
+change GitHub. `publish` is the external boundary: it creates and pushes the
+tag, publishes both GitHub Release assets, generates the appcast against the
+ZIP, then commits and pushes the appcast last to activate the update.
+
+Every beta and stable GitHub Release carries both artifacts. People install
+Quill from the DMG; Sparkle consumes the ZIP. The latest stable download is on
+the [GitHub Releases page](https://github.com/mattdoran/quill/releases/latest),
+while beta testers use the relevant prerelease page.
 
 After `0.4.0` is published, prepare the next development train explicitly:
 

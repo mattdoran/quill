@@ -154,6 +154,8 @@ write_receipt() {
     /usr/bin/plutil -insert commit -string "$(git -C "$root" rev-parse HEAD)" "$receipt"
     /usr/bin/plutil -insert archive -string "$archive" "$receipt"
     /usr/bin/plutil -insert sha256 -string "$archive_sha" "$receipt"
+    /usr/bin/plutil -insert dmg -string "$dmg" "$receipt"
+    /usr/bin/plutil -insert dmgSha256 -string "$dmg_sha" "$receipt"
     /usr/bin/plutil -insert edSignature -string "$ed_signature" "$receipt"
     /usr/bin/plutil -convert json "$receipt"
 }
@@ -180,14 +182,21 @@ build_release() {
 
     app="$root/.build/release/Quill.app"
     archive="$publish_dir/Quill-$version.zip"
+    dmg_source="$root/.build/release/Quill-$version.dmg"
+    dmg="$publish_dir/Quill-$version.dmg"
     /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$app" "$archive"
+    "$root/build-dmg.sh" --notarize
+    cp "$dmg_source" "$dmg"
     codesign --verify --deep --strict "$app"
     xcrun stapler validate "$app"
+    codesign --verify --strict "$dmg"
+    xcrun stapler validate "$dmg"
     [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
         "$app/Contents/Info.plist")" = "$version" ] || die "bundle version mismatch"
     [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' \
         "$app/Contents/Info.plist")" = "$build_number" ] || die "bundle build mismatch"
     archive_sha=$(shasum -a 256 "$archive" | awk '{print $1}')
+    dmg_sha=$(shasum -a 256 "$dmg" | awk '{print $1}')
     ed_signature=$($sparkle_bin/sign_update -p "$archive")
     "$sparkle_bin/sign_update" --verify "$archive" "$ed_signature"
     write_receipt
@@ -207,6 +216,8 @@ publish_release() {
     expected_commit=$(receipt_value commit)
     archive=$(receipt_value archive)
     expected_sha=$(receipt_value sha256)
+    dmg=$(receipt_value dmg)
+    expected_dmg_sha=$(receipt_value dmgSha256)
     ed_signature=$(receipt_value edSignature)
     [ "$(git -C "$root" rev-parse HEAD)" = "$expected_commit" ] \
         || die "HEAD no longer matches the built release"
@@ -214,6 +225,11 @@ publish_release() {
     [ -f "$archive" ] || die "release archive is missing"
     [ "$(shasum -a 256 "$archive" | awk '{print $1}')" = "$expected_sha" ] \
         || die "release archive changed after verification"
+    [ -f "$dmg" ] || die "release DMG is missing"
+    [ "$(shasum -a 256 "$dmg" | awk '{print $1}')" = "$expected_dmg_sha" ] \
+        || die "release DMG changed after verification"
+    codesign --verify --strict "$dmg"
+    xcrun stapler validate "$dmg"
     "$sparkle_bin/sign_update" --verify "$archive" "$ed_signature"
 
     if git -C "$root" rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
@@ -229,20 +245,24 @@ publish_release() {
         [ "$channel" = beta ] && release_args="$release_args --prerelease"
         # Repository and tag values are validated constants or parsed release tags.
         # shellcheck disable=SC2086
-        gh release create "$tag" "$archive" $release_args
-    else
-        verify_dir=$(mktemp -d "$publish_dir/verify.XXXXXX")
-        if ! gh release download "$tag" --repo "$repo" \
-            --pattern "$(basename "$archive")" --dir "$verify_dir" 2>/dev/null
-        then
-            gh release upload "$tag" "$archive" --repo "$repo"
-            gh release download "$tag" --repo "$repo" \
-                --pattern "$(basename "$archive")" --dir "$verify_dir"
-        fi
-        cmp "$archive" "$verify_dir/$(basename "$archive")" \
-            || die "published release asset differs from the receipt"
-        rm -rf "$verify_dir"
+        gh release create "$tag" "$archive" "$dmg" $release_args
     fi
+
+    verify_dir=$(mktemp -d "$publish_dir/verify.XXXXXX")
+    for asset in "$archive" "$dmg"
+    do
+        asset_name=$(basename "$asset")
+        if ! gh release download "$tag" --repo "$repo" \
+            --pattern "$asset_name" --dir "$verify_dir" 2>/dev/null
+        then
+            gh release upload "$tag" "$asset" --repo "$repo"
+            gh release download "$tag" --repo "$repo" \
+                --pattern "$asset_name" --dir "$verify_dir"
+        fi
+        cmp "$asset" "$verify_dir/$asset_name" \
+            || die "published $asset_name differs from the receipt"
+    done
+    rm -rf "$verify_dir"
 
     appcast_dir=$(mktemp -d "$publish_dir/appcast.XXXXXX")
     cp "$archive" "$appcast_dir/"
