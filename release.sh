@@ -165,7 +165,7 @@ build_release() {
     export CLANG_MODULE_CACHE_PATH="${CLANG_MODULE_CACHE_PATH:-/private/tmp/quill-clang-cache}"
     export SWIFTPM_MODULECACHE_OVERRIDE="${SWIFTPM_MODULECACHE_OVERRIDE:-/private/tmp/quill-swiftpm-cache}"
     export QUILL_HOME="${QUILL_HOME:-/private/tmp/quill-release-home}"
-    "$swift" test -c release
+    "$swift" test
     "$swift" build -c release
     run_audio_checks
 

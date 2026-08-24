@@ -80,8 +80,8 @@ The source plist names the exact release being developed, such as
 ./release.sh publish
 ```
 
-`build` runs tests in release configuration, runs the AEC controls, creates a
-Developer ID signed and notarized ZIP, signs it with Sparkle and writes
+`build` runs tests and the AEC controls, creates a Developer ID signed and
+notarized ZIP, signs it with Sparkle and writes
 `.build/publish/release.json`. It does not change GitHub. `publish` is the
 external boundary: it creates and pushes the tag, publishes the GitHub Release
 asset, generates the appcast, then commits and pushes the appcast last to
