@@ -146,7 +146,7 @@ run_audio_checks() {
 }
 
 write_receipt() {
-    /usr/bin/plutil -create json "$receipt"
+    /usr/bin/plutil -create xml1 "$receipt"
     /usr/bin/plutil -insert tag -string "$tag" "$receipt"
     /usr/bin/plutil -insert version -string "$version" "$receipt"
     /usr/bin/plutil -insert build -integer "$build_number" "$receipt"
@@ -155,6 +155,7 @@ write_receipt() {
     /usr/bin/plutil -insert archive -string "$archive" "$receipt"
     /usr/bin/plutil -insert sha256 -string "$archive_sha" "$receipt"
     /usr/bin/plutil -insert edSignature -string "$ed_signature" "$receipt"
+    /usr/bin/plutil -convert json "$receipt"
 }
 
 build_release() {
