@@ -2,6 +2,24 @@
 
 Dated product and architecture decisions. Newest first.
 
+## 2026-08-24: Keep complete keyboard access and add a fast naming path
+
+**Decision:** Transcript review gives initial focus to the first speaker name.
+Tab follows the visible control order, including each sample button. Return in a
+name advances directly to the next name, and Return in the final name saves.
+Content refreshes restore the focused control when it still exists.
+
+**Why:** Removing sample buttons from the Tab loop would make rapid name entry
+faster by making a keyboard-only action unreachable. A separate Return path
+keeps every control navigable while making repeated naming efficient.
+
+**Consequence:** Focus order is explicit and tested rather than derived from
+AppKit view hierarchy. Accessibility help announces the Return behavior, and
+Settings controls expose purpose-specific labels rather than relying on nearby
+visual text. Quill installs standard application, File, Edit and Window menus;
+text commands route through the first responder while Quit retains Quill's safe
+recording shutdown.
+
 ## 2026-08-24: Publish a DMG and updater ZIP for every release
 
 **Decision:** Every beta and stable GitHub Release contains a signed, notarized

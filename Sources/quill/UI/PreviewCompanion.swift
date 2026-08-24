@@ -94,7 +94,8 @@ struct PreviewCompanion: ParsableCommand {
             accessible.appearance = NSAppearance(named: .aqua)
             accessible.applyAccessibilityOptions(
                 reduceTransparency: true,
-                increaseContrast: true
+                increaseContrast: true,
+                reduceMotion: true
             )
             accessible.render(states[1].1)
             accessible.layoutSubtreeIfNeeded()

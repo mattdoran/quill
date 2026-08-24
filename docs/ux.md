@@ -567,6 +567,15 @@ justified by a coherent completion flow, audio playback and identity management
 that Markdown cannot do.
 Those file actions sit at the footer's left. `Close` and, after separation,
 `Save Names` sit at the right. Standard window controls remain available.
+The first speaker name receives initial keyboard focus. Tab follows visible
+control order and includes each sample button; Return advances directly through
+the name fields and saves from the final name. Rebuilding the review after a
+save or speaker-separation state change preserves the focused control when that
+control still exists.
+While review gives Quill regular application presence, its standard Edit menu
+routes Cut, Copy, Paste, Undo and Select All through the focused text control.
+Copy therefore works in the selectable transcript, while Quit still completes
+Quill's recording shutdown path.
 Closing with changed names offers Save, Don't Save and Cancel; closing never
 implies that optional speaker review is complete.
 The stable IDs, human label map and segments live together in schema v1 of the

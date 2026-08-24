@@ -100,6 +100,7 @@ struct Doctor: ParsableCommand {
 final class AppController {
     private var root: URL
     private let menuBar = MenuBarController()
+    private let applicationMenu = ApplicationMenuController()
     private let updater = UpdaterController()
     private let companion = MeetingCompanionController()
     private let transcription = TranscriptionCoordinator()
@@ -127,6 +128,8 @@ final class AppController {
 
     init(root: URL) {
         self.root = root
+        applicationMenu.onQuit = { [weak self] in self?.shutdown() }
+        applicationMenu.install()
         menuBar.onToggle = { [weak self] in self?.toggle() }
         menuBar.onShowRecordingControls = { [weak self] in
             self?.companion.showRecordingControls()

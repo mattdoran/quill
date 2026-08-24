@@ -404,6 +404,7 @@ final class MeetingCompanionView: NSVisualEffectView {
     private var dragStartLocation: NSPoint?
     private var dragStartWindowOrigin: NSPoint?
     private var draggedCollapsedPill = false
+    private var reduceMotion = false
 
     var onAction: (() -> Void)?
     var onDismiss: (() -> Void)?
@@ -547,7 +548,8 @@ final class MeetingCompanionView: NSVisualEffectView {
 
         applyAccessibilityOptions(
             reduceTransparency: NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency,
-            increaseContrast: NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
+            increaseContrast: NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast,
+            reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         )
         NSWorkspace.shared.notificationCenter.addObserver(
             self,
@@ -707,6 +709,8 @@ final class MeetingCompanionView: NSVisualEffectView {
         timeoutBar.isHidden = false
         layoutSubtreeIfNeeded()
         guard let layer = timeoutBar.layer else { return }
+        layer.removeAllAnimations()
+        guard !reduceMotion else { return }
         let frame = layer.frame
         layer.anchorPoint = CGPoint(x: 0, y: 0.5)
         layer.position = CGPoint(x: frame.minX, y: frame.midY)
@@ -720,7 +724,13 @@ final class MeetingCompanionView: NSVisualEffectView {
         layer.add(animation, forKey: "meeting-timeout")
     }
 
-    func applyAccessibilityOptions(reduceTransparency: Bool, increaseContrast: Bool) {
+    func applyAccessibilityOptions(
+        reduceTransparency: Bool,
+        increaseContrast: Bool,
+        reduceMotion: Bool
+    ) {
+        self.reduceMotion = reduceMotion
+        if reduceMotion { timeoutBar.layer?.removeAllAnimations() }
         layer?.backgroundColor = reduceTransparency
             ? NSColor.windowBackgroundColor.cgColor
             : NSColor.clear.cgColor
@@ -733,6 +743,10 @@ final class MeetingCompanionView: NSVisualEffectView {
          actionButton, collapsedSymbol, expandButton]
             .filter { !$0.isHidden }
             .allSatisfy { bounds.contains($0.convert($0.bounds, to: self)) }
+    }
+
+    func detectionCountdownIsAnimating() -> Bool {
+        timeoutBar.layer?.animation(forKey: "meeting-timeout") != nil
     }
 
     override func updateTrackingAreas() {
@@ -813,7 +827,8 @@ final class MeetingCompanionView: NSVisualEffectView {
     @objc private func accessibilityDisplayOptionsChanged() {
         applyAccessibilityOptions(
             reduceTransparency: NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency,
-            increaseContrast: NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
+            increaseContrast: NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast,
+            reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         )
     }
 

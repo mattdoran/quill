@@ -15,6 +15,7 @@ final class SettingsWindowController: NSWindowController {
         target: nil,
         action: nil
     )
+    private let changeFolderButton = NSButton(title: "Change…", target: nil, action: nil)
     private let modelStatus = NSTextField(labelWithString: "")
     private let modelButton = NSButton(title: "", target: nil, action: nil)
 
@@ -27,6 +28,7 @@ final class SettingsWindowController: NSWindowController {
         )
         window.title = "Quill Settings"
         window.isReleasedWhenClosed = false
+        window.autorecalculatesKeyViewLoop = false
         window.center()
         super.init(window: window)
         buildContent()
@@ -39,6 +41,9 @@ final class SettingsWindowController: NSWindowController {
         showWindow(nil)
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
+        let initial = openAtLogin.isEnabled ? openAtLogin : changeFolderButton
+        window?.initialFirstResponder = initial
+        window?.makeFirstResponder(initial)
     }
 
     func refresh() {
@@ -83,22 +88,22 @@ final class SettingsWindowController: NSWindowController {
 
         pathLabel.lineBreakMode = .byTruncatingMiddle
         pathLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        let change = NSButton(
-            title: "Change…",
-            target: self,
-            action: #selector(changeFolderClicked)
-        )
+        pathLabel.setAccessibilityLabel("Recordings folder")
+        changeFolderButton.target = self
+        changeFolderButton.action = #selector(changeFolderClicked)
+        changeFolderButton.setAccessibilityLabel("Change recordings folder")
         stack.addArrangedSubview(section("General"))
         openAtLogin.target = self
         openAtLogin.action = #selector(loginChanged)
         stack.addArrangedSubview(row(label: "", controls: [openAtLogin]))
-        stack.addArrangedSubview(row(label: "Folder", controls: [pathLabel, change]))
+        stack.addArrangedSubview(row(label: "Folder", controls: [pathLabel, changeFolderButton]))
 
         stack.addArrangedSubview(separator())
         stack.addArrangedSubview(section("Storage"))
         retention.addItems(withTitles: Config.AudioRetention.allCases.map(\.title))
         retention.target = self
         retention.action = #selector(retentionChanged)
+        retention.setAccessibilityLabel("Source audio retention")
         stack.addArrangedSubview(row(label: "Source audio", controls: [retention]))
 
         stack.addArrangedSubview(separator())
@@ -108,7 +113,13 @@ final class SettingsWindowController: NSWindowController {
 
         modelButton.target = self
         modelButton.action = #selector(modelClicked)
+        modelStatus.setAccessibilityLabel("Transcription models status")
         stack.addArrangedSubview(row(label: "Models", controls: [modelStatus, modelButton]))
+
+        openAtLogin.nextKeyView = changeFolderButton
+        changeFolderButton.nextKeyView = retention
+        retention.nextKeyView = modelButton
+        modelButton.nextKeyView = openAtLogin
     }
 
     private func section(_ title: String) -> NSTextField {
@@ -142,9 +153,11 @@ final class SettingsWindowController: NSWindowController {
             formatter.countStyle = .file
             modelStatus.stringValue = "Downloaded (\(formatter.string(fromByteCount: ModelDownload.cachedBytes)))"
             modelButton.title = "Remove…"
+            modelButton.setAccessibilityLabel("Remove transcription models")
         } else {
             modelStatus.stringValue = "Not downloaded (about 600 MB)"
             modelButton.title = "Download"
+            modelButton.setAccessibilityLabel("Download transcription models")
         }
         modelButton.isEnabled = true
     }
