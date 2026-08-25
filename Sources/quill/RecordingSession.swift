@@ -42,6 +42,7 @@ final class RecordingSession {
     private var isStopping = false
 
     private let log: SessionLog
+    private let clockDiagnostics: ClockDiagnostics
     private let mic = MicRecorder()
     private let system = SystemAudioRecorder()
     private var supervisors: [CaptureSupervisor] = []
@@ -73,6 +74,10 @@ final class RecordingSession {
         _ = try SessionFiles.prepare(candidate)
         dir = candidate
         log = SessionLog(dir: candidate)
+        clockDiagnostics = ClockDiagnostics(
+            url: SessionFiles.clockObservations(candidate),
+            log: log
+        )
     }
 
     /// Start both tracks. If the mic fails after the system tap started, the
@@ -85,8 +90,16 @@ final class RecordingSession {
         )
         deviceWatcher = AudioDevices.Watcher(log: log)
 
-        system.prepare(writingTo: SessionFiles.internalFile("system.caf", in: dir), log: log)
-        try mic.prepare(writingTo: SessionFiles.internalFile("mic.caf", in: dir), log: log)
+        system.prepare(
+            writingTo: SessionFiles.internalFile("system.caf", in: dir),
+            log: log,
+            clockDiagnostics: clockDiagnostics
+        )
+        try mic.prepare(
+            writingTo: SessionFiles.internalFile("mic.caf", in: dir),
+            log: log,
+            clockDiagnostics: clockDiagnostics
+        )
         mic.onArchiveFailed = { [weak self] detail in
             self?.archiveFailed(name: "mic", detail: detail)
         }
@@ -123,6 +136,7 @@ final class RecordingSession {
             // an empty dated directory every time.
             let ended = Date()
             [systemSupervisor, micSupervisor].forEach { $0.stop(at: ended) }
+            clockDiagnostics.finish()
             log.warn("session aborted: \(error)")
             log.close()
             try? FileManager.default.removeItem(at: dir)
@@ -160,6 +174,7 @@ final class RecordingSession {
         async let microphoneClosed: Void = mic.closeAsync(at: ended)
         async let systemClosed: Void = system.closeAsync(at: ended)
         _ = await (microphoneClosed, systemClosed)
+        clockDiagnostics.finish()
         captureArchiveFailures()
 
         // After the writers close, so every accepted frame is already queued.

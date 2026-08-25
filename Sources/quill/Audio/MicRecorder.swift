@@ -51,10 +51,15 @@ final class MicRecorder: Capture {
     private var writer: TrackWriter?
     private var log: SessionLog?
     private var configurationObserver: NSObjectProtocol?
+    private var routeEpoch = -1
 
     /// Use a .caf extension: CAF needs no finalization pass, so a crash loses
     /// nothing already written.
-    func prepare(writingTo url: URL, log: SessionLog) throws {
+    func prepare(
+        writingTo url: URL,
+        log: SessionLog,
+        clockDiagnostics: ClockDiagnostics? = nil
+    ) throws {
         self.log = log
         do {
             let writer = try TrackWriter(
@@ -62,7 +67,8 @@ final class MicRecorder: Capture {
                 format: Self.fileFormat,
                 track: .microphone,
                 log: log,
-                watchSilence: true
+                watchSilence: true,
+                clockDiagnostics: clockDiagnostics
             )
             writer.onProlongedSilence = { [weak self] in
                 Task { @MainActor in self?.onInvalidated?("capturing digital silence") }
@@ -83,6 +89,8 @@ final class MicRecorder: Capture {
 
     func attach() throws {
         guard let writer else { throw RecorderError.notPrepared }
+        routeEpoch += 1
+        let epoch = routeEpoch
 
         engine = AVAudioEngine()
         let input = engine.inputNode
@@ -95,9 +103,12 @@ final class MicRecorder: Capture {
         // @Sendable required: the tap runs on the render thread, and inherited
         // main-actor isolation traps the process there.
         input.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) {
-            @Sendable [weak writer, liveness] buffer, _ in
+            @Sendable [weak writer, liveness] buffer, time in
             liveness.mark()
-            writer?.write(buffer)
+            writer?.write(
+                buffer,
+                clock: CaptureClockStamp(time: time, routeEpoch: epoch)
+            )
         }
 
         engine.prepare()

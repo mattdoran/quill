@@ -67,14 +67,21 @@ final class SystemAudioRecorder: Capture {
     private var pendingAcceptedFrames: (any AcceptedFrameSink)?
     private var url: URL?
     private var log: SessionLog?
+    private var clockDiagnostics: ClockDiagnostics?
+    private var routeEpoch = -1
     private let queue = DispatchQueue(label: "com.mattdoran.quill.system-tap")
 
     /// Use a .caf extension: CAF needs no finalization pass, so a crash
     /// mid-meeting loses nothing already written. The file itself waits for the
     /// first attach, when the tap's format is known.
-    func prepare(writingTo url: URL, log: SessionLog) {
+    func prepare(
+        writingTo url: URL,
+        log: SessionLog,
+        clockDiagnostics: ClockDiagnostics? = nil
+    ) {
         self.url = url
         self.log = log
+        self.clockDiagnostics = clockDiagnostics
     }
 
     func sendAcceptedFrames(to sink: any AcceptedFrameSink) {
@@ -83,6 +90,7 @@ final class SystemAudioRecorder: Capture {
     }
 
     func attach() throws {
+        routeEpoch += 1
         let description = CATapDescription(stereoGlobalTapButExcludeProcesses: [])
         description.name = "quill system tap"
         description.isPrivate = true
@@ -106,7 +114,8 @@ final class SystemAudioRecorder: Capture {
                         format: Self.fileFormat,
                         track: .system,
                         log: log,
-                        watchSilence: false
+                        watchSilence: false,
+                        clockDiagnostics: clockDiagnostics
                     )
                     if let pendingAcceptedFrames {
                         created.sendAcceptedFrames(to: pendingAcceptedFrames)
@@ -194,15 +203,26 @@ final class SystemAudioRecorder: Capture {
         // inherited main-actor isolation traps the process on the first buffer.
         let writer = writer
         let liveness = liveness
+        let epoch = routeEpoch
         var status = AudioDeviceCreateIOProcIDWithBlock(&procID, aggregateID, queue) {
-            @Sendable _, inInputData, _, _, _ in
+            @Sendable inNow, inInputData, inInputTime, _, _ in
             liveness.mark()
             guard let buffer = AVAudioPCMBuffer(
                 pcmFormat: format,
                 bufferListNoCopy: inInputData,
                 deallocator: nil
             ) else { return }
-            writer?.write(buffer)
+            writer?.write(
+                buffer,
+                clock: CaptureClockStamp(
+                    time: inInputTime.pointee,
+                    sampleRate: format.sampleRate,
+                    routeEpoch: epoch,
+                    fallbackHostTime: inNow.pointee.mFlags.contains(.hostTimeValid)
+                        ? inNow.pointee.mHostTime
+                        : AudioGetCurrentHostTime()
+                )
+            )
         }
         guard status == noErr, let procID else { throw RecorderError.ioProcCreationFailed(status) }
 

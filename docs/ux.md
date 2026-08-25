@@ -522,7 +522,8 @@ builds it incrementally; recovery can rebuild the same artifact from retained
 source tracks. The separate tracks support voice samples, verification and
 reprocessing. With Finder's normal hidden-file setting, the root presents only
 the three human-facing items. `.quill/` contains metadata, recovery journals,
-canonical transcript data, logs, temporary CAF capture files and M4A staging.
+canonical transcript data, logs, clock observations, temporary CAF capture
+files and M4A staging.
 
 Finalization keeps CAF inputs until each M4A has the expected duration and
 decodes completely, then publishes new metadata atomically before deleting the

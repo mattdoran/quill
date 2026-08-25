@@ -16,6 +16,9 @@ is not in play.
 
 - Audio tap and IO closures must remain `@Sendable`. Main-actor isolation on a
   Core Audio callback compiled cleanly and then trapped on the realtime thread.
+- Preserve callback clock timestamps, but keep sampling and
+  `clock-observations.jsonl` IO on `TrackWriter`'s queue, never the realtime
+  callback.
 - Derive live alignment through `SessionTimeline` from the persisted millisecond
   offsets. Direct `Date`-to-sample conversion makes live and recovery disagree.
 - Preserve `Sparkle.framework` symlinks and sign its nested helpers inside-out

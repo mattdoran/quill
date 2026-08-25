@@ -173,8 +173,19 @@ resolution is 48 frames. Accepted frames retain their track-local frame
 position and identify whether their samples were captured or inserted as
 silence.
 
-The model is based on buffer arrival `Date` values and accumulated frame counts,
-not the audio devices' host-time timestamps.
+The active alignment model is based on buffer arrival `Date` values and
+accumulated frame counts. It does not yet use the audio devices' timestamps to
+alter captured audio. For diagnosis, both recorders retain the callback's
+device sample position and Core Audio host time once per minute and at the first
+buffer of every route epoch. `TrackWriter` adds the corresponding normalized
+48 kHz frame position after the source write succeeds.
+
+The sparse observations land in `.quill/clock-observations.jsonl`. At stop,
+Quill fits device and normalized frame rate against the common monotonic host
+clock for each uninterrupted route, then writes rate error, timing residual and
+relative microphone-to-system drift to `session.log`. Diagnostics are
+non-authoritative and fail open: capture continues if their file cannot be
+written. They measure the current contract without correcting it.
 
 Gap repair only inserts silence when accumulated frames fall sufficiently behind
 elapsed wall time. It does not trim overlapping frames, correct a fast source
@@ -300,6 +311,7 @@ speech recognition.
 | `.quill/mic.caf` | Normalized microphone capture | Yes until source M4A publication | Never modified by AEC |
 | `.quill/system.caf` | Normalized global playback capture | Yes until source M4A publication | Never modified by AEC |
 | `.quill/capture.json` | Interrupted-capture journal | Temporarily | Reconstructs `meta.json` |
+| `.quill/clock-observations.jsonl` | Sparse device and normalized clock anchors | No | Diagnostic only; capture does not depend on it |
 | `.quill/mic-cleaned.caf` | Live or offline AEC derivative | No | Rebuildable from sources |
 | `.quill/meeting.caf` | Live mono mix derivative | No | Validated or rebuilt |
 | `.quill/meta.json` | Current paths, offsets and capture facts | Yes | Atomically replaced |
@@ -402,10 +414,11 @@ describe current tradeoffs, not established defects or settled changes.
    session state now have explicit owners, but the remaining lifecycle and
    publication boundaries are still broad.
 2. **Clock quality.** Alignment uses non-monotonic wall-clock buffer arrival and
-   one-sided silence correction. It does not use Core Audio host timestamps,
-   correct overlap or estimate long-term drift between independent device
-   clocks. All consumers now share one rounded-millisecond offset, but that does
-   not improve the underlying clock source.
+   one-sided silence correction. Quill now measures Core Audio host timestamps
+   and long-term rate error, but does not use those observations to correct
+   overlap or drift between independent device clocks. All consumers share one
+   rounded-millisecond offset, which does not improve the underlying clock
+   source.
 3. **Retained source fidelity.** The durable source of truth is lossy AAC, not
    PCM. Live derivatives start from pre-encode PCM; offline recovery decodes AAC
    before AEC and mixing, so the two paths are deliberately comparable but not

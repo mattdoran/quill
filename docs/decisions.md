@@ -2,6 +2,28 @@
 
 Dated product and architecture decisions. Newest first.
 
+## 2026-08-25: Measure capture clocks before correcting drift
+
+**Decision:** Persist sparse callback-clock observations for each source and
+route epoch in `.quill/clock-observations.jsonl`. Record the device sample
+position, Core Audio host time and normalized output frame every minute, then
+summarize fitted device rate, normalized rate, residual timing error and
+relative microphone-to-system drift in `session.log`. Do not correct the audio
+timeline yet.
+
+**Why:** Initial alignment cannot reveal long-term drift, and final file lengths
+conflate oscillator error with startup offset, callback jitter, resampling,
+route changes and inserted silence. Both capture APIs already supply timestamps
+in the common Core Audio host-time domain. Measuring those timestamps during a
+long real meeting can establish whether correction is necessary and what model
+the evidence supports.
+
+**Consequence:** Clock observations are non-authoritative diagnostics and never
+block source capture. They are sampled and written only after the corresponding
+source frame reaches the archive writer queue, not from the realtime callback.
+A future clock reconciler must be justified against these observations and
+preserve route changes as separate timing epochs.
+
 ## 2026-08-24: Normalize terminal and non-terminal Swift builds
 
 **Decision:** Shared builds run through `build.sh`, which selects Apple Swift

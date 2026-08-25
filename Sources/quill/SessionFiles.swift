@@ -31,6 +31,9 @@ enum SessionFiles {
     static func sessionLog(_ session: URL) -> URL {
         internalFile("session.log", in: session)
     }
+    static func clockObservations(_ session: URL) -> URL {
+        internalFile("clock-observations.jsonl", in: session)
+    }
     static func transcriptionLog(_ session: URL) -> URL {
         internalFile("transcribe.log", in: session)
     }

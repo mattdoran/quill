@@ -60,6 +60,7 @@ final class TrackWriter: @unchecked Sendable {
     private let track: SourceTrack
     private var name: String { track.rawValue }
     private let log: SessionLog
+    private let clockDiagnostics: ClockDiagnostics?
     private let lock = NSLock()
     private let work = DispatchQueue(label: "com.mattdoran.quill.track-writer", qos: .utility)
     private let pendingLock = NSLock()
@@ -90,12 +91,14 @@ final class TrackWriter: @unchecked Sendable {
         track: SourceTrack,
         log: SessionLog,
         watchSilence: Bool,
+        clockDiagnostics: ClockDiagnostics? = nil,
         fileWrite: ((AVAudioFile, AVAudioPCMBuffer) throws -> Void)? = nil
     ) throws {
         self.format = format
         self.track = track
         self.log = log
         self.watchSilence = watchSilence
+        self.clockDiagnostics = clockDiagnostics
         self.fileWrite = fileWrite ?? { file, buffer in try file.write(from: buffer) }
         // Silence and peak both walk raw sample memory as Float. The system tap
         // hands back interleaved stereo, so layout is not assumed, but the
@@ -169,8 +172,8 @@ final class TrackWriter: @unchecked Sendable {
     /// buffer, stamps its arrival and hands it off. Resampling, AAC encode and
     /// the disk write all happen on `work`, where a slow disk costs latency
     /// rather than dropped buffers.
-    func write(_ buffer: AVAudioPCMBuffer) {
-        let now = Date()
+    func write(_ buffer: AVAudioPCMBuffer, clock: CaptureClockStamp? = nil) {
+        let now = clock?.observedAt ?? Date()
         pendingLock.lock()
         guard accepting else {
             pendingLock.unlock()
@@ -196,7 +199,7 @@ final class TrackWriter: @unchecked Sendable {
         }
 
         work.async { [self] in
-            consume(copy, at: now)
+            consume(copy, at: now, clock: clock)
             pendingLock.lock()
             pending -= 1
             pendingLock.unlock()
@@ -239,7 +242,11 @@ final class TrackWriter: @unchecked Sendable {
 
     // MARK: -
 
-    private func consume(_ buffer: AVAudioPCMBuffer, at now: Date) {
+    private func consume(
+        _ buffer: AVAudioPCMBuffer,
+        at now: Date,
+        clock: CaptureClockStamp?
+    ) {
         lock.lock()
         guard file != nil else { lock.unlock(); return }
 
@@ -252,9 +259,18 @@ final class TrackWriter: @unchecked Sendable {
         }
         _lastBufferAt = now
         trackSilenceLocked(converted, at: now)
-        _ = writeLocked(converted, origin: .captured)
+        let startFrame = frames
+        let written = writeLocked(converted, origin: .captured)
         let failure = takeUnreportedFailureLocked()
         lock.unlock()
+        if written, let clock {
+            clockDiagnostics?.observe(
+                track: track,
+                stamp: clock,
+                normalizedStartFrame: startFrame,
+                normalizedFrameCount: converted.frameLength
+            )
+        }
         if let failure { onWriteFailure?(failure) }
     }
 

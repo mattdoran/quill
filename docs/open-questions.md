@@ -222,9 +222,11 @@ uses those offsets, track positions count normalized 48 kHz frames, and accepted
 frames distinguish captured audio from inserted silence. It neither trims
 overlap nor corrects long-term device drift.
 
-Replacing wall-clock arrival with Core Audio host time, and adding a drift
-policy, remain conditional work. They should be driven by measured alignment or
-live-transcription acceptance failures rather than changed speculatively.
+Quill now records sparse device-sample, Core Audio host-time and normalized-frame
+anchors for each route epoch. Replacing wall-clock alignment or adding a drift
+policy remains conditional work. The observations must first show whether drift
+is material, whether it is linear within a route, and whether Apple's system-tap
+drift compensation already stabilizes that source.
 
 Live AEC complicates microphone input selection. A streaming engine could use
 the cleaned stream and need a reset or replay if AEC abandons, or use raw
