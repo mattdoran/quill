@@ -405,6 +405,8 @@ final class MeetingCompanionView: NSVisualEffectView {
     private var dragStartWindowOrigin: NSPoint?
     private var draggedCollapsedPill = false
     private var reduceMotion = false
+    private var materialMaskSize = NSSize.zero
+    private var materialMaskRadius: CGFloat = 0
 
     var onAction: (() -> Void)?
     var onDismiss: (() -> Void)?
@@ -421,6 +423,7 @@ final class MeetingCompanionView: NSVisualEffectView {
         layer?.cornerRadius = 18
         layer?.cornerCurve = .continuous
         layer?.masksToBounds = true
+        refreshMaterialMask(radius: 18)
 
         closeButton.bezelStyle = .circular
         closeButton.isBordered = false
@@ -572,6 +575,7 @@ final class MeetingCompanionView: NSVisualEffectView {
         NSLayoutConstraint.deactivate(collapsedConstraints)
         NSLayoutConstraint.activate(expandedConstraints)
         layer?.cornerRadius = 18
+        refreshMaterialMask(radius: 18)
         timeoutBar.layer?.removeAllAnimations()
         timeoutBar.isHidden = true
         collapsedSymbol.isHidden = true
@@ -688,6 +692,7 @@ final class MeetingCompanionView: NSVisualEffectView {
         NSLayoutConstraint.deactivate(expandedConstraints)
         NSLayoutConstraint.activate(collapsedConstraints)
         layer?.cornerRadius = 16
+        refreshMaterialMask(radius: 16)
         closeButton.isHidden = true
         symbol.isHidden = true
         titleLabel.isHidden = true
@@ -747,6 +752,22 @@ final class MeetingCompanionView: NSVisualEffectView {
 
     func detectionCountdownIsAnimating() -> Bool {
         timeoutBar.layer?.animation(forKey: "meeting-timeout") != nil
+    }
+
+    override func layout() {
+        super.layout()
+        refreshMaterialMask(radius: isCollapsedPresentation ? 16 : 18)
+    }
+
+    private func refreshMaterialMask(radius: CGFloat) {
+        guard bounds.size != materialMaskSize || radius != materialMaskRadius else { return }
+        materialMaskSize = bounds.size
+        materialMaskRadius = radius
+        maskImage = NSImage(size: bounds.size, flipped: false) { rect in
+            NSColor.white.setFill()
+            NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).fill()
+            return true
+        }
     }
 
     override func updateTrackingAreas() {

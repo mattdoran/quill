@@ -68,6 +68,8 @@ is not in play.
 - Keep Quill `.accessory` by default, `.regular` while transcript review is
   visible, and restore `.accessory` when it closes. This is what gives the task
   window Command-Tab presence without a permanent Dock icon.
+- Keep the companion visual-effect view's explicit rounded `maskImage`. Layer
+  corner clipping alone left a square backdrop artifact in WindowServer output.
 - Wait for forced process termination before replacing or reopening the app.
   Skipping the post-`pkill` wait produced LaunchServices error `-600` during an
   otherwise valid signed install.

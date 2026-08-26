@@ -62,4 +62,20 @@ import Testing
         view.render(.detected(application: application, token: UUID()))
         #expect(view.detectionCountdownIsAnimating())
     }
+
+    @Test func materialUsesAnExplicitRoundedMask() throws {
+        _ = NSApplication.shared
+        let view = MeetingCompanionView(
+            frame: NSRect(origin: .zero, size: MeetingCompanionController.expandedSize)
+        )
+        view.layoutSubtreeIfNeeded()
+
+        let data = try #require(view.maskImage?.tiffRepresentation)
+        let bitmap = try #require(NSBitmapImageRep(data: data))
+        #expect(bitmap.colorAt(x: 0, y: 0)?.alphaComponent == 0)
+        #expect(
+            bitmap.colorAt(x: bitmap.pixelsWide / 2, y: bitmap.pixelsHigh / 2)?
+                .alphaComponent == 1
+        )
+    }
 }
