@@ -481,23 +481,33 @@ always captures both tracks and produces a baseline transcript with coarse
 
 `Review Last Transcript…` opens a task-scoped, read-only window after the
 transcript exists. The transcript is the primary content. Its Speakers sidebar
-lets the user sample and name `Me` and `Them` immediately. `Separate Voices`
-appears below them for meetings with more people.
+lets the user sample and name `Me` and `Them` immediately. `Separate Remote
+Voices` and `Separate Local Voices` appear below them when their respective
+source audio is available. The user chooses the source based on the shape of the
+meeting; the actions never implicitly process the other track.
 While this task window is open, Quill temporarily appears in the Dock and
 Command-Tab switcher. Closing it returns Quill to its menu-bar-only accessory
 state. The transcript window remains part of the same app and process.
-That primary action starts local analysis directly. The review window stays
-open until success or failure, and an active recording blocks the action with
-an explicit explanation. The existing timed words remain authoritative:
+Either action starts local analysis directly. The review window stays open until
+success or failure, and an active recording blocks the action with an explicit
+explanation. The existing timed words remain authoritative:
 Quill runs diarisation against retained source audio and reassigns speaker
 metadata without rerunning speech recognition.
 
-The operation is serialised with transcript work. It stages the enriched
+The operation is serialised with transcript work. It shows model preparation,
+the current source, source count and a coarse percentage between sources. The
+current model does not report progress within one source. It stages the enriched
 document and atomically publishes `.quill/transcript.json` and `transcript.md`;
-failure leaves the baseline unchanged. Both source tracks are analysed without
-asking the user to classify the meeting. A track with one detected person still
+failure leaves the baseline unchanged. Separating one source preserves the
+other source's coarse identity. A track with one detected person still
 receives a nameable voice ID. Speech that cannot be attributed remains
 unassigned rather than being forced onto a person.
+
+Before first separation, Quill preserves the exact baseline transcript. After a
+successful result, `Undo Voice Separation` restores `Me` and `Them`, including
+their saved names, and removes separated voice names. Sessions processed by an
+older version have no snapshot and cannot offer exact undo without rerunning
+speech recognition.
 
 ### Finished session audio
 

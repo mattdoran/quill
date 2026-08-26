@@ -276,6 +276,43 @@ import Testing
         #expect(origins.values.contains(.insertedSilence))
     }
 
+    @Test func captureGapRaisesRecoverySignalButClosePaddingDoesNot() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: directory, withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let format = try #require(AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: 48_000,
+            channels: 1,
+            interleaved: false
+        ))
+        let writer = try TrackWriter(
+            url: directory.appendingPathComponent("system.caf"),
+            format: format,
+            track: .system,
+            log: SessionLog(dir: directory),
+            watchSilence: false
+        )
+        let gaps = LockedCounter()
+        writer.onCaptureGap = { _ in _ = gaps.increment() }
+        let buffer = try #require(AVAudioPCMBuffer(
+            pcmFormat: format,
+            frameCapacity: 4_800
+        ))
+        buffer.frameLength = 4_800
+
+        writer.write(buffer)
+        Thread.sleep(forTimeInterval: 0.8)
+        writer.write(buffer)
+        writer.close(paddingTo: Date().addingTimeInterval(1))
+
+        #expect(gaps.value == 1)
+    }
+
     @Test @MainActor func asynchronousCloseSuspendsInsteadOfBlockingMainActor() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

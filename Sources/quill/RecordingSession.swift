@@ -52,6 +52,7 @@ final class RecordingSession {
     private var liveAEC: LiveEchoCanceller?
     private var liveFrames: AcceptedFrameMailbox?
     private var liveAECBegun = false
+    private var healthTicks = 0
 
     private static let folderFormat: DateFormatter = {
         let f = DateFormatter()
@@ -88,8 +89,6 @@ final class RecordingSession {
             "devices — input=\(AudioDevices.defaultInputName()) "
                 + "output=\(AudioDevices.defaultOutputName())"
         )
-        deviceWatcher = AudioDevices.Watcher(log: log)
-
         system.prepare(
             writingTo: SessionFiles.internalFile("system.caf", in: dir),
             log: log,
@@ -126,6 +125,13 @@ final class RecordingSession {
 
         let systemSupervisor = supervise(system)
         let micSupervisor = supervise(mic)
+        system.onCaptureGap = { [weak self, weak systemSupervisor] gap in
+            guard let self, !self.isStopping else { return }
+            self.liveAEC?.reset("system capture gap")
+            systemSupervisor?.invalidate(String(
+                format: "%.1fs capture gap; rebuilding process tap", gap.seconds
+            ))
+        }
         do {
             try publishCaptureJournal()
             try systemSupervisor.start()
@@ -143,6 +149,11 @@ final class RecordingSession {
             throw error
         }
         supervisors = [micSupervisor, systemSupervisor]
+        deviceWatcher = AudioDevices.Watcher(log: log) { [weak self, weak systemSupervisor] in
+            guard let self, !self.isStopping else { return }
+            self.liveAEC?.reset("output route change")
+            systemSupervisor?.invalidate("output route changed; rebuilding process tap")
+        }
 
         let ticker = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
             // assumeIsolated traps if this ever fires off-main; the main run
@@ -152,6 +163,7 @@ final class RecordingSession {
                 self.supervisors.forEach { $0.tick() }
                 self.publishJournalOffsetsIfReady()
                 self.alignLiveEchoCancellerIfReady()
+                self.reportAudioHealthIfDue()
                 self.reportDeadTracks()
                 self.reportEveryoneGone()
             }
@@ -325,6 +337,20 @@ final class RecordingSession {
             )
         )
         try SessionMetadataStore.writeJournal(journal, to: dir)
+    }
+
+    private func reportAudioHealthIfDue() {
+        healthTicks += 1
+        guard healthTicks >= 60 else { return }
+        healthTicks = 0
+        guard let health = liveAEC?.takeHealth() else { return }
+        log.log(String(
+            format: "audio health: near %.1fdBFS, reference %.1fdBFS, cleaned %.1fdBFS, attenuation %.1fdB",
+            health.nearDBFS,
+            health.farDBFS,
+            health.cleanedDBFS,
+            health.attenuationDB
+        ))
     }
 
     /// A track that has been down past the threshold is announced once. Both

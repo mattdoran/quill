@@ -125,6 +125,13 @@ struct TranscriptStore {
 
     var jsonURL: URL { SessionFiles.transcriptJSON(session) }
     var markdownURL: URL { SessionFiles.transcriptMarkdown(session) }
+    var separationSnapshotURL: URL {
+        SessionFiles.transcriptBeforeSpeakerSeparation(session)
+    }
+
+    var canRestoreBeforeSpeakerSeparation: Bool {
+        FileManager.default.fileExists(atPath: separationSnapshotURL.path)
+    }
 
     func read() throws -> TranscriptDocument {
         try JSONDecoder().decode(TranscriptDocument.self, from: Data(contentsOf: jsonURL))
@@ -156,6 +163,26 @@ struct TranscriptStore {
             }
             throw error
         }
+    }
+
+    func preserveBeforeSpeakerSeparation(_ document: TranscriptDocument) throws {
+        guard document.schema_version == TranscriptDocument.currentSchemaVersion else {
+            throw StoreError.unsupportedSchema
+        }
+        guard !canRestoreBeforeSpeakerSeparation else { return }
+        _ = try SessionFiles.prepare(session)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        try encoder.encode(document).write(to: separationSnapshotURL, options: .atomic)
+    }
+
+    func restoreBeforeSpeakerSeparation() throws {
+        let snapshot = try JSONDecoder().decode(
+            TranscriptDocument.self,
+            from: Data(contentsOf: separationSnapshotURL)
+        )
+        try write(snapshot)
+        try FileManager.default.removeItem(at: separationSnapshotURL)
     }
 }
 

@@ -57,6 +57,7 @@ final class ClockDiagnostics: @unchecked Sendable {
         let schemaVersion: Int
         let track: SourceTrack
         let routeEpoch: Int
+        let captureSegment: Int
         let observedAt: Date
         let hostTime: UInt64?
         let deviceSampleTime: Double?
@@ -68,6 +69,7 @@ final class ClockDiagnostics: @unchecked Sendable {
             case schemaVersion = "schema_version"
             case track
             case routeEpoch = "route_epoch"
+            case captureSegment = "capture_segment"
             case observedAt = "observed_at"
             case hostTime = "host_time"
             case deviceSampleTime = "device_sample_time"
@@ -80,6 +82,7 @@ final class ClockDiagnostics: @unchecked Sendable {
     private struct Key: Hashable {
         let track: SourceTrack
         let epoch: Int
+        let segment: Int
     }
 
     private struct Fit {
@@ -126,12 +129,14 @@ final class ClockDiagnostics: @unchecked Sendable {
         track: SourceTrack,
         stamp: CaptureClockStamp,
         normalizedStartFrame: AVAudioFramePosition,
-        normalizedFrameCount: AVAudioFrameCount
+        normalizedFrameCount: AVAudioFrameCount,
+        captureSegment: Int = 0
     ) {
         let observation = Observation(
-            schemaVersion: 1,
+            schemaVersion: 2,
             track: track,
             routeEpoch: stamp.routeEpoch,
+            captureSegment: captureSegment,
             observedAt: stamp.observedAt,
             hostTime: stamp.hostTime,
             deviceSampleTime: stamp.sampleTime,
@@ -139,7 +144,7 @@ final class ClockDiagnostics: @unchecked Sendable {
             normalizedStartFrame: normalizedStartFrame,
             normalizedFrameCount: Int(normalizedFrameCount)
         )
-        let key = Key(track: track, epoch: stamp.routeEpoch)
+        let key = Key(track: track, epoch: stamp.routeEpoch, segment: captureSegment)
 
         lock.lock()
         defer { lock.unlock() }
@@ -171,18 +176,20 @@ final class ClockDiagnostics: @unchecked Sendable {
         lock.unlock()
 
         let fits = Dictionary(grouping: captured) {
-            Key(track: $0.track, epoch: $0.routeEpoch)
+            Key(track: $0.track, epoch: $0.routeEpoch, segment: $0.captureSegment)
         }.values.compactMap(fit)
         for fit in fits.sorted(by: fitOrder) {
             var device = "device timestamp unavailable"
             if let rate = fit.deviceRate, let ppm = fit.devicePPM {
                 device = String(format: "device %.3fHz (%+.1f ppm)", rate, ppm)
             }
+            let segment = fit.key.segment == 0 ? "" : " segment \(fit.key.segment)"
             log.log(String(
-                format: "clock %@ epoch %d: %.0fs, %d anchors, %@, "
+                format: "clock %@ epoch %d%@: %.0fs, %d anchors, %@, "
                     + "normalized %.3fHz (%+.1f ppm), max residual %.2fms",
                 fit.key.track.rawValue,
                 fit.key.epoch,
+                segment,
                 fit.seconds,
                 fit.anchors,
                 device,
@@ -262,7 +269,11 @@ final class ClockDiagnostics: @unchecked Sendable {
         }.max() ?? 0
 
         return Fit(
-            key: Key(track: sorted[0].track, epoch: sorted[0].routeEpoch),
+            key: Key(
+                track: sorted[0].track,
+                epoch: sorted[0].routeEpoch,
+                segment: sorted[0].captureSegment
+            ),
             firstHostTime: firstHost,
             lastHostTime: lastHost,
             seconds: seconds.last ?? 0,
@@ -292,7 +303,8 @@ final class ClockDiagnostics: @unchecked Sendable {
         if lhs.key.track.rawValue != rhs.key.track.rawValue {
             return lhs.key.track.rawValue < rhs.key.track.rawValue
         }
-        return lhs.key.epoch < rhs.key.epoch
+        if lhs.key.epoch != rhs.key.epoch { return lhs.key.epoch < rhs.key.epoch }
+        return lhs.key.segment < rhs.key.segment
     }
 
     private func logRelativeDrift(_ fits: [Fit]) {

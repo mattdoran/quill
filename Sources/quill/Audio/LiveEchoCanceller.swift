@@ -20,6 +20,14 @@ import WebRTCAudio
 /// far track frame `i + farOffset`, which is the same relation the offline pass
 /// derives from the journal's `start_offset_ms`.
 final class LiveEchoCanceller: @unchecked Sendable {
+    struct Health {
+        let nearDBFS: Double
+        let farDBFS: Double
+        let cleanedDBFS: Double
+
+        var attenuationDB: Double { nearDBFS - cleanedDBFS }
+    }
+
     static let meetingOutputName = "meeting.caf"
 
     /// Near audio held while far has not caught up. Beyond this the far track
@@ -66,6 +74,10 @@ final class LiveEchoCanceller: @unchecked Sendable {
     private var pumpScheduled = false
     private var abandoned = false
     private var blockedSince: Date?
+    private var healthNearPower = 0.0
+    private var healthFarPower = 0.0
+    private var healthCleanedPower = 0.0
+    private var healthSampleCount = 0
 
     init?(session: URL, rate: Double, log: SessionLog) {
         guard [16_000.0, 32_000.0, 48_000.0].contains(rate) else {
@@ -180,6 +192,47 @@ final class LiveEchoCanceller: @unchecked Sendable {
         log.warn("live aec: \(reason): leaving audio cleanup to offline finalization")
         try? FileManager.default.removeItem(at: partial)
         try? FileManager.default.removeItem(at: meetingPartial)
+    }
+
+    /// A capture discontinuity can invalidate AEC3's delay and filter state
+    /// even when both source archives resume at the correct timeline position.
+    func reset(_ reason: String) {
+        work.async { [self] in
+            guard let replacement = quill_aec_create(Int32(rate)) else {
+                abandon("couldn't reset AEC3 after \(reason)")
+                return
+            }
+            lock.lock()
+            guard !abandoned else {
+                lock.unlock()
+                quill_aec_destroy(replacement)
+                return
+            }
+            let previous = canceller
+            canceller = replacement
+            lock.unlock()
+            if let previous { quill_aec_destroy(previous) }
+            log.log("live aec: reset after \(reason)")
+        }
+    }
+
+    /// Aggregate levels since the previous report make a broken reference
+    /// visible without logging every realtime buffer.
+    func takeHealth() -> Health? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard healthSampleCount > 0 else { return nil }
+        let count = Double(healthSampleCount)
+        let health = Health(
+            nearDBFS: Self.dbfs(power: healthNearPower / count),
+            farDBFS: Self.dbfs(power: healthFarPower / count),
+            cleanedDBFS: Self.dbfs(power: healthCleanedPower / count)
+        )
+        healthNearPower = 0
+        healthFarPower = 0
+        healthCleanedPower = 0
+        healthSampleCount = 0
+        return health
     }
 
     @discardableResult
@@ -326,6 +379,12 @@ final class LiveEchoCanceller: @unchecked Sendable {
                     abandon("AEC3 processing failed")
                     return
                 }
+                for frame in 0..<frameSize {
+                    healthNearPower += Double(scratchNear[frame]) * Double(scratchNear[frame])
+                    healthFarPower += Double(scratchFar[frame]) * Double(scratchFar[frame])
+                    healthCleanedPower += Double(scratchOut[frame]) * Double(scratchOut[frame])
+                }
+                healthSampleCount += frameSize
                 if !meetingStarted {
                     if farOffset > 0 {
                         for frame in 0..<Int(farOffset) {
@@ -426,6 +485,10 @@ final class LiveEchoCanceller: @unchecked Sendable {
 
     private func clamp(_ sample: Float) -> Float {
         min(1, max(-1, sample))
+    }
+
+    private static func dbfs(power: Double) -> Double {
+        10 * log10(max(power, 1e-15))
     }
 
     private func publish() {

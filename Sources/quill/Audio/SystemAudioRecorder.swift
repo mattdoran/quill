@@ -48,6 +48,7 @@ final class SystemAudioRecorder: Capture {
 
     var onInvalidated: ((String) -> Void)?
     var onArchiveFailed: ((String) -> Void)?
+    var onCaptureGap: ((TrackWriter.Gap) -> Void)?
 
     /// Fixed for the session. The tap mixes to stereo at the output device's
     /// rate, but every consumer downstream averages the channels away: AEC uses
@@ -122,6 +123,9 @@ final class SystemAudioRecorder: Capture {
                     }
                     created.onWriteFailure = { [weak self] detail in
                         Task { @MainActor in self?.onArchiveFailed?(detail) }
+                    }
+                    created.onCaptureGap = { [weak self] gap in
+                        Task { @MainActor in self?.onCaptureGap?(gap) }
                     }
                     writer = created
                 } catch {

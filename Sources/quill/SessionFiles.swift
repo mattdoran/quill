@@ -40,6 +40,9 @@ enum SessionFiles {
     static func transcriptJSON(_ session: URL) -> URL {
         internalFile("transcript.json", in: session)
     }
+    static func transcriptBeforeSpeakerSeparation(_ session: URL) -> URL {
+        internalFile("transcript-before-speaker-separation.json", in: session)
+    }
     static func transcriptMarkdown(_ session: URL) -> URL {
         session.appendingPathComponent("transcript.md")
     }

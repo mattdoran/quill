@@ -9,7 +9,9 @@ import Testing
         _ = NSApplication.shared
         let session = FileManager.default.temporaryDirectory
             .appendingPathComponent("quill-review-window-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: session, withIntermediateDirectories: true)
+        let source = session.appendingPathComponent("Source Audio", isDirectory: true)
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        try Data().write(to: source.appendingPathComponent("Local.m4a"))
         defer { try? FileManager.default.removeItem(at: session) }
         try TranscriptStore(session: session).write(TranscriptDocument(
             schema_version: 1,
@@ -48,7 +50,47 @@ import Testing
         #expect(titles.contains("Open Transcript File"))
         #expect(titles.contains("Close"))
         #expect(titles.contains("Save Names"))
-        #expect(titles.contains("Separate Voices"))
+        #expect(titles.contains("Separate Local Voices"))
+    }
+
+    @Test func presentsIndependentLocalAndRemoteSeparationActions() throws {
+        _ = NSApplication.shared
+        let session = FileManager.default.temporaryDirectory
+            .appendingPathComponent("quill-review-separation-sources-\(UUID().uuidString)")
+        let source = session.appendingPathComponent("Source Audio", isDirectory: true)
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        try Data().write(to: source.appendingPathComponent("Local.m4a"))
+        try Data().write(to: source.appendingPathComponent("Remote.m4a"))
+        defer { try? FileManager.default.removeItem(at: session) }
+        try TranscriptStore(session: session).write(TranscriptDocument(
+            schema_version: 1,
+            engine: "test",
+            model: "test",
+            diarizer: nil,
+            created_at: "2026-08-20T00:00:00Z",
+            voices: [
+                "mic:1": .init(
+                    source: "mic", audio_file: "Source Audio/Local.m4a",
+                    machine_label: "Me", name: nil, samples: []
+                ),
+                "system:1": .init(
+                    source: "system", audio_file: "Source Audio/Remote.m4a",
+                    machine_label: "Them", name: nil, samples: []
+                ),
+            ],
+            segments: []
+        ))
+
+        let controller = try VoiceReviewWindowController(
+            session: session,
+            isRecording: { false },
+            separateSpeakers: {}
+        )
+        let titles = buttonTitles(in: try #require(controller.window?.contentView))
+
+        #expect(titles.contains("Separate Remote Voices"))
+        #expect(titles.contains("Separate Local Voices"))
+        #expect(!titles.contains("Separate Local and Remote…"))
     }
 
     @Test func separationSavesTheNameStillBeingEdited() async throws {
@@ -58,7 +100,7 @@ import Testing
         let source = session.appendingPathComponent("Source Audio", isDirectory: true)
         try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: session) }
-        try Data().write(to: source.appendingPathComponent("Local.m4a"))
+        try Data().write(to: source.appendingPathComponent("Remote.m4a"))
         try TranscriptStore(session: session).write(TranscriptDocument(
             schema_version: 1,
             engine: "test",
@@ -66,10 +108,10 @@ import Testing
             diarizer: nil,
             created_at: "2026-08-20T00:00:00Z",
             voices: [
-                "mic:1": .init(
-                    source: "mic",
-                    audio_file: "Source Audio/Local.m4a",
-                    machine_label: "Me",
+                "system:1": .init(
+                    source: "system",
+                    audio_file: "Source Audio/Remote.m4a",
+                    machine_label: "Them",
                     name: nil,
                     samples: []
                 ),
@@ -92,13 +134,15 @@ import Testing
         let editor = try #require(nameField.currentEditor())
         #expect(window.firstResponder === editor)
         editor.string = "Matt"
-        let separate = try #require(buttons(in: content).first { $0.title == "Separate Voices" })
+        let separate = try #require(buttons(in: content).first {
+            $0.title == "Separate Remote Voices"
+        })
 
         separate.performClick(nil)
         try await Task.sleep(for: .milliseconds(50))
 
         let saved = try TranscriptStore(session: session).read()
-        #expect(saved.voices["mic:1"]?.name == "Matt")
+        #expect(saved.voices["system:1"]?.name == "Matt")
     }
 
     @Test func speakerControlsHaveAnExplicitKeyboardPath() throws {
@@ -191,6 +235,43 @@ import Testing
             $0.placeholderString == "Name this voice"
         }
         #expect(window.firstResponder === refreshedFields[1].currentEditor())
+    }
+
+    @Test func separatedTranscriptOffersUndoWhenBaselineSnapshotExists() throws {
+        _ = NSApplication.shared
+        let session = FileManager.default.temporaryDirectory
+            .appendingPathComponent("quill-review-undo-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: session, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: session) }
+        let baseline = TranscriptDocument(
+            schema_version: 1,
+            engine: "test",
+            model: "test",
+            diarizer: nil,
+            created_at: "2026-08-20T00:00:00Z",
+            voices: [:],
+            segments: []
+        )
+        let separated = TranscriptDocument(
+            schema_version: 1,
+            engine: "test",
+            model: "test",
+            diarizer: "sortformer-offline-v2.1",
+            created_at: baseline.created_at,
+            voices: [:],
+            segments: []
+        )
+        let store = TranscriptStore(session: session)
+        try store.preserveBeforeSpeakerSeparation(baseline)
+        try store.write(separated)
+
+        let controller = try VoiceReviewWindowController(
+            session: session,
+            isRecording: { false },
+            separateSpeakers: {}
+        )
+        let content = try #require(controller.window?.contentView)
+        #expect(buttonTitles(in: content).contains("Undo Voice Separation"))
     }
 
     @Test func unavailableSampleHasAnAccurateAccessibilityLabel() throws {

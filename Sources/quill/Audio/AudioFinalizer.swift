@@ -65,6 +65,7 @@ actor AudioFinalizer {
     }
 
     private func performFinalization(session: URL) async throws {
+        let finalizationStarted = Date()
         var metadata = try recoverMetadataIfNeeded(session: session)
         if metadata.audioState == .empty {
             removeStaleJournal(session)
@@ -103,16 +104,20 @@ actor AudioFinalizer {
 
         var published = files
         if let microphoneSource {
+            let started = Date()
             let output = session.appendingPathComponent(Self.localPath)
             try await remuxAAC(from: microphoneSource, to: output, in: session)
             published.microphone = Self.localPath
+            appendTiming(session, "published local audio", since: started)
         } else {
             published.microphone = nil
         }
         if let callSource {
+            let started = Date()
             let output = session.appendingPathComponent(Self.remotePath)
             try await remuxAAC(from: callSource, to: output, in: session)
             published.system = Self.remotePath
+            appendTiming(session, "published remote audio", since: started)
         } else {
             published.system = nil
         }
@@ -120,11 +125,14 @@ actor AudioFinalizer {
         let cleanedSource = prepared.cleanedMicrophone
 
         if let cleanedSource {
+            let started = Date()
             let output = session.appendingPathComponent(Self.cleanedLocalPath)
             try await remuxAAC(from: cleanedSource, to: output, in: session)
             published.cleanedMicrophone = Self.cleanedLocalPath
+            appendTiming(session, "published cleaned local audio", since: started)
         }
 
+        let meetingStarted = Date()
         let meetingOutput = session.appendingPathComponent(Self.meetingAudioPath)
         let meetingCandidates: [MixInput] = [
             MixInput(
@@ -138,7 +146,7 @@ actor AudioFinalizer {
         var liveMeetingSource = existingLiveMeeting(in: session)
         if let source = liveMeetingSource {
             do {
-                try validateMeetingAudio(source, expectedDuration: expectedMeetingDuration)
+                try validateMeetingDuration(source, expectedDuration: expectedMeetingDuration)
                 try await remuxAAC(from: source, to: meetingOutput, in: session)
                 appendLog(session, "published meeting mix prepared during recording")
             } catch {
@@ -151,6 +159,7 @@ actor AudioFinalizer {
             try mix(inputs: meetingInputs, to: meetingOutput, in: session)
         }
         published.meeting = Self.meetingAudioPath
+        appendTiming(session, "published meeting audio", since: meetingStarted)
 
         metadata.files = published
         metadata.audioState = .finalized
@@ -175,7 +184,10 @@ actor AudioFinalizer {
                 appendLog(session, "couldn't remove finalized \(source.lastPathComponent): \(error)")
             }
         }
-        appendLog(session, "finished audio published as M4A")
+        appendLog(session, String(
+            format: "finished audio published as M4A in %.1fs",
+            Date().timeIntervalSince(finalizationStarted)
+        ))
     }
 
     // MARK: - Recovery and metadata
@@ -443,13 +455,17 @@ actor AudioFinalizer {
     }
 
     private func validateMeetingAudio(_ url: URL, expectedDuration: TimeInterval) throws {
+        try validateMeetingDuration(url, expectedDuration: expectedDuration)
+        try decodeCompletely(url)
+    }
+
+    private func validateMeetingDuration(_ url: URL, expectedDuration: TimeInterval) throws {
         let duration = try audioDuration(url)
         guard abs(duration - expectedDuration) <= 0.05 else {
             throw FinalizationError.invalidAudio(
                 "\(url.lastPathComponent) duration \(duration), expected \(expectedDuration)"
             )
         }
-        try decodeCompletely(url)
     }
 
     private func audioDuration(_ url: URL) throws -> TimeInterval {
@@ -516,5 +532,13 @@ actor AudioFinalizer {
         } else {
             try? Data(line.utf8).write(to: url)
         }
+    }
+
+    private nonisolated func appendTiming(_ session: URL, _ stage: String, since: Date) {
+        appendLog(session, String(
+            format: "%@: %.1fs",
+            stage,
+            Date().timeIntervalSince(since)
+        ))
     }
 }

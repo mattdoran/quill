@@ -2,6 +2,68 @@
 
 Dated product and architecture decisions. Newest first.
 
+## 2026-08-26: Rebuild system capture after discontinuities
+
+**Decision:** A detected system-track capture gap or default output-route change
+rebuilds the Core Audio process tap and resets AEC3. During recording, log
+minute-level near, reference and cleaned RMS plus attenuation.
+
+**Why:** After a shared HAL overload, the process tap continued delivering
+buffers but its signal fell about 22 dB and no longer correlated with speaker
+output. Transport-only supervision therefore considered a broken reference
+healthy for 27 minutes. Switching output routes rebuilt the surrounding Core
+Audio graph and restored both the reference and cancellation.
+
+**Consequence:** A short discontinuity costs another short padded gap while the
+tap is rebuilt, but cannot silently poison the remainder of a call. The source
+writer and timeline survive the rebuild. Health logs distinguish capture
+liveness from useful AEC input without putting analysis on the realtime thread.
+
+## 2026-08-26: Choose the source for reversible voice separation
+
+**Decision:** Transcript review presents independent `Separate Remote Voices`
+and `Separate Local Voices` actions whenever the corresponding source exists.
+The user chooses the source based on the meeting rather than Quill ranking or
+combining them. Before the first separation pass,
+preserve the canonical baseline transcript in
+`.quill/transcript-before-speaker-separation.json` and offer exact undo after
+success. State the current four-voice-per-track limit.
+
+**Why:** A 3:42 call contained remote speech around -58 to -62 dBFS in the
+cleaned local track. It sounded nearly absent, but Sortformer clustered it as
+four local voices. A fixed offline noise gate separated one tested leakage clip
+from the loudest local speech only at thresholds that also removed quieter
+candidate local speech, so this meeting does not justify a universal gate or a
+modal warning. Processing Local and Remote also doubled the five-minute runtime
+when only remote identity was wanted. Meetings with more than four remote people
+exceed Sortformer's representational limit. Speaker separation is optional
+analysis, so a bad result must not irreversibly replace the useful coarse
+transcript.
+
+**Consequence:** Separating either source retains the other source's coarse
+identity, avoids unnecessary processing, and prevents contamination on one
+track from affecting diarisation of the other. The review window reports model
+preparation, current source, source count and coarse percentage; the model API
+does not expose within-file progress. The snapshot is written once and removed
+only after a successful restore. Sessions separated before this decision have
+no exact snapshot and must rerun ASR to recover their baseline.
+
+## 2026-08-26: Split clock fits at repaired capture gaps
+
+**Decision:** Number uninterrupted capture segments within each track and route
+epoch. Persist that segment number with every clock observation and fit each
+segment independently. Continue measuring without correcting audio drift.
+
+**Why:** A whole-epoch regression across a shared padded gap reported +207 ppm
+for one microphone epoch and distorted the final relative summary. Contiguous
+sections of the same long meeting measured roughly +0.8 to +3.0 ppm with maximum
+residuals around 14 ms. Inserted silence describes timeline repair, not device
+oscillator rate.
+
+**Consequence:** Future summaries cannot count padded gaps as clock-rate error.
+The strongest comparable section in this meeting implied roughly 28 ms over
+9,338 seconds, which does not justify resampling or a new alignment model.
+
 ## 2026-08-25: Measure capture clocks before correcting drift
 
 **Decision:** Persist sparse callback-clock observations for each source and
@@ -379,7 +441,8 @@ human-facing Markdown contains only its title and transcript.
 ## 2026-08-20: Separate speakers only during transcript review
 
 *Speaker labels in this decision were superseded by "Separate voice identity
-from source context" above.*
+from source context" above. Analysing both tracks without asking was superseded
+by "Choose the source for reversible voice separation" above.*
 
 **Decision:** Every completed recording produces a baseline transcript with
 `In the room` and `On the call` labels. Recording has no meeting profile,

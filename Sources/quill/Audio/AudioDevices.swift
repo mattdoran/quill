@@ -48,14 +48,19 @@ enum AudioDevices {
         private var address: AudioObjectPropertyAddress
         private var block: AudioObjectPropertyListenerBlock?
 
-        init(selector: AudioObjectPropertySelector, onChange: @escaping @Sendable () -> Void) {
+        init(
+            selector: AudioObjectPropertySelector,
+            onChange: @escaping @MainActor @Sendable () -> Void
+        ) {
             address = AudioObjectPropertyAddress(
                 mSelector: selector,
                 mScope: kAudioObjectPropertyScopeGlobal,
                 mElement: kAudioObjectPropertyElementMain
             )
             let block: AudioObjectPropertyListenerBlock = { _, _ in
-                DispatchQueue.main.async { onChange() }
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated { onChange() }
+                }
             }
             guard AudioObjectAddPropertyListenerBlock(
                 AudioObjectID(kAudioObjectSystemObject), &address, nil, block
@@ -72,18 +77,20 @@ enum AudioDevices {
     }
 
     /// Logs each default-device change for as long as the watcher is held.
-    /// Diagnostic only — each track is rebuilt on its own evidence, not on
-    /// this.
     final class Watcher {
         private var listeners: [Listener] = []
 
-        init(log: SessionLog) {
+        init(
+            log: SessionLog,
+            onOutputChange: @escaping @MainActor @Sendable () -> Void = {}
+        ) {
             listeners = [
                 Listener(selector: kAudioHardwarePropertyDefaultInputDevice) {
                     log.log("default input device is now \(AudioDevices.defaultInputName())")
                 },
                 Listener(selector: kAudioHardwarePropertyDefaultOutputDevice) {
                     log.log("default output device is now \(AudioDevices.defaultOutputName())")
+                    onOutputChange()
                 },
             ]
         }

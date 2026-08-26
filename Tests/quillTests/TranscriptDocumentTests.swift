@@ -110,6 +110,42 @@ import Testing
         ))
     }
 
+    @Test func speakerSeparationSnapshotIsPreservedOnceAndRestoredAtomically() throws {
+        let session = try temporarySession()
+        defer { try? FileManager.default.removeItem(at: session) }
+        let store = TranscriptStore(session: session)
+        let base = fixture()
+        let original = TranscriptDocument(
+            schema_version: base.schema_version,
+            engine: base.engine,
+            model: base.model,
+            diarizer: nil,
+            created_at: base.created_at,
+            voices: base.voices,
+            segments: base.segments
+        )
+        try store.write(original)
+        try store.preserveBeforeSpeakerSeparation(original)
+
+        var separated = original
+        separated = TranscriptDocument(
+            schema_version: separated.schema_version,
+            engine: separated.engine,
+            model: separated.model,
+            diarizer: "sortformer-offline-v2.1",
+            created_at: separated.created_at,
+            voices: separated.voices,
+            segments: separated.segments
+        )
+        try store.write(separated)
+        try store.preserveBeforeSpeakerSeparation(separated)
+
+        #expect(store.canRestoreBeforeSpeakerSeparation)
+        try store.restoreBeforeSpeakerSeparation()
+        #expect(try store.read().diarizer == original.diarizer)
+        #expect(!store.canRestoreBeforeSpeakerSeparation)
+    }
+
     private func fixture(name: String? = nil) -> TranscriptDocument {
         let sample = TranscriptDocument.Voice.Sample(start_ms: 1_000, end_ms: 6_000)
         return TranscriptDocument(

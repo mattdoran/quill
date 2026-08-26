@@ -125,7 +125,10 @@ Each recorder owns only its capture graph. A `CaptureSupervisor` owns restart
 policy. It treats five seconds without a buffer as a stalled graph, tears the
 graph down, and retries with capped exponential backoff. Reattachment keeps the
 existing `TrackWriter`, so a device change does not create another file or reset
-the track clock.
+the track clock. A system-track capture gap also forces a process-tap rebuild:
+buffers resuming only proves transport liveness, and a HAL overload can leave
+the existing tap delivering a degraded signal. Default output changes rebuild
+the process tap rather than relying on its private aggregate device to adapt.
 
 ### 3.2 TrackWriter is the normalization boundary
 
@@ -182,7 +185,7 @@ buffer of every route epoch. `TrackWriter` adds the corresponding normalized
 
 The sparse observations land in `.quill/clock-observations.jsonl`. At stop,
 Quill fits device and normalized frame rate against the common monotonic host
-clock for each uninterrupted route, then writes rate error, timing residual and
+clock for each uninterrupted capture segment within a route, then writes rate error, timing residual and
 relative microphone-to-system drift to `session.log`. Diagnostics are
 non-authoritative and fail open: capture continues if their file cannot be
 written. They measure the current contract without correcting it.
@@ -219,6 +222,12 @@ The same pass produces two AAC/CAF derivatives:
 - `meeting.caf`: `(cleaned microphone + system) * 0.7071`, clamped to the PCM
   range and encoded as mono AAC at 64 kbit/s.
 
+While their encoders are open these are named `mic-cleaned.caf.live` and
+`meeting.caf.live`. The final `.live` suffix marks incomplete, unpublished
+working files; the bytes are still an AAC stream in a CAF container. A clean
+finish closes the encoders and renames them to `.caf`. Finalization later
+remuxes the closed CAF files to human-facing M4A.
+
 The meeting mix includes a far-only prefix or tail when the system track extends
 beyond the microphone track. The cleaned track follows the microphone length.
 
@@ -230,6 +239,12 @@ The live path is bounded and fail-open:
 - a format, ordering, AEC or derivative-write failure abandons the live pass;
 - partial derivative files are removed; and
 - the two source CAF files continue recording unchanged.
+
+A system capture gap or output-route change resets AEC3 after the process tap
+is rebuilt. Once per minute, the session log records aggregate near, reference
+and cleaned RMS plus achieved attenuation. This distinguishes a live graph from
+a useful reference and makes a persistent cancellation failure diagnosable
+without logging realtime buffers.
 
 On stop, the realtime graphs detach on the main actor. Both source writers then
 drain concurrently and pad to the shared wall-clock end while the main actor is
@@ -260,9 +275,10 @@ Finalization is restartable and follows these stages:
    AEC failure returns the raw microphone for mixing and transcription.
 4. Passthrough-remux the cleaned microphone into
    `Source Audio/Local Cleaned.m4a` when one exists.
-5. Validate the live meeting mix against the expected global duration and use
-   it when valid. Otherwise stream an offline mono mix from the cleaned or raw
-   microphone plus system audio at their offsets.
+5. Check the live meeting mix against the expected global duration and use it
+   when valid. Otherwise stream an offline mono mix from the cleaned or raw
+   microphone plus system audio at their offsets. The published M4A is decoded
+   completely, so the live CAF is not also decoded completely before remux.
 6. Atomically rewrite `meta.json` with human-facing paths and
    `audio_state: finalized`.
 7. Remove the capture journal and internal CAF inputs that have published
@@ -272,6 +288,11 @@ Every M4A is first written under a unique internal partial name. Before it is
 moved into place, the finalizer checks duration and decodes the complete file.
 An existing valid output is reused on retry. The metadata write is the point at
 which the set of published paths becomes authoritative.
+
+The finalization log records elapsed time for Local, Remote, Local Cleaned,
+Meeting Audio and the complete operation. Remuxes currently run serially. They
+are independent media operations, but parallel full-file reads require a
+benchmark before increasing IO contention.
 
 The files themselves are published one at a time before that metadata write.
 A crash can therefore leave a mixture of old metadata and valid new outputs;
@@ -300,9 +321,20 @@ transcript from the other. If audio finalization failed immediately after stop,
 transcription is still enqueued and can operate on paths that remain valid in
 metadata. This is degraded operation, not the normal path.
 
-Optional speaker separation happens later against retained source audio. It
-updates speaker attribution in the existing timed document without rerunning
-speech recognition.
+Optional speaker separation happens later against retained source audio. The
+normal call path analyzes only Remote and preserves the coarse local `Me`
+identity. Local analysis is an explicit in-room option. It updates speaker
+attribution in the existing timed document without rerunning speech recognition.
+The coordinator logs the prepared input's actual filename, not the source path
+from the manifest. Local and remote model passes are serial.
+
+Before publishing the first separated document, `TranscriptStore` atomically
+preserves the baseline as
+`.quill/transcript-before-speaker-separation.json`. Undo republishes that
+snapshot as canonical JSON and Markdown, then removes the snapshot. A failed
+analysis does not change the canonical transcript. Sortformer exposes no
+within-file progress callback, so progress is limited to model preparation and
+completed source count.
 
 ## 7. Session artifacts and authority
 
@@ -318,6 +350,7 @@ speech recognition.
 | `Source Audio/*.m4a` | Finished retained sources and cleaned local track | Yes after finalization | Validated and reused |
 | `Meeting Audio.m4a` | Human playback and sharing artifact | Derived | Rebuilt while sources remain |
 | `.quill/transcript.json` | Canonical transcript and speaker data | Yes | Marks transcription complete |
+| `.quill/transcript-before-speaker-separation.json` | Exact undo snapshot for optional speaker analysis | Temporarily | Restored through `TranscriptStore`, then removed |
 | `transcript.md` | Human-readable transcript | Derived | Rendered from canonical JSON |
 
 Retention removes `Source Audio/` only after canonical transcript publication

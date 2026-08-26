@@ -67,7 +67,7 @@ import Testing
             try decoder.decode(ClockDiagnostics.Observation.self, from: Data($0.utf8))
         }
         #expect(observations.filter { $0.track == .microphone }.count == 2)
-        #expect(observations.allSatisfy { $0.schemaVersion == 1 })
+        #expect(observations.allSatisfy { $0.schemaVersion == 2 })
 
         let sessionLog = try String(
             contentsOf: SessionFiles.sessionLog(session),
@@ -161,10 +161,52 @@ import Testing
         #expect(sessionLog.contains("clock mic epoch 0: 10s, 2 anchors"))
     }
 
+    @Test func captureGapsSplitClockFitsWithinOneRouteEpoch() throws {
+        let session = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: session, withIntermediateDirectories: true)
+        _ = try SessionFiles.prepare(session)
+        defer { try? FileManager.default.removeItem(at: session) }
+
+        let log = SessionLog(dir: session)
+        let diagnostics = ClockDiagnostics(
+            url: SessionFiles.clockObservations(session),
+            log: log,
+            interval: 0,
+            hostFrequency: 1_000
+        )
+        observe(
+            diagnostics, track: .microphone, hostTime: 1_000,
+            sampleTime: 0, normalizedFrame: 0
+        )
+        observe(
+            diagnostics, track: .microphone, hostTime: 11_000,
+            sampleTime: 480_000, normalizedFrame: 480_000
+        )
+        observe(
+            diagnostics, track: .microphone, captureSegment: 1, hostTime: 21_000,
+            sampleTime: 960_000, normalizedFrame: 1_200_000
+        )
+        observe(
+            diagnostics, track: .microphone, captureSegment: 1, hostTime: 31_000,
+            sampleTime: 1_440_000, normalizedFrame: 1_680_000
+        )
+        diagnostics.finish()
+        log.close()
+
+        let sessionLog = try String(
+            contentsOf: SessionFiles.sessionLog(session), encoding: .utf8
+        )
+        #expect(sessionLog.contains("clock mic epoch 0: 10s, 2 anchors"))
+        #expect(sessionLog.contains("clock mic epoch 0 segment 1: 10s, 2 anchors"))
+        #expect(!sessionLog.contains("+16666.7 ppm"))
+    }
+
     private func observe(
         _ diagnostics: ClockDiagnostics,
         track: SourceTrack,
         epoch: Int = 0,
+        captureSegment: Int = 0,
         hostTime: UInt64,
         sampleTime: Double,
         normalizedFrame: Int64
@@ -179,7 +221,8 @@ import Testing
                 observedAt: Date(timeIntervalSince1970: Double(hostTime) / 1_000)
             ),
             normalizedStartFrame: normalizedFrame,
-            normalizedFrameCount: 4_800
+            normalizedFrameCount: 4_800,
+            captureSegment: captureSegment
         )
     }
 }

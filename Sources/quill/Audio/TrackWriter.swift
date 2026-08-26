@@ -52,6 +52,10 @@ final class TrackWriter: @unchecked Sendable {
     /// writer becomes terminal and leaves existing bytes for recovery.
     var onWriteFailure: (@Sendable (String) -> Void)?
 
+    /// Raised after wall-clock repair inserts silence between capture buffers.
+    /// The callback must return immediately; it runs on the archive queue.
+    var onCaptureGap: (@Sendable (Gap) -> Void)?
+
     /// Beyond this many buffers queued, the disk is losing badly enough that
     /// holding more would only grow unbounded. Roughly 20 seconds of audio.
     private static let maxPending = 256
@@ -260,6 +264,7 @@ final class TrackWriter: @unchecked Sendable {
         _lastBufferAt = now
         trackSilenceLocked(converted, at: now)
         let startFrame = frames
+        let captureSegment = _gaps.count
         let written = writeLocked(converted, origin: .captured)
         let failure = takeUnreportedFailureLocked()
         lock.unlock()
@@ -268,7 +273,8 @@ final class TrackWriter: @unchecked Sendable {
                 track: track,
                 stamp: clock,
                 normalizedStartFrame: startFrame,
-                normalizedFrameCount: converted.frameLength
+                normalizedFrameCount: converted.frameLength,
+                captureSegment: captureSegment
             )
         }
         if let failure { onWriteFailure?(failure) }
@@ -474,10 +480,12 @@ final class TrackWriter: @unchecked Sendable {
             guard writeLocked(silence, origin: .insertedSilence) else { return }
             remaining -= silence.frameLength
         }
-        _gaps.append(Gap(at: at, seconds: seconds))
+        let gap = Gap(at: at, seconds: seconds)
+        _gaps.append(gap)
         log.warn(String(
             format: "%@: %.1fs gap at %.1fs padded with silence (%@)", name, seconds, at, reason
         ))
+        if reason == "capture gap" { onCaptureGap?(gap) }
     }
 
     /// Two different questions get asked of the same buffer, and conflating
