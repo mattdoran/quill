@@ -6,6 +6,18 @@
         <description>Signed updates for Quill.</description>
         <language>en</language>
         <item>
+            <title>0.4.0</title>
+            <pubDate>Thu, 27 Aug 2026 19:56:12 +1000</pubDate>
+            <link>https://github.com/mattdoran/quill</link>
+            <sparkle:version>95</sparkle:version>
+            <sparkle:shortVersionString>0.4.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description sparkle:format="markdown"><![CDATA[**Full Changelog**: https://github.com/mattdoran/quill/compare/v0.4.0-beta.2...v0.4.0
+]]></description>
+            <enclosure url="https://github.com/mattdoran/quill/releases/download/v0.4.0/Quill-0.4.0.zip" length="4846801" type="application/octet-stream" sparkle:edSignature="YEcnjUHr3qN+ArFGkp2qx14V5M05NOvvVpZ1a4NPRzJoBul7CQAYoWyGntMwhdwPPJOFEjL8H7zlks69+cDLBg=="/>
+        </item>
+        <item>
             <title>0.4.0-beta.2</title>
             <pubDate>Mon, 24 Aug 2026 21:22:38 +1000</pubDate>
             <link>https://github.com/mattdoran/quill</link>
