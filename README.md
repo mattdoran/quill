@@ -194,8 +194,10 @@ Voices** and **Separate Local Voices** can optionally analyse the corresponding
 retained source. Quill asks for the number of people who actually spoke on that
 track, then shows real analysis progress. The resulting voices can be sampled,
 named, undone or separated again with a corrected count. **Open Transcript
-File** opens the editable Markdown copy. This
-optional work happens after transcription and never complicates recording.
+File** opens the editable Markdown copy. **Review Earlier Transcript…** opens
+the same review workflow for any past session selected from the recordings
+folder. This optional work happens after transcription and never complicates
+recording.
 
 macOS changes audio devices out from under a live recording — a headset
 connecting takes the default input and output at once, and switching Bluetooth

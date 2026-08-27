@@ -133,6 +133,11 @@ struct TranscriptStore {
         FileManager.default.fileExists(atPath: separationSnapshotURL.path)
     }
 
+    var isReviewable: Bool {
+        guard let document = try? read() else { return false }
+        return document.canEditVoices && !document.voiceIDs.isEmpty
+    }
+
     func read() throws -> TranscriptDocument {
         try JSONDecoder().decode(TranscriptDocument.self, from: Data(contentsOf: jsonURL))
     }

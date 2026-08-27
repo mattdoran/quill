@@ -125,6 +125,7 @@ import Testing
             segments: base.segments
         )
         try store.write(original)
+        #expect(store.isReviewable)
         try store.preserveBeforeSpeakerSeparation(original)
 
         var separated = original

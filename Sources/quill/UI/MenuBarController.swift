@@ -16,6 +16,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private let showControlsItem: NSMenuItem
     private let lastTranscriptItem: NSMenuItem
     private let identifyVoicesItem: NSMenuItem
+    private let reviewRecordingItem: NSMenuItem
     private let retryItem: NSMenuItem
     private let downloadModelsItem: NSMenuItem
     private let openFolderItem: NSMenuItem
@@ -31,6 +32,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     var onChangeFolder: (() -> Void)?
     var onOpenLastTranscript: (() -> Void)?
     var onIdentifyVoices: (() -> Void)?
+    var onReviewRecording: (() -> Void)?
     var onOpenFailureLog: (() -> Void)?
     var onRetryTranscription: (() -> Void)?
     var onDownloadModels: (() -> Void)?
@@ -128,6 +130,13 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         )
         menu.addItem(identifyVoicesItem)
 
+        reviewRecordingItem = NSMenuItem(
+            title: "Review Earlier Transcript…",
+            action: #selector(reviewRecordingClicked),
+            keyEquivalent: ""
+        )
+        menu.addItem(reviewRecordingItem)
+
         openFolderItem = NSMenuItem(
             title: "Open Recordings Folder",
             action: #selector(openFolderClicked),
@@ -185,6 +194,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         for item in [
             toggleItem, showControlsItem, openFolderItem, changeFolderItem, quitItem,
             lastTranscriptItem, identifyVoicesItem, about, retryItem,
+            reviewRecordingItem,
             downloadModelsItem,
             transcriptionLabel,
             settings,
@@ -315,7 +325,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     /// back on open rather than only after a click.
     func menuWillOpen(_ menu: NSMenu) {
         refreshSettings()
-        lastTranscriptItem.isEnabled = hasTranscript?() ?? false
+        let hasTranscript = hasTranscript?() ?? false
+        lastTranscriptItem.isEnabled = hasTranscript
+        reviewRecordingItem.isEnabled = hasTranscript && !isRecording
         let hasVoiceReview = hasVoiceReview?() ?? false
         identifyVoicesItem.isHidden = !hasVoiceReview
         identifyVoicesItem.isEnabled = hasVoiceReview && !isRecording
@@ -411,5 +423,6 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     @objc private func changeFolderClicked() { onChangeFolder?() }
     @objc private func openLastTranscriptClicked() { onOpenLastTranscript?() }
     @objc private func identifyVoicesClicked() { onIdentifyVoices?() }
+    @objc private func reviewRecordingClicked() { onReviewRecording?() }
     @objc private func quitClicked() { onQuit?() }
 }

@@ -75,6 +75,7 @@ Quill is idle                                       ⟨disabled⟩
 Start Recording
 Open Last Transcript
 Review Last Transcript…
+Review Earlier Transcript…
 Open Recordings Folder
 ────────────────────────────────────────────
 Settings…
@@ -87,6 +88,9 @@ Quit Quill                                      ⌘Q
 `Review Last Transcript…` is hidden until the newest compatible
 transcript exists. It is disabled during recording so sample playback cannot
 enter the capture.
+`Review Earlier Transcript…` opens a folder picker at the recordings root and
+accepts any past Quill session with a compatible completed transcript. It is
+disabled during recording for the same sample-playback reason.
 `Retry Transcription` and `Download Transcription Models` are hidden unless they
 apply, and appear in the status block at the top. `Change Recordings Folder…`
 appears below `Open Recordings Folder` only when Quill cannot read that folder.
@@ -99,6 +103,7 @@ Recording — 12:03                                   ⟨disabled⟩
 Stop Recording
 Open Last Transcript
 Review Last Transcript…                                ⟨disabled⟩
+Review Earlier Transcript…                            ⟨disabled⟩
 Open Recordings Folder
 ────────────────────────────────────────────
 Settings…

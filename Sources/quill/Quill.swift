@@ -141,6 +141,7 @@ final class AppController {
             guard let session = self?.voiceReviewSession() else { return }
             self?.reviewTranscript(at: session)
         }
+        menuBar.onReviewRecording = { [weak self] in self?.chooseRecordingToReview() }
         menuBar.hasVoiceReview = { [weak self] in self?.voiceReviewSession() != nil }
         menuBar.hasTranscript = { [weak self] in
             guard let self else { return false }
@@ -614,11 +615,29 @@ final class AppController {
     private func voiceReviewSession() -> URL? {
         guard let transcript = lastTranscript() else { return nil }
         let session = transcript.deletingLastPathComponent()
-        guard
-            let document = try? TranscriptStore(session: session).read(),
-            !document.voiceIDs.isEmpty
-        else { return nil }
-        return session
+        return TranscriptStore(session: session).isReviewable ? session : nil
+    }
+
+    private func chooseRecordingToReview() {
+        guard session == nil else { return }
+        NSApp.activate(ignoringOtherApps: true)
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = root
+        panel.prompt = "Review"
+        panel.message = "Choose a recording to review its transcript."
+        guard panel.runModal() == .OK, let chosen = panel.url else { return }
+        guard TranscriptStore(session: chosen).isReviewable else {
+            let alert = NSAlert()
+            alert.messageText = "This recording can’t be reviewed"
+            alert.informativeText = "Choose a Quill recording folder that contains a compatible completed transcript."
+            alert.runModal()
+            return
+        }
+        reviewTranscript(at: chosen)
     }
 
     func reviewTranscript(at session: URL) {
