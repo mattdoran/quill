@@ -331,10 +331,17 @@ from the manifest. Local and remote model passes are serial.
 Before publishing the first separated document, `TranscriptStore` atomically
 preserves the baseline as
 `.quill/transcript-before-speaker-separation.json`. Undo republishes that
-snapshot as canonical JSON and Markdown, then removes the snapshot. A failed
-analysis does not change the canonical transcript. Sortformer exposes no
-within-file progress callback, so progress is limited to model preparation and
-completed source count.
+snapshot as canonical JSON and Markdown, then removes the snapshot. A later
+separation pass reads that baseline but does not replace the current separated
+document until the new result succeeds. A failed analysis therefore leaves the
+canonical transcript unchanged.
+
+Long-form separation uses FluidAudio's offline VBx pipeline. The user supplies
+the exact number of speakers on the selected track, or explicitly chooses less
+reliable automatic detection. Segmentation and embedding extraction run over
+10-second chunks and expose completed/total chunk progress. Clustering remains
+an indeterminate final stage. The diarization model output is then mapped onto
+the existing ASR segments by greatest time overlap.
 
 ## 7. Session artifacts and authority
 

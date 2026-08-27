@@ -70,6 +70,9 @@ is not in play.
   window Command-Tab presence without a permanent Dock icon.
 - Keep the companion visual-effect view's explicit rounded `maskImage`. Layer
   corner clipping alone left a square backdrop artifact in WindowServer output.
+- Do not use FluidAudio's offline Sortformer for long multi-speaker recordings.
+  It independently tiles 30.72-second windows without speaker-cache state, so
+  identity confusion within a window cannot be repaired by boundary stitching.
 - Wait for forced process termination before replacing or reopening the app.
   Skipping the post-`pkill` wait produced LaunchServices error `-600` during an
   otherwise valid signed install.

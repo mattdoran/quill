@@ -141,6 +141,8 @@ import Testing
         try store.preserveBeforeSpeakerSeparation(separated)
 
         #expect(store.canRestoreBeforeSpeakerSeparation)
+        #expect(try store.readBeforeSpeakerSeparation().diarizer == nil)
+        #expect(try store.read().diarizer == "sortformer-offline-v2.1")
         try store.restoreBeforeSpeakerSeparation()
         #expect(try store.read().diarizer == original.diarizer)
         #expect(!store.canRestoreBeforeSpeakerSeparation)

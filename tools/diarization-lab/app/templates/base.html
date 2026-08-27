@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Quill diarization lab{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v={{ config.VERSION }}">
+  </head>
+  <body>
+    {% block content %}{% endblock %}
+    <script src="{{ url_for('static', filename='app.js') }}?v={{ config.VERSION }}"></script>
+  </body>
+</html>

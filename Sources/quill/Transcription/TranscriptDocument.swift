@@ -137,6 +137,13 @@ struct TranscriptStore {
         try JSONDecoder().decode(TranscriptDocument.self, from: Data(contentsOf: jsonURL))
     }
 
+    func readBeforeSpeakerSeparation() throws -> TranscriptDocument {
+        try JSONDecoder().decode(
+            TranscriptDocument.self,
+            from: Data(contentsOf: separationSnapshotURL)
+        )
+    }
+
     func write(_ document: TranscriptDocument) throws {
         guard document.schema_version == TranscriptDocument.currentSchemaVersion else {
             throw StoreError.unsupportedSchema
@@ -177,10 +184,7 @@ struct TranscriptStore {
     }
 
     func restoreBeforeSpeakerSeparation() throws {
-        let snapshot = try JSONDecoder().decode(
-            TranscriptDocument.self,
-            from: Data(contentsOf: separationSnapshotURL)
-        )
+        let snapshot = try readBeforeSpeakerSeparation()
         try write(snapshot)
         try FileManager.default.removeItem(at: separationSnapshotURL)
     }

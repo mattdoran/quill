@@ -2,6 +2,41 @@
 
 Dated product and architecture decisions. Newest first.
 
+## 2026-08-27: Use exact-count VBx for long-form voice separation
+
+**Decision:** Optional voice separation uses FluidAudio's offline VBx pipeline.
+Before each pass, ask for the number of distinct speakers on the selected audio
+track. Exact counts from 2 through 20 are the normal path; automatic detection
+is available and labelled less reliable. A separated transcript can be rerun
+from its preserved baseline without first publishing an undo.
+
+**Why:** On a human-labelled 50:43 remote track with three speakers, the
+existing offline Sortformer reached 44.9% duration accuracy and mixed all three
+people across its slots. Exact-count VBx reached 95.2%. Stateful high-context
+Sortformer reached 93.7% but exposes four fixed slots and still requires an
+unproven merge step. Automatic VBx chose four clusters and reached 93.2%.
+
+**Consequence:** The speaker-count hint constrains clustering rather than the
+global capacity of the model. VBx reports real completed/total segmentation
+chunks, which Quill displays as percentage progress. The following clustering
+stage remains indeterminate. A failed rerun leaves both the preserved baseline
+and currently published separated transcript intact.
+
+## 2026-08-26: Do not show false diarisation progress
+
+**Decision:** Speaker separation uses an indeterminate activity indicator and
+names the selected audio source. It does not show a percentage or source count.
+
+**Why:** Sortformer exposes no progress during its single, minutes-long pass.
+The first implementation mapped queue boundaries to `0%` and `100%`, which left
+the live UI claiming `0% complete, source 1 of 1` while the model was using a
+full CPU core and progressing normally. That was internal state presented as
+user progress.
+
+**Consequence:** The UI is honest about the unavailable estimate. Future real
+progress requires model support or a measured processing boundary that does not
+damage speaker continuity.
+
 ## 2026-08-26: Rebuild system capture after discontinuities
 
 **Decision:** A detected system-track capture gap or default output-route change

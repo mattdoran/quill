@@ -135,8 +135,9 @@ limit. A higher-capacity diarizer needs a benchmark against retained real calls
 before replacing the stable four-speaker model.
 
 The concrete Sortformer API reports only completion of a whole file. Quill can
-show model preparation, the current source, source count and coarse percentage
-between sources, but cannot honestly show within-file percentage. Remote-only
+show model preparation and the selected source, but cannot honestly show a
+within-file percentage. A first implementation exposed queue boundaries as
+`0%` and `100%`; live review rejected that false progress. Remote-only
 analysis also halves work for the normal call case and avoids the false local
 pass. Running two model instances in parallel would increase model memory and
 contention and has not been justified by a benchmark.

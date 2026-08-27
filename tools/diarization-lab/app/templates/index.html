@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block content %}
+<header>
+  <div>
+    <p class="eyebrow">Quill diarization lab</p>
+    <h1>{{ session.path.name }}</h1>
+    <p>{{ rows|length }} remote transcript segments · {{ session.audio.name }}</p>
+  </div>
+  <audio id="audio" controls preload="metadata" src="{{ url_for('audio') }}"></audio>
+</header>
+
+<main>
+  <section class="summaries" aria-label="Model summaries">
+    {% for run in runs %}
+      {% set summary = summaries[run.name] %}
+      <article>
+        <h2>{{ run.name }}</h2>
+        <dl>
+          <div><dt>Raw spans</dt><dd>{{ summary.span_count }}</dd></div>
+          <div><dt>Unassigned rows</dt><dd>{{ summary.unassigned }}</dd></div>
+          <div><dt>Material multi-speaker rows</dt><dd>{{ summary.material_multi }}</dd></div>
+          <div><dt>Low-purity rows</dt><dd>{{ summary.low_purity }}</dd></div>
+          {% if summary.score %}
+            <div><dt>Labeled rows</dt><dd>{{ summary.score.labeled_rows }}</dd></div>
+            <div><dt>Duration accuracy</dt><dd>{{ "%.1f%%"|format(summary.score.duration_accuracy * 100) }}</dd></div>
+            <div><dt>Row accuracy</dt><dd>{{ "%.1f%%"|format(summary.score.row_accuracy * 100) }}</dd></div>
+            <div>
+              <dt>Best mapping</dt>
+              <dd>
+                {% for speaker, human in summary.score.mapping.items() %}
+                  {{ speaker }}→{{ human }}{% if not loop.last %}, {% endif %}
+                {% endfor %}
+              </dd>
+            </div>
+          {% endif %}
+        </dl>
+      </article>
+    {% endfor %}
+  </section>
+
+  <form method="post" action="{{ url_for('save_annotations') }}">
+    <div class="save-bar">
+      <p>
+        Label the actual remote speaker. Playback continues through following rows.
+        <strong class="unsaved" data-unsaved hidden>Unsaved changes</strong>
+      </p>
+      <button type="submit">Save labels</button>
+    </div>
+
+    <ol class="transcript">
+      {% for row in rows %}
+        {% set segment = row.segment %}
+        <li id="row-{{ loop.index }}" data-row>
+          <button
+            class="play"
+            type="button"
+            data-play
+            data-start="{{ segment.start_ms / 1000 }}"
+            data-end="{{ segment.end_ms / 1000 }}"
+            aria-label="Continue playback from this segment"
+          >▶</button>
+          <div class="segment">
+            <p class="time">{{ "%02d:%02d"|format(segment.start_ms // 60000, (segment.start_ms // 1000) % 60) }}</p>
+            <p class="text">{{ segment.text }}</p>
+            <div class="predictions">
+              {% for run in runs %}
+                {% set assignment = row.assignments[run.name] %}
+                <span class="prediction{% if assignment.material_speakers > 1 %} ambiguous{% endif %}">
+                  {{ run.name }}: {{ assignment.speaker or "∅" }}
+                  {% if assignment.purity is not none %}{{ "%.0f%%"|format(assignment.purity * 100) }}{% endif %}
+                </span>
+              {% endfor %}
+            </div>
+          </div>
+          <fieldset class="labels">
+            <legend>Human label</legend>
+            {% for label in labels %}
+              <label>
+                <input
+                  type="radio"
+                  name="label:{{ row.key }}"
+                  value="{{ label }}"
+                  {% if row.annotation == label %}checked{% endif %}
+                >
+                <span>{{ label }}</span>
+              </label>
+            {% endfor %}
+          </fieldset>
+        </li>
+      {% endfor %}
+    </ol>
+  </form>
+</main>
+{% endblock %}

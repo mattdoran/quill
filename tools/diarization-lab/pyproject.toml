@@ -1,0 +1,36 @@
+[project]
+name = "quill-diarization-lab"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = [
+    "click>=8.2,<9",
+    "flask>=3.1,<4",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4,<9",
+    "ruff>=0.12,<1",
+]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+line-length = 100
+cache-dir = "devdata/cache/ruff"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["E501"]
+
+[tool.ruff.format]
+skip-magic-trailing-comma = true
+
+[tool.ruff.lint.isort]
+split-on-trailing-comma = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+cache_dir = "devdata/cache/pytest"
+pythonpath = ["."]

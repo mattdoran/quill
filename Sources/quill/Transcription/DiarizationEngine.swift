@@ -1,28 +1,31 @@
 import FluidAudio
 import Foundation
 
-/// Speaker diarization over a single track, via FluidAudio's offline Sortformer
-/// model — the same dependency as the ASR engine, sharing its managed model
-/// cache.
-///
-/// Note the two senses of the word here: the mic-vs-system split is already
-/// diarization, across tracks and exact. This is the within-track kind, for
-/// when one track carries several people anyway — a group call collapsing into
-/// an undifferentiated `them`, or an in-person meeting where the whole room
-/// shares the microphone.
-///
-/// Offline, not streaming — the model sees the whole conversation before
-/// assigning identities, so someone who speaks at 00:02 and again at 40:00 gets
-/// the same label. A session is a complete file by the time it is transcribed.
-///
-/// The model has four output slots, so at most four speakers per track.
+enum SpeakerCountSelection: Sendable, Equatable {
+    case exact(Int)
+    case automatic
+
+    var description: String {
+        switch self {
+        case .exact(let count): "exactly \(count)"
+        case .automatic: "automatic"
+        }
+    }
+}
+
+/// Within-track speaker diarization using FluidAudio's long-form offline VBx
+/// pipeline. Microphone and system audio remain separate tracks before this
+/// stage.
 actor DiarizationEngine {
-    /// A stretch of speech in track-local seconds, attributed to one of the
-    /// diarizer's speaker slots.
     struct Span: Sendable {
         let speaker: Int
         let start: TimeInterval
         let end: TimeInterval
+    }
+
+    struct Analysis: Sendable {
+        let spans: [Span]
+        let timings: PipelineTimings?
     }
 
     enum EngineError: Error, CustomStringConvertible {
@@ -30,65 +33,56 @@ actor DiarizationEngine {
 
         var description: String {
             switch self {
-            case .notPrepared: return "diarization engine used before prepare()"
+            case .notPrepared: "diarization engine used before prepare()"
             }
         }
     }
 
-    nonisolated let model = "sortformer-offline-v2.1"
+    nonisolated let model = "offline-vbx-community-1"
 
-    private var diarizer: OfflineSortformerDiarizer?
+    private var models: OfflineDiarizerModels?
 
     func prepare() async throws {
-        guard diarizer == nil else { return }
-        let diarizer = OfflineSortformerDiarizer()
-        try await diarizer.initializeFromHuggingFace()
-        self.diarizer = diarizer
+        guard models == nil else { return }
+        models = try await OfflineDiarizerModels.load()
     }
 
-    /// Speech spans for a complete track, in track-local time. Sorted by start
-    /// so callers can walk it alongside transcript segments.
-    func spans(for audio: URL) throws -> [Span] {
-        guard let diarizer else { throw EngineError.notPrepared }
-        let timeline = try diarizer.processComplete(audioFileURL: audio)
-
-        var spans: [Span] = []
-        for (index, speaker) in timeline.speakers {
-            for segment in speaker.finalizedSegments {
-                spans.append(Span(
-                    speaker: index,
-                    start: TimeInterval(segment.startTime),
-                    end: TimeInterval(segment.endTime)
-                ))
-            }
+    func analyse(
+        _ audio: URL,
+        speakerCount: SpeakerCountSelection,
+        progress: (@Sendable (Int, Int) -> Void)? = nil
+    ) async throws -> Analysis {
+        guard let models else { throw EngineError.notPrepared }
+        let config: OfflineDiarizerConfig
+        switch speakerCount {
+        case .exact(let count):
+            config = OfflineDiarizerConfig.default.withSpeakers(exactly: count)
+        case .automatic:
+            config = .default
         }
-        return spans.sorted { $0.start < $1.start }
+        let diarizer = OfflineDiarizerManager(config: config)
+        diarizer.initialize(models: models)
+        let result = try await diarizer.process(audio, progressCallback: progress)
+
+        let speakerIDs = Array(Set(result.segments.map(\.speakerId))).sorted()
+        let speakerNumbers = Dictionary(
+            uniqueKeysWithValues: speakerIDs.enumerated().map { ($0.element, $0.offset) }
+        )
+        let spans = result.segments.compactMap { segment -> Span? in
+            guard let speaker = speakerNumbers[segment.speakerId] else { return nil }
+            return Span(
+                speaker: speaker,
+                start: TimeInterval(segment.startTimeSeconds),
+                end: TimeInterval(segment.endTimeSeconds)
+            )
+        }.sorted { $0.start < $1.start }
+        return Analysis(spans: spans, timings: result.timings)
     }
 
     func release() {
-        diarizer = nil
+        models = nil
     }
 
-    // MARK: -
-
-    /// Attribution rather than diarization: this consumes `spans` and decides
-    /// what each transcript segment is called, giving every segment the speaker
-    /// it overlaps most.
-    ///
-    /// Numbering follows first appearance, not the model's arbitrary slot
-    /// indices — `them 1` is whoever spoke first, which is readable and stable
-    /// across re-runs.
-    ///
-    /// Returns one label per segment, positionally.
-    ///
-    /// One speaker means nothing to disambiguate, so everything gets `solo`: a
-    /// track that turns out to hold one person should not acquire a `room 1`
-    /// that never contrasts with anything, and on the mic that one person is
-    /// whoever owns the machine.
-    ///
-    /// A segment overlapping no span — the diarizer heard no speech where the
-    /// ASR found words — gets the unnumbered `shared` label. Among several
-    /// speakers "someone in the room" is honest; naming one would be a guess.
     static func labels(
         for segments: [TranscriptSegment],
         spans: [Span],
@@ -98,15 +92,12 @@ actor DiarizationEngine {
         guard !spans.isEmpty else { return segments.map { _ in solo } }
 
         let dominant = assignments(for: segments, spans: spans)
-
         var ordinal: [Int: Int] = [:]
         for speaker in dominant {
             guard let speaker, ordinal[speaker] == nil else { continue }
             ordinal[speaker] = ordinal.count + 1
         }
-
         guard ordinal.count > 1 else { return segments.map { _ in solo } }
-
         return dominant.map { speaker in
             guard let speaker, let n = ordinal[speaker] else { return shared }
             return "\(shared) \(n)"
@@ -121,9 +112,6 @@ actor DiarizationEngine {
         }
     }
 
-    /// The speaker with the most overlap across `[start, end)`, or nil when the
-    /// segment overlaps no span. Ties break toward the lower slot index so the
-    /// result doesn't depend on dictionary ordering.
     private static func dominantSpeaker(
         from start: TimeInterval,
         to end: TimeInterval,
@@ -139,8 +127,6 @@ actor DiarizationEngine {
         var best: Int?
         var bestOverlap: TimeInterval = 0
         for (speaker, shared) in overlap {
-            // Strictly greater, then lower index on a tie, so the result never
-            // depends on dictionary ordering.
             if shared > bestOverlap || (shared == bestOverlap && speaker < best ?? Int.max) {
                 best = speaker
                 bestOverlap = shared

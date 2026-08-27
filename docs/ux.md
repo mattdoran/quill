@@ -494,9 +494,14 @@ explanation. The existing timed words remain authoritative:
 Quill runs diarisation against retained source audio and reassigns speaker
 metadata without rerunning speech recognition.
 
+Before analysis, Quill asks how many distinct people spoke on that track. The
+Remote question excludes the user; the Local question includes everyone near
+the Mac. Counts from 2 through 20 select exact-count VBx clustering. `Detect
+automatically (less reliable)` is an explicit fallback rather than the default.
+
 The operation is serialised with transcript work. It shows model preparation,
-the current source, source count and a coarse percentage between sources. The
-current model does not report progress within one source. It stages the enriched
+real completed-chunk progress while the selected source is analysed, then an
+indeterminate clustering stage and transcript update. It stages the enriched
 document and atomically publishes `.quill/transcript.json` and `transcript.md`;
 failure leaves the baseline unchanged. Separating one source preserves the
 other source's coarse identity. A track with one detected person still
@@ -507,7 +512,9 @@ Before first separation, Quill preserves the exact baseline transcript. After a
 successful result, `Undo Voice Separation` restores `Me` and `Them`, including
 their saved names, and removes separated voice names. Sessions processed by an
 older version have no snapshot and cannot offer exact undo without rerunning
-speech recognition.
+speech recognition. `Run Voice Separation Again` reuses the preserved baseline
+with a new speaker count while retaining the current separated result until its
+replacement succeeds.
 
 ### Finished session audio
 

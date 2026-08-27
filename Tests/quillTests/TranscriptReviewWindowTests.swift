@@ -252,13 +252,21 @@ import Testing
             voices: [:],
             segments: []
         )
+        let source = session.appendingPathComponent("Source Audio", isDirectory: true)
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        try Data().write(to: source.appendingPathComponent("Remote.m4a"))
         let separated = TranscriptDocument(
             schema_version: 1,
             engine: "test",
             model: "test",
             diarizer: "sortformer-offline-v2.1",
             created_at: baseline.created_at,
-            voices: [:],
+            voices: [
+                "system:1": .init(
+                    source: "system", audio_file: "Source Audio/Remote.m4a",
+                    machine_label: "Voice 1", name: nil, samples: []
+                ),
+            ],
             segments: []
         )
         let store = TranscriptStore(session: session)
@@ -272,6 +280,7 @@ import Testing
         )
         let content = try #require(controller.window?.contentView)
         #expect(buttonTitles(in: content).contains("Undo Voice Separation"))
+        #expect(buttonTitles(in: content).contains("Run Voice Separation Again"))
     }
 
     @Test func unavailableSampleHasAnAccurateAccessibilityLabel() throws {

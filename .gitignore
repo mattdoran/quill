@@ -2,3 +2,6 @@
 .DS_Store
 .vscode/
 signing.conf
+tools/diarization-lab/devdata/
+tools/diarization-lab/.venv/
+tools/diarization-lab/**/__pycache__/

@@ -3,21 +3,6 @@
 Possible product paths that need investigation or a design decision. Nothing in
 this file is committed roadmap or current behaviour.
 
-## Speaker diarization beyond four remote people
-
-The pinned offline Sortformer model has four output slots per source track. A
-3:42 call with more than eight remote participants confirmed that it merges
-identities once Remote contains more than four people. More CPU or parallel
-track processing cannot remove that representational limit.
-
-Benchmark FluidAudio's higher-capacity diarizers against retained real calls.
-LS-EEND supports more simultaneous speakers but may trade stable identity for
-false alarms. The offline VBx pipeline is intended for batch-quality
-diarization and clustering. Compare speaker-count accuracy, identity stability,
-overlap handling, runtime, peak memory and packaging cost before changing the
-model. Also benchmark two concurrent model instances separately; concurrency is
-a latency and memory question, not a quality solution.
-
 ## Call lifecycle reliability
 
 Quill offers to start recording when a recognized meeting begins and offers to

@@ -29,14 +29,17 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
     private let isRecording: () -> Bool
     private let separateSpeakers: (
         Set<SourceTrack>,
+        SpeakerCountSelection,
         @escaping @Sendable (SpeakerSeparationProgress) -> Void
     ) async throws -> Void
+    private let chooseSpeakerCount: ((Set<SourceTrack>, SpeakerCountSelection) -> SpeakerCountSelection?)?
     private var rows: [Row] = []
     private var speakerActionButtons: [NSButton] = []
     private var focusEntries: [FocusEntry] = []
     private weak var transcriptTextView: NSTextView?
     private var separationState = SeparationState.idle
     private var lastSeparationTracks: Set<SourceTrack> = [.system]
+    private var lastSpeakerCount: SpeakerCountSelection = .exact(3)
     private var player: AVAudioPlayer?
     private var stopTimer: Timer?
     private var nextSampleIndex: [String: Int] = [:]
@@ -50,14 +53,19 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
         isRecording: @escaping () -> Bool,
         separateSpeakers: @escaping (
             Set<SourceTrack>,
+            SpeakerCountSelection,
             @escaping @Sendable (SpeakerSeparationProgress) -> Void
         ) async throws -> Void,
+        chooseSpeakerCount: (
+            (Set<SourceTrack>, SpeakerCountSelection) -> SpeakerCountSelection?
+        )? = nil,
         appearance: NSAppearance? = nil
     ) throws {
         self.session = session
         transcript = try TranscriptStore(session: session).read()
         self.isRecording = isRecording
         self.separateSpeakers = separateSpeakers
+        self.chooseSpeakerCount = chooseSpeakerCount
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 840, height: 620),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -89,7 +97,8 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
         try self.init(
             session: session,
             isRecording: isRecording,
-            separateSpeakers: { _, _ in try await separateSpeakers() },
+            separateSpeakers: { _, _, _ in try await separateSpeakers() },
+            chooseSpeakerCount: { _, _ in .automatic },
             appearance: appearance
         )
     }
@@ -302,7 +311,12 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
         header.orientation = .vertical
         header.alignment = .leading
         header.spacing = 3
-        let content = transcript.diarizer == nil ? makeBaselineReview() : makeSeparatedReview()
+        let content: NSView
+        if case .idle = separationState {
+            content = transcript.diarizer == nil ? makeBaselineReview() : makeSeparatedReview()
+        } else {
+            content = makeSeparationPrompt()
+        }
         header.translatesAutoresizingMaskIntoConstraints = false
         content.translatesAutoresizingMaskIntoConstraints = false
         root.addSubview(header)
@@ -337,10 +351,17 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
         guard TranscriptStore(session: session).canRestoreBeforeSpeakerSeparation else {
             return voices
         }
-        let detail = NSTextField(
-            wrappingLabelWithString: "Restore the original Me and Them transcript."
+        let detail = NSTextField(wrappingLabelWithString:
+            "Run again with a different speaker count, or restore the original Me and Them transcript."
         )
         detail.textColor = .secondaryLabelColor
+        let tracks = Set<SourceTrack>(transcript.voices.values.compactMap { voice in
+            guard
+                voice.machine_label.hasPrefix("Voice "),
+                sourceURL(for: voice) != nil
+            else { return nil }
+            return SourceTrack(rawValue: voice.source)
+        })
         let restore = NSButton(
             title: "Undo Voice Separation",
             target: self,
@@ -348,7 +369,14 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
         )
         restore.bezelStyle = .rounded
         speakerActionButtons.append(restore)
-        let action = NSStackView(views: [detail, restore])
+        var actionViews: [NSView] = [detail]
+        if !tracks.isEmpty {
+            actionViews.append(separationButton(
+                title: "Run Voice Separation Again", tracks: tracks
+            ))
+        }
+        actionViews.append(restore)
+        let action = NSStackView(views: actionViews)
         action.orientation = .vertical
         action.alignment = .leading
         action.spacing = 8
@@ -368,13 +396,28 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
         stack.spacing = 10
         switch separationState {
         case .idle:
-            let detail = NSTextField(wrappingLabelWithString: sourceAudioAvailable
-                ? "More than two people?\nThe model supports up to four voices per audio track."
-                : "Source audio is no longer available, so voices cannot be separated."
-            )
-            detail.font = .systemFont(ofSize: 12, weight: .semibold)
-            detail.textColor = .secondaryLabelColor
-            stack.addArrangedSubview(detail)
+            if sourceAudioAvailable {
+                let heading = NSTextField(labelWithString: "Separate distinct voices")
+                heading.font = .systemFont(ofSize: 12, weight: .semibold)
+                heading.textColor = .secondaryLabelColor
+                let limitation = NSTextField(
+                    wrappingLabelWithString: "Providing the number of speakers gives the most reliable result."
+                )
+                limitation.font = .systemFont(ofSize: 11)
+                limitation.textColor = .tertiaryLabelColor
+                let explanation = NSStackView(views: [heading, limitation])
+                explanation.orientation = .vertical
+                explanation.alignment = .leading
+                explanation.spacing = 3
+                stack.addArrangedSubview(explanation)
+            } else {
+                let unavailable = NSTextField(
+                    wrappingLabelWithString: "Source audio is no longer available, so voices cannot be separated."
+                )
+                unavailable.font = .systemFont(ofSize: 12, weight: .semibold)
+                unavailable.textColor = .secondaryLabelColor
+                stack.addArrangedSubview(unavailable)
+            }
             if sourceAvailable(for: .system) {
                 stack.addArrangedSubview(separationButton(
                     title: "Separate Remote Voices",
@@ -599,13 +642,21 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
             return
         }
         if hasUnsavedNames, !saveNames(refresh: false) { return }
+        let speakerCount: SpeakerCountSelection?
+        if let chooseSpeakerCount {
+            speakerCount = chooseSpeakerCount(tracks, lastSpeakerCount)
+        } else {
+            speakerCount = promptForSpeakerCount(tracks: tracks, previous: lastSpeakerCount)
+        }
+        guard let speakerCount else { return }
         lastSeparationTracks = tracks
+        lastSpeakerCount = speakerCount
         separationState = .separating("Preparing the speaker model…")
         refreshContent()
         Task { [weak self] in
             guard let self else { return }
             do {
-                try await separateSpeakers(tracks) { [weak self] progress in
+                try await separateSpeakers(tracks, speakerCount) { [weak self] progress in
                     Task { @MainActor [weak self] in
                         self?.updateSeparationProgress(progress)
                     }
@@ -622,15 +673,62 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
 
     private func updateSeparationProgress(_ progress: SpeakerSeparationProgress) {
         guard case .separating = separationState else { return }
-        if let source = progress.source {
-            let name = source == .microphone ? "Local audio" : "Remote audio"
-            separationState = .separating(
-                "\(progress.percentage)% complete. \(name), source \(min(progress.completedSources + 1, progress.totalSources)) of \(progress.totalSources). The model does not report progress within a source."
-            )
-        } else {
+        switch progress.stage {
+        case .preparingModel:
             separationState = .separating("Preparing the speaker model…")
+        case .analysing(let source, let completed, let total):
+            let name = source == .microphone ? "local" : "remote"
+            let percent = total > 0 ? Int((Double(completed) / Double(total)) * 100) : 0
+            let detail = "Analysing \(name) audio: \(percent)%."
+            if case .separating(let current) = separationState, current == detail { return }
+            separationState = .separating(detail)
+        case .clustering(let source):
+            let name = source == .microphone ? "local" : "remote"
+            separationState = .separating(
+                "Finishing analysis and clustering voices in \(name) audio…"
+            )
+        case .updatingTranscript:
+            separationState = .separating("Updating the transcript…")
         }
         if window?.isVisible == true { refreshContent() }
+    }
+
+    private func promptForSpeakerCount(
+        tracks: Set<SourceTrack>, previous: SpeakerCountSelection
+    ) -> SpeakerCountSelection? {
+        let alert = NSAlert()
+        if tracks == [.system] {
+            alert.messageText = "How many other people spoke in this recording?"
+            alert.informativeText = "Count distinct remote voices that actually spoke. Do not include yourself."
+        } else if tracks == [.microphone] {
+            alert.messageText = "How many people spoke near this Mac?"
+            alert.informativeText = "Count distinct local voices that actually spoke."
+        } else {
+            alert.messageText = "How many people spoke on each selected track?"
+            alert.informativeText = "Use this only when the selected tracks contain the same number of distinct voices."
+        }
+        if transcript.diarizer != nil {
+            alert.informativeText += " The new result will replace the current separated voices and names only after it succeeds."
+        }
+        let picker = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 260, height: 28))
+        for count in 2...20 {
+            picker.addItem(withTitle: "\(count) speakers")
+            picker.lastItem?.tag = count
+        }
+        picker.menu?.addItem(.separator())
+        picker.addItem(withTitle: "Detect automatically (less reliable)")
+        picker.lastItem?.tag = 0
+        switch previous {
+        case .exact(let count) where (2...20).contains(count):
+            picker.selectItem(withTag: count)
+        default:
+            picker.selectItem(withTag: 0)
+        }
+        alert.accessoryView = picker
+        alert.addButton(withTitle: "Separate Voices")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return nil }
+        return picker.selectedTag() == 0 ? .automatic : .exact(picker.selectedTag())
     }
 
     @objc private func restoreSeparationClicked() {

@@ -191,8 +191,10 @@ familiar M4A files after stop. An interrupted session is recovered on launch.
 Quill first writes a useful transcript that distinguishes the room from the
 call. Completion opens a read-only transcript review where **Separate Remote
 Voices** and **Separate Local Voices** can optionally analyse the corresponding
-retained source and play short samples for naming them. **Open Transcript File**
-opens the editable Markdown copy. This
+retained source. Quill asks for the number of people who actually spoke on that
+track, then shows real analysis progress. The resulting voices can be sampled,
+named, undone or separated again with a corrected count. **Open Transcript
+File** opens the editable Markdown copy. This
 optional work happens after transcription and never complicates recording.
 
 macOS changes audio devices out from under a live recording — a headset

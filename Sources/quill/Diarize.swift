@@ -26,6 +26,9 @@ struct Diarize: ParsableCommand {
     @Option(name: .long, help: "Speaker label prefix (default: \"them\").")
     var speaker: String = "them"
 
+    @Option(name: .long, help: "Exact number of speakers (automatic when omitted).")
+    var numSpeakers: Int?
+
     /// The model loading underneath is async, but the daemon depends on
     /// ArgumentParser calling `Run.run()` synchronously on the main thread, so
     /// the root command stays sync and the async work is confined here.
@@ -84,7 +87,21 @@ struct Diarize: ParsableCommand {
         FileHandle.standardError.write(Data("loading diarization model…\n".utf8))
         try await engine.prepare()
 
-        let spans = try await engine.spans(for: url)
+        if let numSpeakers, numSpeakers < 1 {
+            throw ValidationError("--num-speakers must be at least 1")
+        }
+        let selection = numSpeakers.map(SpeakerCountSelection.exact) ?? .automatic
+        let analysis = try await engine.analyse(
+            url,
+            speakerCount: selection,
+            progress: { completed, total in
+                FileHandle.standardError.write(Data(
+                    "analysing chunk \(completed)/\(total)\r".utf8
+                ))
+            }
+        )
+        FileHandle.standardError.write(Data("\n".utf8))
+        let spans = analysis.spans
         let elapsed = Date().timeIntervalSince(started)
         let speakers = Set(spans.map(\.speaker)).sorted()
         print("speakers: \(speakers.count) \(speakers.map { "#\($0)" }.joined(separator: " "))")
