@@ -27,6 +27,24 @@ enum Config {
         set("recordings_dir", url.path)
     }
 
+    static func companionPlacement() -> MeetingCompanionPlacement? {
+        guard
+            let value = load()["companion_placement"] as? [String: Any],
+            let rightEdge = (value["right_edge"] as? NSNumber)?.doubleValue,
+            let centerY = (value["center_y"] as? NSNumber)?.doubleValue,
+            rightEdge.isFinite,
+            centerY.isFinite
+        else { return nil }
+        return MeetingCompanionPlacement(rightEdge: rightEdge, centerY: centerY)
+    }
+
+    static func setCompanionPlacement(_ placement: MeetingCompanionPlacement) {
+        set("companion_placement", [
+            "center_y": placement.centerY,
+            "right_edge": placement.rightEdge,
+        ])
+    }
+
     static func onStop() -> String? {
         guard let command = load()["on_stop"] as? String, !command.isEmpty else { return nil }
         return command

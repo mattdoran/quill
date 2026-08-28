@@ -1,5 +1,10 @@
 import AppKit
 
+struct MeetingCompanionPlacement: Equatable, Sendable {
+    let rightEdge: Double
+    let centerY: Double
+}
+
 @MainActor
 final class MeetingCompanionController: NSObject, NSWindowDelegate {
     static let expandedSize = NSSize(width: 380, height: 72)
@@ -19,6 +24,8 @@ final class MeetingCompanionController: NSObject, NSWindowDelegate {
     private let initialCollapseDelay: TimeInterval
     private let reopenedCollapseDelay: TimeInterval
     private let detectionTimeout: TimeInterval
+    private let loadPlacement: () -> MeetingCompanionPlacement?
+    private let savePlacement: (MeetingCompanionPlacement) -> Void
 
     var onRecord: ((UUID) -> Void)?
     var onStop: (() -> Void)?
@@ -30,11 +37,15 @@ final class MeetingCompanionController: NSObject, NSWindowDelegate {
     init(
         initialCollapseDelay: TimeInterval = 3,
         reopenedCollapseDelay: TimeInterval = 8,
-        detectionTimeout: TimeInterval = 12
+        detectionTimeout: TimeInterval = 12,
+        loadPlacement: @escaping () -> MeetingCompanionPlacement? = { nil },
+        savePlacement: @escaping (MeetingCompanionPlacement) -> Void = { _ in }
     ) {
         self.initialCollapseDelay = initialCollapseDelay
         self.reopenedCollapseDelay = reopenedCollapseDelay
         self.detectionTimeout = detectionTimeout
+        self.loadPlacement = loadPlacement
+        self.savePlacement = savePlacement
         panel = MeetingCompanionPanel(
             contentRect: NSRect(origin: .zero, size: Self.expandedSize),
             styleMask: [.borderless, .nonactivatingPanel],
@@ -83,30 +94,11 @@ final class MeetingCompanionController: NSObject, NSWindowDelegate {
 
     func handle(_ event: MeetingCompanionState.Event) {
         let wasVisible = panel.isVisible
-        let previousPhase = state.phase
         state.handle(event)
-        if startsNewSession(event, from: previousPhase) {
-            hasPositioned = false
-            display = nil
-        }
         updatePresentation(for: event)
         render()
         if panel.isVisible != wasVisible {
             onVisibilityChanged?(panel.isVisible)
-        }
-    }
-
-    private func startsNewSession(
-        _ event: MeetingCompanionState.Event,
-        from previousPhase: MeetingCompanionState.Phase
-    ) -> Bool {
-        switch (event, previousPhase, state.phase) {
-        case (.callDetected, .hidden, .detected):
-            true
-        case (.startRequested, .hidden, .starting):
-            true
-        default:
-            false
         }
     }
 
@@ -308,6 +300,22 @@ final class MeetingCompanionController: NSObject, NSWindowDelegate {
            NSScreen.screens.contains(where: { $0.visibleFrame.intersects(panel.frame) }) {
             return
         }
+        if !hasPositioned, let placement = loadPlacement() {
+            var frame = panel.frame
+            frame.origin = NSPoint(
+                x: placement.rightEdge - frame.width,
+                y: placement.centerY - frame.height / 2
+            )
+            if let screen = NSScreen.screens.first(where: {
+                $0.visibleFrame.intersects(frame)
+            }) {
+                display = screen
+                panel.setFrame(frame, display: true)
+                clampPanel(to: screen)
+                hasPositioned = true
+                return
+            }
+        }
         let retainedDisplay = display.flatMap { candidate in
             NSScreen.screens.contains(where: { $0 === candidate }) ? candidate : nil
         }
@@ -344,6 +352,10 @@ final class MeetingCompanionController: NSObject, NSWindowDelegate {
 
     func windowDidMove(_ notification: Notification) {
         display = panel.screen ?? screenContainingPanelCenter()
+        savePlacement(MeetingCompanionPlacement(
+            rightEdge: panel.frame.maxX,
+            centerY: panel.frame.midY
+        ))
         scheduleCollapse(after: reopenedCollapseDelay)
     }
 

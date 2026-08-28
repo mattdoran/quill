@@ -115,9 +115,13 @@ import Testing
         #expect(abs(controller.presentationFrame.maxX - expandedRightEdge) < 0.5)
     }
 
-    @Test func draggedPositionLastsOnlyForTheCurrentSession() throws {
+    @Test func draggedPositionPersistsForLaterSessionsAndControllers() throws {
         _ = NSApplication.shared
-        let controller = MeetingCompanionController()
+        var savedPlacement: MeetingCompanionPlacement?
+        var controller = MeetingCompanionController(
+            loadPlacement: { savedPlacement },
+            savePlacement: { savedPlacement = $0 }
+        )
         defer { controller.dismiss() }
 
         controller.handle(.callDetected(application, token: UUID()))
@@ -135,9 +139,39 @@ import Testing
         controller.handle(.recordingStarted(application))
         #expect(controller.presentationFrame.origin == draggedOrigin)
 
+        controller.closeCompanion()
+        #expect(savedPlacement == MeetingCompanionPlacement(
+            rightEdge: draggedOrigin.x + MeetingCompanionController.expandedSize.width,
+            centerY: draggedOrigin.y + MeetingCompanionController.expandedSize.height / 2
+        ))
+
         controller.handle(.reset)
         controller.handle(.callDetected(application, token: UUID()))
-        #expect(controller.presentationFrame.origin == defaultOrigin)
+        #expect(controller.presentationFrame.origin == draggedOrigin)
+
+        controller.dismiss()
+        controller = MeetingCompanionController(
+            loadPlacement: { savedPlacement },
+            savePlacement: { savedPlacement = $0 }
+        )
+        controller.handle(.callDetected(application, token: UUID()))
+        #expect(controller.presentationFrame.origin == draggedOrigin)
+    }
+
+    @Test func unavailableSavedDisplayFallsBackOnScreen() {
+        _ = NSApplication.shared
+        let controller = MeetingCompanionController(
+            loadPlacement: {
+                MeetingCompanionPlacement(rightEdge: 1_000_000, centerY: 1_000_000)
+            }
+        )
+        defer { controller.dismiss() }
+
+        controller.handle(.callDetected(application, token: UUID()))
+
+        #expect(NSScreen.screens.contains {
+            $0.visibleFrame.intersects(controller.presentationFrame)
+        })
     }
 
     @Test func closeAtPossibleEndMeansKeepRecordingAndCollapse() {

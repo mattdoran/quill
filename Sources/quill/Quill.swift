@@ -102,7 +102,10 @@ final class AppController {
     private let menuBar = MenuBarController()
     private let applicationMenu = ApplicationMenuController()
     private let updater = UpdaterController()
-    private let companion = MeetingCompanionController()
+    private let companion = MeetingCompanionController(
+        loadPlacement: { Config.companionPlacement() },
+        savePlacement: { Config.setCompanionPlacement($0) }
+    )
     private let transcription = TranscriptionCoordinator()
     private let models = ModelDownload()
     private var settings: SettingsWindowController?

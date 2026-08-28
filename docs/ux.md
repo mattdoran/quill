@@ -441,12 +441,12 @@ The expanded companion is 380 × 72 points. It appears without activating Quill
 or stealing keyboard focus. A deliberate interaction may make it key for
 keyboard or VoiceOver use. In Recording, Escape and the right-chevron control collapse
 the controls back to the pill; in other states they dismiss the surface. Quill
-places every new session's first appearance at the top right near system
-notifications. A drag changes the position for that session only: state changes
-and elapsed updates never recenter it, while the next session returns to the
-default top-right position. Expansion and collapse preserve the same right edge
-and clamp only when display topology would leave it off-screen. It joins
-full-screen Spaces and never stacks a second surface.
+places the first appearance at the top right near system notifications. A drag
+changes the default position for later sessions and application launches; state
+changes and elapsed updates never recenter it. Expansion and collapse preserve
+the same right edge and vertical centre. If the saved position is no longer on
+a connected display, Quill returns to the top right of the main display. It
+joins full-screen Spaces and never stacks a second surface.
 
 During a detected recording, the quiet subtitle remains the detected
 application name. A manual recording has no subtitle. Normal capture does not

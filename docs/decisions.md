@@ -2,6 +2,21 @@
 
 Dated product and architecture decisions. Newest first.
 
+## 2026-08-28: Remember companion placement across sessions
+
+**Decision:** Dragging the meeting companion sets its position for later
+sessions and application launches. Persist its right edge and vertical centre
+so expanded and collapsed states share one anchor. If that position is no
+longer on a connected display, use the default top-right position.
+
+**Why:** The top-right is shared by native notifications, call overlays and
+other meeting tools. Resetting Quill there for every session repeatedly hides
+the `Record` action after the person has already moved it somewhere usable.
+
+**Consequence:** This supersedes the 2026-08-20 session-scoped placement
+decision. Dragging is now a durable preference, while display changes still
+keep the companion on-screen.
+
 ## 2026-08-27: Use exact-count VBx for long-form voice separation
 
 **Decision:** Optional voice separation uses FluidAudio's offline VBx pipeline.
