@@ -16,6 +16,13 @@ Quill is one local macOS process with four responsibilities:
 It has no server and no database. A session directory is both the durable record
 of a meeting and the unit of recovery and queued processing.
 
+`AppController` owns the status-menu actions and shares one
+`ApplicationPresenceController` across every user-facing Quill window, panel,
+alert and Sparkle session. That controller keeps the application regular while
+any of those surfaces exists and restores accessory mode only after the last
+one closes. The meeting companion is transient status UI and does not
+participate in this window-presence lifecycle.
+
 ## 2. The audio flow
 
 The recorder has two parallel paths. The source path is authoritative and writes

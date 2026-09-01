@@ -2,22 +2,45 @@ import Foundation
 import Sparkle
 
 @MainActor
-final class UpdaterController: NSObject, SPUUpdaterDelegate {
+final class UpdaterController: NSObject, SPUUpdaterDelegate,
+    @preconcurrency SPUStandardUserDriverDelegate
+{
     private var controller: SPUStandardUpdaterController!
     private let relaunchGate = UpdateRelaunchGate()
+    private let presence: ApplicationPresenceController
     var shouldPostponeRelaunch: () -> Bool = { false }
 
-    override init() {
+    init(presence: ApplicationPresenceController) {
+        self.presence = presence
         super.init()
         controller = SPUStandardUpdaterController(
             startingUpdater: true,
             updaterDelegate: self,
-            userDriverDelegate: nil
+            userDriverDelegate: self
         )
     }
 
     func checkForUpdates() {
+        presence.begin(self, blocking: true)
         controller.checkForUpdates(nil)
+    }
+
+    func standardUserDriverWillShowModalAlert() {
+        presence.begin(self, blocking: true)
+    }
+
+    func standardUserDriverWillHandleShowingUpdate(
+        _ handleShowingUpdate: Bool,
+        forUpdate update: SUAppcastItem,
+        state: SPUUserUpdateState
+    ) {
+        if handleShowingUpdate {
+            presence.begin(self, blocking: true)
+        }
+    }
+
+    func standardUserDriverWillFinishUpdateSession() {
+        presence.end(self)
     }
 
     func allowedChannels(for updater: SPUUpdater) -> Set<String> {

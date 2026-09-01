@@ -99,9 +99,10 @@ struct Doctor: ParsableCommand {
 @MainActor
 final class AppController {
     private var root: URL
+    private let presence = ApplicationPresenceController()
     private let menuBar = MenuBarController()
     private let applicationMenu = ApplicationMenuController()
-    private let updater = UpdaterController()
+    private let updater: UpdaterController
     private let companion = MeetingCompanionController(
         loadPlacement: { Config.companionPlacement() },
         savePlacement: { Config.setCompanionPlacement($0) }
@@ -110,6 +111,8 @@ final class AppController {
     private let models = ModelDownload()
     private var settings: SettingsWindowController?
     private var voiceReview: VoiceReviewWindowController?
+    private var reviewPanel: NSOpenPanel?
+    private var recordingsFolderPanel: NSOpenPanel?
     private var session: RecordingSession?
     private var stoppingTask: Task<Void, Never>?
     private var isStarting = false
@@ -131,6 +134,7 @@ final class AppController {
 
     init(root: URL) {
         self.root = root
+        updater = UpdaterController(presence: presence)
         applicationMenu.onQuit = { [weak self] in self?.shutdown() }
         applicationMenu.install()
         menuBar.onToggle = { [weak self] in self?.toggle() }
@@ -187,8 +191,16 @@ final class AppController {
             menuBar.showModelDownloadOffer(false)
             Task { [models] in await models.fetchIfNeeded(force: true) }
         }
+        menuBar.onShowWindow = { [weak self] in self?.presence.raiseFrontmostWindow() }
         menuBar.onSettings = { [weak self] in self?.showSettings() }
         menuBar.onCheckForUpdates = { [weak self] in self?.updater.checkForUpdates() }
+        menuBar.onAbout = { [weak self] in self?.showAbout() }
+        presence.onStateChanged = { [weak self] state in
+            self?.menuBar.updateUserWindowPresence(
+                visible: state.hasUserInterface,
+                blocking: state.isBlocking
+            )
+        }
         updater.shouldPostponeRelaunch = { [weak self] in
             guard let self else { return false }
             return isStarting || session != nil || stoppingTask != nil
@@ -494,7 +506,7 @@ final class AppController {
 
     private func showSettings() {
         if settings == nil {
-            let settings = SettingsWindowController()
+            let settings = SettingsWindowController(presence: presence)
             settings.recordingsPath = { [weak self] in self?.root.path ?? "" }
             settings.onChangeRecordingsFolder = { [weak self] in self?.changeFolder() }
             settings.onRetentionChanged = { [weak self] in
@@ -512,6 +524,16 @@ final class AppController {
             self.settings = settings
         }
         settings?.show()
+    }
+
+    private func showAbout() {
+        let info = Bundle.main.infoDictionary ?? [:]
+        let version = info["CFBundleShortVersionString"] as? String ?? ""
+        let commit = info["QuillBuildCommit"] as? String
+        let date = info["QuillBuildDate"] as? String
+        let identity = [commit, date].compactMap { $0 }.joined(separator: ", ")
+        let display = identity.isEmpty ? version : "\(version) (\(identity))"
+        presence.showAbout(options: [.applicationVersion: display])
     }
 
     private func showTranscription(_ status: TranscriptionCoordinator.Status) {
@@ -623,7 +645,10 @@ final class AppController {
 
     private func chooseRecordingToReview() {
         guard session == nil else { return }
-        NSApp.activate(ignoringOtherApps: true)
+        if let reviewPanel {
+            presence.raise(reviewPanel)
+            return
+        }
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
@@ -632,15 +657,22 @@ final class AppController {
         panel.directoryURL = root
         panel.prompt = "Review"
         panel.message = "Choose a recording to review its transcript."
-        guard panel.runModal() == .OK, let chosen = panel.url else { return }
-        guard TranscriptStore(session: chosen).isReviewable else {
-            let alert = NSAlert()
-            alert.messageText = "This recording can’t be reviewed"
-            alert.informativeText = "Choose a Quill recording folder that contains a compatible completed transcript."
-            alert.runModal()
-            return
+        reviewPanel = panel
+        presence.prepare(panel, blocking: true)
+        panel.begin { [weak self, weak panel] response in
+            guard let self, let panel else { return }
+            reviewPanel = nil
+            presence.end(panel)
+            guard response == .OK, let chosen = panel.url else { return }
+            guard TranscriptStore(session: chosen).isReviewable else {
+                let alert = NSAlert()
+                alert.messageText = "This recording can’t be reviewed"
+                alert.informativeText = "Choose a Quill recording folder that contains a compatible completed transcript."
+                _ = presence.runModal(alert)
+                return
+            }
+            reviewTranscript(at: chosen)
         }
-        reviewTranscript(at: chosen)
     }
 
     func reviewTranscript(at session: URL) {
@@ -659,7 +691,8 @@ final class AppController {
                         speakerCount: speakerCount,
                         progress: progress
                     )
-                }
+                },
+                presence: presence
             )
             voiceReview = controller
             controller.show()
@@ -673,7 +706,10 @@ final class AppController {
     /// protected location. There is no window to hang a permission prompt on,
     /// so an unreachable folder otherwise fails silently forever.
     private func changeFolder() {
-        NSApp.activate(ignoringOtherApps: true)
+        if let recordingsFolderPanel {
+            presence.raise(recordingsFolderPanel)
+            return
+        }
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
@@ -682,11 +718,19 @@ final class AppController {
         panel.directoryURL = root
         panel.prompt = "Use Folder"
         panel.message = "Where should Quill save recordings and transcripts?"
-        guard panel.runModal() == .OK, let chosen = panel.url else { return }
-        Config.setRecordingsDir(chosen)
-        root = chosen
-        AudioRetention.clean(root: chosen)
-        Task { [transcription] in await transcription.resumePending(root: chosen) }
+        recordingsFolderPanel = panel
+        presence.prepare(panel, blocking: true)
+        panel.begin { [weak self, weak panel] response in
+            guard let self, let panel else { return }
+            recordingsFolderPanel = nil
+            presence.end(panel)
+            guard response == .OK, let chosen = panel.url else { return }
+            Config.setRecordingsDir(chosen)
+            root = chosen
+            settings?.refresh()
+            AudioRetention.clean(root: chosen)
+            Task { [transcription] in await transcription.resumePending(root: chosen) }
+        }
     }
 
     /// A TCC-blocked folder stays writable while listing it returns nothing,

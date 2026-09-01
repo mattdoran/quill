@@ -2,6 +2,25 @@
 
 Dated product and architecture decisions. Newest first.
 
+## 2026-09-01: Keep every user-facing window recoverable
+
+**Decision:** One application-level presence controller owns Quill's activation
+policy. Any Settings, transcript, chooser, alert, About or Sparkle surface makes
+Quill a regular application until the last such surface closes. A conditional
+`Show Quill Window` menu command raises the existing surface. Open panels are
+asynchronous, reused while open and block other window-producing menu commands.
+
+**Why:** A transcript window, recording chooser and Sparkle prompt accumulated
+behind one another while Quill was absent from Command-Tab. Each action had
+executed, but the accessory application had no discoverable route back to its
+modal UI. The earlier implementation assigned activation policy only to the
+transcript controller, so overlapping surfaces had no shared lifecycle.
+
+**Consequence:** This broadens the 2026-08-20 task-window decision from
+transcript review to every user-facing Quill surface. The Dock presence remains
+temporary, but closing one window cannot hide another, and a chooser cannot be
+stacked by repeating its menu action.
+
 ## 2026-08-28: Remember companion placement across sessions
 
 **Decision:** Dragging the meeting companion sets its position for later

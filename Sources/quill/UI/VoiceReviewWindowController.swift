@@ -33,6 +33,7 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
         @escaping @Sendable (SpeakerSeparationProgress) -> Void
     ) async throws -> Void
     private let chooseSpeakerCount: ((Set<SourceTrack>, SpeakerCountSelection) -> SpeakerCountSelection?)?
+    private let presence: ApplicationPresenceController
     private var rows: [Row] = []
     private var speakerActionButtons: [NSButton] = []
     private var focusEntries: [FocusEntry] = []
@@ -59,13 +60,15 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
         chooseSpeakerCount: (
             (Set<SourceTrack>, SpeakerCountSelection) -> SpeakerCountSelection?
         )? = nil,
-        appearance: NSAppearance? = nil
+        appearance: NSAppearance? = nil,
+        presence: ApplicationPresenceController = ApplicationPresenceController()
     ) throws {
         self.session = session
         transcript = try TranscriptStore(session: session).read()
         self.isRecording = isRecording
         self.separateSpeakers = separateSpeakers
         self.chooseSpeakerCount = chooseSpeakerCount
+        self.presence = presence
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 840, height: 620),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -92,24 +95,26 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
         session: URL,
         isRecording: @escaping () -> Bool,
         separateSpeakers: @escaping () async throws -> Void,
-        appearance: NSAppearance? = nil
+        appearance: NSAppearance? = nil,
+        presence: ApplicationPresenceController = ApplicationPresenceController()
     ) throws {
         try self.init(
             session: session,
             isRecording: isRecording,
             separateSpeakers: { _, _, _ in try await separateSpeakers() },
             chooseSpeakerCount: { _, _ in .automatic },
-            appearance: appearance
+            appearance: appearance,
+            presence: presence
         )
     }
 
     required init?(coder: NSCoder) { nil }
 
     func show() {
-        NSApp.setActivationPolicy(.regular)
-        NSApp.activate(ignoringOtherApps: true)
         showWindow(nil)
-        window?.makeKeyAndOrderFront(nil)
+        if let window {
+            presence.present(window)
+        }
         if let initialFirstResponder = window?.initialFirstResponder {
             window?.makeFirstResponder(initialFirstResponder)
         }
@@ -117,7 +122,6 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
 
     func windowWillClose(_ notification: Notification) {
         stopPlayback()
-        NSApp.setActivationPolicy(.accessory)
     }
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         if case .separating = separationState { return false }
@@ -128,7 +132,7 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
         alert.addButton(withTitle: "Save")
         alert.addButton(withTitle: "Cancel")
         alert.addButton(withTitle: "Don’t Save")
-        switch alert.runModal() {
+        switch presence.runModal(alert) {
         case .alertFirstButtonReturn:
             return saveNames(refresh: false)
         case .alertThirdButtonReturn:
@@ -638,7 +642,7 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
             let alert = NSAlert()
             alert.messageText = "Finish the recording first"
             alert.informativeText = "Speaker analysis will be available when the current recording ends."
-            alert.runModal()
+            _ = presence.runModal(alert)
             return
         }
         if hasUnsavedNames, !saveNames(refresh: false) { return }
@@ -727,7 +731,7 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
         alert.accessoryView = picker
         alert.addButton(withTitle: "Separate Voices")
         alert.addButton(withTitle: "Cancel")
-        guard alert.runModal() == .alertFirstButtonReturn else { return nil }
+        guard presence.runModal(alert) == .alertFirstButtonReturn else { return nil }
         return picker.selectedTag() == 0 ? .automatic : .exact(picker.selectedTag())
     }
 
@@ -738,14 +742,14 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
         alert.informativeText = "This restores the original Me and Them transcript and removes separated voice names."
         alert.addButton(withTitle: "Undo Separation")
         alert.addButton(withTitle: "Cancel")
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        guard presence.runModal(alert) == .alertFirstButtonReturn else { return }
         do {
             try TranscriptStore(session: session).restoreBeforeSpeakerSeparation()
             transcript = try TranscriptStore(session: session).read()
             separationState = .idle
             refreshContent()
         } catch {
-            NSAlert(error: error).runModal()
+            _ = presence.runModal(NSAlert(error: error))
         }
     }
 
@@ -754,7 +758,7 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
             let alert = NSAlert()
             alert.messageText = "Finish the recording first"
             alert.informativeText = "Playing a sample now would become part of the recording."
-            alert.runModal()
+            _ = presence.runModal(alert)
             return
         }
         guard let id = sender.identifier?.rawValue, let voice = transcript.voices[id],
@@ -782,7 +786,7 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
         } catch {
             let alert = NSAlert(error: error)
             alert.messageText = "Sample could not be played"
-            alert.runModal()
+            _ = presence.runModal(alert)
         }
     }
 
@@ -804,7 +808,7 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
             if refresh { refreshContent() }
             return true
         } catch {
-            NSAlert(error: error).runModal()
+            _ = presence.runModal(NSAlert(error: error))
             return false
         }
     }

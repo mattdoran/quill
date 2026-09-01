@@ -18,8 +18,10 @@ final class SettingsWindowController: NSWindowController {
     private let changeFolderButton = NSButton(title: "Change…", target: nil, action: nil)
     private let modelStatus = NSTextField(labelWithString: "")
     private let modelButton = NSButton(title: "", target: nil, action: nil)
+    private let presence: ApplicationPresenceController
 
-    init() {
+    init(presence: ApplicationPresenceController = ApplicationPresenceController()) {
+        self.presence = presence
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 560, height: 300),
             styleMask: [.titled, .closable],
@@ -39,8 +41,9 @@ final class SettingsWindowController: NSWindowController {
     func show() {
         refresh()
         showWindow(nil)
-        NSApp.activate(ignoringOtherApps: true)
-        window?.makeKeyAndOrderFront(nil)
+        if let window {
+            presence.present(window)
+        }
         let initial = openAtLogin.isEnabled ? openAtLogin : changeFolderButton
         window?.initialFirstResponder = initial
         window?.makeFirstResponder(initial)
@@ -164,7 +167,6 @@ final class SettingsWindowController: NSWindowController {
 
     @objc private func changeFolderClicked() {
         onChangeRecordingsFolder?()
-        refresh()
     }
 
     @objc private func retentionChanged() {
@@ -187,7 +189,7 @@ final class SettingsWindowController: NSWindowController {
                 alert.addButton(withTitle: "Delete Audio")
             }
             alert.addButton(withTitle: "Cancel")
-            guard alert.runModal() == .alertFirstButtonReturn else {
+            guard presence.runModal(alert) == .alertFirstButtonReturn else {
                 retention.selectItem(withTitle: current.title)
                 return
             }
@@ -209,7 +211,7 @@ final class SettingsWindowController: NSWindowController {
             alert.informativeText = "This frees the downloaded model storage. Quill will need to download the models again before it can transcribe."
             alert.addButton(withTitle: "Remove")
             alert.addButton(withTitle: "Cancel")
-            guard alert.runModal() == .alertFirstButtonReturn else { return }
+            guard presence.runModal(alert) == .alertFirstButtonReturn else { return }
             modelStatus.stringValue = "Removing…"
             modelButton.isEnabled = false
             onRemoveModels?()

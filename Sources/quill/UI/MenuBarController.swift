@@ -12,6 +12,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private let stateLabel: NSMenuItem
     private let troubleLabel: NSMenuItem
     private let transcriptionLabel: NSMenuItem
+    private let showWindowItem: NSMenuItem
     private let toggleItem: NSMenuItem
     private let showControlsItem: NSMenuItem
     private let lastTranscriptItem: NSMenuItem
@@ -21,10 +22,14 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private let downloadModelsItem: NSMenuItem
     private let openFolderItem: NSMenuItem
     private let changeFolderItem: NSMenuItem
+    private let settingsItem: NSMenuItem
     private let checkForUpdatesItem: NSMenuItem
+    private let aboutItem: NSMenuItem
     private let quitItem: NSMenuItem
     private var isRecording = false
+    private var isStarting = false
     private var companionVisible = false
+    private var blockingWindowVisible = false
 
     var onToggle: (() -> Void)?
     var onShowRecordingControls: (() -> Void)?
@@ -36,8 +41,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     var onOpenFailureLog: (() -> Void)?
     var onRetryTranscription: (() -> Void)?
     var onDownloadModels: (() -> Void)?
+    var onShowWindow: (() -> Void)?
     var onSettings: (() -> Void)?
     var onCheckForUpdates: (() -> Void)?
+    var onAbout: (() -> Void)?
     var onQuit: (() -> Void)?
 
     /// Whether a transcript exists to open, re-asked each time the menu opens
@@ -95,6 +102,14 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             """
         downloadModelsItem.isHidden = true
         menu.addItem(downloadModelsItem)
+
+        showWindowItem = NSMenuItem(
+            title: "Show Quill Window",
+            action: #selector(showWindowClicked),
+            keyEquivalent: ""
+        )
+        showWindowItem.isHidden = true
+        menu.addItem(showWindowItem)
 
         menu.addItem(.separator())
 
@@ -161,12 +176,12 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
 
-        let settings = NSMenuItem(
+        settingsItem = NSMenuItem(
             title: "Settings…",
             action: #selector(settingsClicked),
             keyEquivalent: ""
         )
-        menu.addItem(settings)
+        menu.addItem(settingsItem)
 
         checkForUpdatesItem = NSMenuItem(
             title: "Check for Updates…",
@@ -175,12 +190,12 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         )
         menu.addItem(checkForUpdatesItem)
 
-        let about = NSMenuItem(
+        aboutItem = NSMenuItem(
             title: "About Quill",
             action: #selector(aboutClicked),
             keyEquivalent: ""
         )
-        menu.addItem(about)
+        menu.addItem(aboutItem)
 
         quitItem = NSMenuItem(
             title: "Quit Quill",
@@ -193,11 +208,12 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
         for item in [
             toggleItem, showControlsItem, openFolderItem, changeFolderItem, quitItem,
-            lastTranscriptItem, identifyVoicesItem, about, retryItem,
+            lastTranscriptItem, identifyVoicesItem, aboutItem, retryItem,
             reviewRecordingItem,
             downloadModelsItem,
             transcriptionLabel,
-            settings,
+            showWindowItem,
+            settingsItem,
             checkForUpdatesItem,
         ] {
             item.target = self
@@ -236,6 +252,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     ) {
         precondition(!recording || elapsed != nil)
         isRecording = recording
+        isStarting = false
         checkForUpdatesItem.isEnabled = !recording
         toggleItem.isEnabled = true
         let clock = elapsed ?? "0:00"
@@ -277,7 +294,13 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         refreshCompanionRecovery()
     }
 
+    func updateUserWindowPresence(visible: Bool, blocking: Bool) {
+        showWindowItem.isHidden = !visible
+        blockingWindowVisible = blocking
+    }
+
     func updateStarting() {
+        isStarting = true
         stateLabel.title = "Starting recording…"
         toggleItem.title = "Starting Recording…"
         toggleItem.isEnabled = false
@@ -327,11 +350,20 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         refreshSettings()
         let hasTranscript = hasTranscript?() ?? false
         lastTranscriptItem.isEnabled = hasTranscript
-        reviewRecordingItem.isEnabled = hasTranscript && !isRecording
         let hasVoiceReview = hasVoiceReview?() ?? false
         identifyVoicesItem.isHidden = !hasVoiceReview
-        identifyVoicesItem.isEnabled = hasVoiceReview && !isRecording
+        identifyVoicesItem.isEnabled = hasVoiceReview && !isRecording && !isStarting
+            && !blockingWindowVisible
         identifyVoicesItem.title = "Review Last Transcript…"
+        reviewRecordingItem.isEnabled = hasTranscript && !isRecording && !isStarting
+            && !blockingWindowVisible
+        changeFolderItem.isEnabled = !blockingWindowVisible
+        settingsItem.isEnabled = !blockingWindowVisible
+        checkForUpdatesItem.isEnabled = !isRecording && !isStarting && !blockingWindowVisible
+        aboutItem.isEnabled = !blockingWindowVisible
+        if !isRecording && !isStarting {
+            toggleItem.isEnabled = !blockingWindowVisible
+        }
         openFolderItem.toolTip = recordingsPath?()
     }
 
@@ -401,18 +433,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     }
 
     @objc private func settingsClicked() { onSettings?() }
+    @objc private func showWindowClicked() { onShowWindow?() }
     @objc private func checkForUpdatesClicked() { onCheckForUpdates?() }
 
-    @objc private func aboutClicked() {
-        NSApp.activate(ignoringOtherApps: true)
-        let info = Bundle.main.infoDictionary ?? [:]
-        let version = info["CFBundleShortVersionString"] as? String ?? ""
-        let commit = info["QuillBuildCommit"] as? String
-        let date = info["QuillBuildDate"] as? String
-        let identity = [commit, date].compactMap { $0 }.joined(separator: ", ")
-        let display = identity.isEmpty ? version : "\(version) (\(identity))"
-        NSApp.orderFrontStandardAboutPanel(options: [.applicationVersion: display])
-    }
+    @objc private func aboutClicked() { onAbout?() }
 
     @objc private func failureLogClicked() { onOpenFailureLog?() }
     @objc private func retryClicked() { onRetryTranscription?() }

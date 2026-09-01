@@ -26,6 +26,9 @@ everything else is what ships today.
 7. **One persistent utility window.** Settings is the only persistent window.
    A focused, task-scoped transcript review window is allowed; wizards,
    general editors and persistent recording windows are not.
+8. **A visible window is recoverable.** While Quill owns a window, chooser,
+   alert or update prompt, it appears in the Dock and Command-Tab switcher.
+   The menu exposes one command that raises the existing surface.
 
 ## 2. Status item
 
@@ -94,6 +97,13 @@ disabled during recording for the same sample-playback reason.
 `Retry Transcription` and `Download Transcription Models` are hidden unless they
 apply, and appear in the status block at the top. `Change Recordings Folder…`
 appears below `Open Recordings Folder` only when Quill cannot read that folder.
+
+`Show Quill Window` appears in the status block whenever Quill owns a window,
+chooser, alert or update prompt. It raises the existing surface. A blocking
+chooser or alert disables other commands that would create another Quill
+window; recording stop, folder and transcript file access, and Quit remain
+available. Selecting the command that owns an already-open chooser raises that
+chooser instead of creating another.
 
 ### Recording
 
@@ -490,9 +500,10 @@ lets the user sample and name `Me` and `Them` immediately. `Separate Remote
 Voices` and `Separate Local Voices` appear below them when their respective
 source audio is available. The user chooses the source based on the shape of the
 meeting; the actions never implicitly process the other track.
-While this task window is open, Quill temporarily appears in the Dock and
-Command-Tab switcher. Closing it returns Quill to its menu-bar-only accessory
-state. The transcript window remains part of the same app and process.
+While any Quill task or utility window is open, Quill temporarily appears in
+the Dock and Command-Tab switcher. It returns to its menu-bar-only accessory
+state only after the last user-facing window closes. The transcript window
+remains part of the same app and process.
 Either action starts local analysis directly. The review window stays open until
 success or failure, and an active recording blocks the action with an explicit
 explanation. The existing timed words remain authoritative:
@@ -616,7 +627,7 @@ the human-facing Markdown.
 | Per-app audio picker | The global tap is the feature. Filtering it is a preferences pane and a support burden for "don't play Spotify". |
 | Level meters or a waveform | The menu bar is not a mixer, and the elapsed counter already proves capture is alive. |
 | A general transcript editor | `transcript.md` remains the editable and export artifact. Quill's native window is read-only review plus speaker identification. |
-| A permanent Dock icon | Quill is normally a menu bar accessory. It becomes a regular app only while transcript review is open, so that task window participates in Command-Tab. |
+| A permanent Dock icon | Quill is normally a menu bar accessory. It becomes a regular app while any user-facing window, chooser, alert or update prompt exists, so every visible surface participates in Command-Tab. |
 | Our own sounds | The system's notification sound is the only sound quill makes. |
 | A first-run wizard | Permissions prompt themselves and the operational menu is already the onboarding surface. If more onboarding is needed, the menu is wrong. |
 | Live transcription during the meeting | Doubles the compute during the one moment the machine is busy, to show text nobody reads while talking. |
