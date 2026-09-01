@@ -3,7 +3,12 @@
 # explicit external boundary that creates the tag, GitHub Release and appcast.
 set -eu
 
-root=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
+if [ -n "${QUILL_RELEASE_ROOT:-}" ]; then
+    root=$QUILL_RELEASE_ROOT
+else
+    root=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
+fi
+. "$root/release-versioning.sh"
 plist="$root/Sources/quill/Info.plist"
 publish_dir="$root/.build/publish"
 receipt="$publish_dir/release.json"
@@ -92,22 +97,6 @@ appcast_path() {
     else
         die "could not load the published appcast"
     fi
-}
-
-appcast_builds() {
-    grep -o '<sparkle:version>[^<]*' "$1" \
-        | sed 's/.*>//' || true
-}
-
-trunk_build_number() {
-    candidate=$(git -C "$root" rev-list --count --first-parent HEAD)
-    for published in $(appcast_builds "$1"); do
-        printf '%s\n' "$published" | grep -Eq '^[0-9]+(\.[0-9]+){0,2}$' || continue
-        published_trunk=${published%%.*}
-        [ "$candidate" -gt "$published_trunk" ] \
-            || die "trunk build $candidate must follow published build $published"
-    done
-    printf '%s\n' "$candidate"
 }
 
 maintenance_build_number() {

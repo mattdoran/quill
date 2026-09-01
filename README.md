@@ -106,8 +106,9 @@ After `0.4.0` is published, prepare the next development train explicitly:
 ```
 
 This edits the plist to `0.5.0-dev` and does not commit it. Trunk build ordering
-comes from the first-parent commit count on `master`; every beta and stable
-artifact on that train therefore has an increasing `CFBundleVersion` without a
+comes from the first-parent commit count on `master`. `bundle.sh` stamps that
+number into ordinary development bundles, and every beta and stable artifact on
+the train receives an explicit build, so `CFBundleVersion` increases without a
 separate counter file.
 
 If `master` has moved beyond a released version that needs a small fix, create

@@ -6,7 +6,8 @@ test_root=$(mktemp -d "${TMPDIR:-/private/tmp}/quill-release-versioning.XXXXXX")
 trap 'rm -rf "$test_root"' EXIT HUP INT TERM
 
 QUILL_RELEASE_LIBRARY_ONLY=1
-export QUILL_RELEASE_LIBRARY_ONLY
+QUILL_RELEASE_ROOT=$project
+export QUILL_RELEASE_LIBRARY_ONLY QUILL_RELEASE_ROOT
 # shellcheck source=../release.sh
 . "$project/release.sh"
 
@@ -56,6 +57,12 @@ printf '%s\n' \
 parse_tag v0.5.0-beta.2
 require_release_source
 [ "$(release_build_number)" = 3 ] || die "trunk build was not derived from first-parent count"
+[ "$(bundle_build_number '' 0.5.0-dev "$fixture")" = 3 ] \
+    || die "development bundle build was not derived from first-parent count"
+[ "$(bundle_build_number 42 0.5.0-dev "$fixture")" = 42 ] \
+    || die "explicit bundle build was not preserved"
+[ -z "$(bundle_build_number '' 0.5.0 "$fixture")" ] \
+    || die "unstamped release bundle unexpectedly derived a development build"
 
 git -C "$work" tag v0.4.0
 git -C "$work" checkout -q -b release/0.4

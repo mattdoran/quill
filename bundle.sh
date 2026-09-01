@@ -51,6 +51,7 @@ case "$channel" in
 esac
 
 root="$(cd "$(dirname "$0")" && pwd)"
+. "$root/release-versioning.sh"
 binary="$root/.build/$config/quill"
 app="$root/.build/$config/Quill.app"
 sparkle="$root/.build/$config/Sparkle.framework"
@@ -85,11 +86,15 @@ cp "$root/Sources/quill/AppIcon.icns" "$app/Contents/Resources/AppIcon.icns"
 
 build_hash=$(git -C "$root" rev-parse --short=8 HEAD 2>/dev/null || echo dev)
 build_commit=$build_hash
-if [ -n "$(git -C "$root" status --porcelain -- Sources Package.swift Package.resolved bundle.sh 2>/dev/null)" ]; then
+if [ -n "$(git -C "$root" status --porcelain -- Sources Package.swift Package.resolved bundle.sh release-versioning.sh 2>/dev/null)" ]; then
     build_commit="$build_commit-dirty"
 fi
 build_date=$(LC_ALL=C date '+%e %b %Y' | sed 's/^ //')
 plist="$app/Contents/Info.plist"
+effective_version=${version:-$(/usr/libexec/PlistBuddy \
+    -c 'Print :CFBundleShortVersionString' "$plist")}
+build=$(bundle_build_number \
+    "$build" "$effective_version" "$root/docs/updates/appcast.xml")
 [ -n "$version" ] && /usr/libexec/PlistBuddy \
     -c "Set :CFBundleShortVersionString $version" "$plist"
 [ -n "$build" ] && /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $build" "$plist"

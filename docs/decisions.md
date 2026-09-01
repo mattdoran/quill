@@ -2,6 +2,25 @@
 
 Dated product and architecture decisions. Newest first.
 
+## 2026-09-01: Stamp development bundles with trunk build order
+
+**Decision:** `bundle.sh` derives `CFBundleVersion` from master's first-parent
+count whenever the effective version ends in `-dev` and no explicit build was
+supplied. The shared derivation rejects a development build that is not newer
+than every published appcast build. Explicit release builds retain
+`release.sh`'s trunk or maintenance number.
+
+**Why:** The source plist placeholder build `4` leaked into an installed
+`0.5.0-dev` bundle while stable `0.4.0` was appcast build `95`. Sparkle correctly
+compares `CFBundleVersion` and therefore offered what looked like a
+marketing-version downgrade. The earlier release decision described first-parent
+ordering but implemented it only in `release.sh`, not the ordinary bundle path
+used for local installs.
+
+**Consequence:** A current development checkout uses its first-parent build and
+no longer sees stable build `95` as an update. The source plist remains a
+placeholder; the bundle artifact is authoritative.
+
 ## 2026-09-01: Keep every user-facing window recoverable
 
 **Decision:** One application-level presence controller owns Quill's activation

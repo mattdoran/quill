@@ -418,11 +418,12 @@ may be discovered during capture, but its relaunch handler stays behind
 `UpdateRelaunchGate` until source archives close and recoverable capture state
 is on disk.
 
-The source plist carries a development train such as `0.4.0-dev`. A release tag
-selects `0.4.0-beta.N` or `0.4.0` for the output bundle, while the first-parent
-commit count supplies Sparkle's strictly increasing numeric build. Every beta
-and stable release packages that bundle twice: a DMG for first installation and
-a ZIP referenced by the appcast. Both contain the complete app, including
+The source plist carries a development train such as `0.4.0-dev`. Ordinary
+development bundles use the first-parent commit count for Sparkle's strictly
+increasing numeric build. A release tag selects `0.4.0-beta.N` or `0.4.0` for
+the output bundle and supplies its explicit trunk or maintenance build. Every
+beta and stable release packages that bundle twice: a DMG for first installation
+and a ZIP referenced by the appcast. Both contain the complete app, including
 `Sparkle.framework`. Developer ID signing and Apple notarization protect both;
 Sparkle EdDSA additionally signs the updater ZIP.
 
