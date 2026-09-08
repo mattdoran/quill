@@ -68,6 +68,20 @@ if [ -z "$mount" ]; then
     echo "couldn't find mounted Quill volume" >&2
     exit 1
 fi
+# hdiutil attach returns before Finder registers the volume, and the styling
+# below addresses it by name, so wait for Finder rather than the mount point.
+volume_name=$(/usr/bin/basename "$mount")
+attempts=0
+until osascript -e "tell application \"Finder\" to exists disk \"$volume_name\"" \
+    2>/dev/null | grep -q true; do
+    attempts=$((attempts + 1))
+    if [ "$attempts" -ge 40 ]; then
+        echo "Finder never registered the $volume_name volume" >&2
+        exit 1
+    fi
+    sleep 0.25
+done
+
 osascript - "$mount" <<'APPLESCRIPT'
 on run argv
     set mountPath to item 1 of argv
