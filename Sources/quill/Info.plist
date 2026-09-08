@@ -1,44 +1,42 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
-    <dict>
-        <key>CFBundleIdentifier</key>
-        <string>com.mattdoran.quill</string>
-        <key>CFBundleName</key>
-        <string>Quill</string>
-        <key>CFBundleIconFile</key>
-        <string>AppIcon</string>
-        <key>CFBundleExecutable</key>
-        <string>quill</string>
-        <key>CFBundlePackageType</key>
-        <string>APPL</string>
-        <key>LSMinimumSystemVersion</key>
-        <string>15.0</string>
-        <key>CFBundleShortVersionString</key>
-        <string>0.6.0-dev</string>
-        <key>CFBundleVersion</key>
-        <string>4</string>
-        <key>SUFeedURL</key>
-        <string>https://mattdoran.github.io/quill/updates/appcast.xml</string>
-        <key>SUPublicEDKey</key>
-        <string>vePY0QBjJknQDuDB5t9xHfGMRJzfJetDAMUpKuetFoo=</string>
-	<key>SUEnableAutomaticChecks</key>
+<dict>
+	<key>CFBundleExecutable</key>
+	<string>quill</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.mattdoran.quill</string>
+	<key>CFBundleName</key>
+	<string>Quill</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.6.0-dev</string>
+	<key>CFBundleVersion</key>
+	<string>4</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>15.0</string>
+	<key>LSUIElement</key>
 	<true/>
-	<key>SUScheduledCheckInterval</key>
-	<integer>86400</integer>
-	<key>SUAutomaticallyUpdate</key>
-	<false/>
+	<key>NSAudioCaptureUsageDescription</key>
+	<string>quill records system audio (the other side of your meetings) so you can transcribe them later. Audio never leaves this Mac.</string>
+	<key>NSHumanReadableCopyright</key>
+	<string>Copyright (c) 2026 Andrew Jones, Matt Doran. MIT licensed.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>quill records your microphone during meetings so you can transcribe them later. Audio never leaves this Mac.</string>
 	<key>SUAllowsAutomaticUpdates</key>
 	<false/>
-        <key>NSHumanReadableCopyright</key>
-        <string>Copyright (c) 2026 Andrew Jones, Matt Doran. MIT licensed.</string>
-        <!-- Menu-bar only. setActivationPolicy(.accessory) does this at runtime
-         too, but declaring it stops a Dock icon flashing up at launch. -->
-        <key>LSUIElement</key>
-        <true/>
-        <key>NSMicrophoneUsageDescription</key>
-        <string>quill records your microphone during meetings so you can transcribe them later. Audio never leaves this Mac.</string>
-        <key>NSAudioCaptureUsageDescription</key>
-        <string>quill records system audio (the other side of your meetings) so you can transcribe them later. Audio never leaves this Mac.</string>
-    </dict>
+	<key>SUAutomaticallyUpdate</key>
+	<false/>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUFeedURL</key>
+	<string>https://mattdoran.github.io/quill/updates/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>vePY0QBjJknQDuDB5t9xHfGMRJzfJetDAMUpKuetFoo=</string>
+	<key>SUScheduledCheckInterval</key>
+	<integer>86400</integer>
+</dict>
 </plist>
