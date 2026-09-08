@@ -44,6 +44,42 @@ import Testing
         )
     }
 
+    @Test func possibleEndCarriesTheFullGraceThenCountsDown() {
+        var state = MeetingCompanionState()
+        state.handle(.recordingStarted(zoom))
+        state.handle(.elapsed("12:34"))
+        state.handle(.callEnded(zoom))
+
+        #expect(
+            state.phase
+                == .possibleEnd(application: zoom, elapsed: "12:34", remaining: autoStopGrace)
+        )
+
+        state.handle(.autoStopTick(41))
+        #expect(
+            state.phase == .possibleEnd(application: zoom, elapsed: "12:34", remaining: 41)
+        )
+
+        state.handle(.elapsed("12:35"))
+        #expect(
+            state.phase == .possibleEnd(application: zoom, elapsed: "12:35", remaining: 41)
+        )
+    }
+
+    @Test func countdownAdvancesWhileTheCompanionIsDismissed() {
+        var state = MeetingCompanionState()
+        state.handle(.recordingStarted(zoom))
+        state.handle(.elapsed("12:34"))
+        state.handle(.dismissed)
+        state.handle(.callEnded(zoom))
+        state.handle(.autoStopTick(9))
+        state.handle(.showControls)
+
+        #expect(
+            state.phase == .possibleEnd(application: zoom, elapsed: "12:34", remaining: 9)
+        )
+    }
+
     @Test func dismissedRecordingDoesNotResurrectAtCompletion() {
         var state = MeetingCompanionState()
         state.handle(.recordingStarted(zoom))

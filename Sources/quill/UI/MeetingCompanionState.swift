@@ -1,12 +1,18 @@
 import Foundation
 
+/// Seconds a detected end waits, still recording, before Quill stops on its
+/// own. The largest mid-meeting input dropout measured in the detection log was
+/// 7s, so this leaves room for one well past that without making anyone watch
+/// the countdown finish.
+let autoStopGrace = 20
+
 struct MeetingCompanionState: Equatable, Sendable {
     enum Phase: Equatable, Sendable {
         case hidden
         case detected(application: CallApplication, token: UUID)
         case starting(application: CallApplication?)
         case recording(application: CallApplication?, elapsed: String)
-        case possibleEnd(application: CallApplication, elapsed: String)
+        case possibleEnd(application: CallApplication, elapsed: String, remaining: Int)
         case finalizing
         case processing
         case ready(session: URL)
@@ -18,6 +24,7 @@ struct MeetingCompanionState: Equatable, Sendable {
         case callEnded(CallApplication)
         case callRecovered(CallApplication)
         case keepRecording
+        case autoStopTick(Int)
         case startRequested(CallApplication?)
         case recordingStarted(CallApplication?)
         case elapsed(String)
@@ -52,25 +59,29 @@ struct MeetingCompanionState: Equatable, Sendable {
                 phase = .hidden
             case .recording(let bound, let elapsed)
                 where bound == application:
-                phase = .possibleEnd(application: application, elapsed: elapsed)
+                phase = .possibleEnd(
+                    application: application, elapsed: elapsed, remaining: autoStopGrace
+                )
             default:
                 if
                     case .recording(let bound, let elapsed) =
                         dismissedLivePhase,
                     bound == application
                 {
-                    dismissedLivePhase = .possibleEnd(application: application, elapsed: elapsed)
+                    dismissedLivePhase = .possibleEnd(
+                        application: application, elapsed: elapsed, remaining: autoStopGrace
+                    )
                 }
             }
 
         case .callRecovered(let application):
             if
-                case .possibleEnd(let bound, let elapsed) = phase,
+                case .possibleEnd(let bound, let elapsed, _) = phase,
                 bound == application
             {
                 phase = .recording(application: application, elapsed: elapsed)
             } else if
-                case .possibleEnd(let bound, let elapsed) =
+                case .possibleEnd(let bound, let elapsed, _) =
                     dismissedLivePhase,
                 bound == application
             {
@@ -79,9 +90,22 @@ struct MeetingCompanionState: Equatable, Sendable {
 
         case .keepRecording:
             guard
-                case .possibleEnd(let application, let elapsed) = phase
+                case .possibleEnd(let application, let elapsed, _) = phase
             else { return }
             phase = .recording(application: application, elapsed: elapsed)
+
+        case .autoStopTick(let remaining):
+            if case .possibleEnd(let application, let elapsed, _) = phase {
+                phase = .possibleEnd(
+                    application: application, elapsed: elapsed, remaining: remaining
+                )
+            } else if
+                case .possibleEnd(let application, let elapsed, _) = dismissedLivePhase
+            {
+                dismissedLivePhase = .possibleEnd(
+                    application: application, elapsed: elapsed, remaining: remaining
+                )
+            }
 
         case .startRequested(let application):
             wasDismissedDuringSession = false
@@ -94,8 +118,10 @@ struct MeetingCompanionState: Equatable, Sendable {
             switch phase {
             case .recording(let application, _):
                 phase = .recording(application: application, elapsed: elapsed)
-            case .possibleEnd(let application, _):
-                phase = .possibleEnd(application: application, elapsed: elapsed)
+            case .possibleEnd(let application, _, let remaining):
+                phase = .possibleEnd(
+                    application: application, elapsed: elapsed, remaining: remaining
+                )
             default:
                 dismissedLivePhase = dismissedLivePhase?.updatingElapsed(elapsed)
             }
@@ -162,8 +188,8 @@ private extension MeetingCompanionState.Phase {
         switch self {
         case .recording(let application, _):
             .recording(application: application, elapsed: elapsed)
-        case .possibleEnd(let application, _):
-            .possibleEnd(application: application, elapsed: elapsed)
+        case .possibleEnd(let application, _, let remaining):
+            .possibleEnd(application: application, elapsed: elapsed, remaining: remaining)
         default:
             self
         }

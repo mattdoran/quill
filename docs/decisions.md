@@ -2,6 +2,55 @@
 
 Dated product and architecture decisions. Newest first.
 
+## 2026-09-07: Stop automatically after a detected meeting end
+
+**Decision:** A detected end no longer waits for a person. The end threshold
+rises from 2s to 4s of absent input while the start threshold stays at 2s. The
+`Meeting ended?` prompt then keeps recording for a 20-second grace period,
+showing a countdown and a deadline bar, and Quill stops on its own when it
+expires. The bound application holding input again, or `Keep Recording`,
+cancels it. Only a recording that detection started can stop this way.
+
+**Why:** 19 days of `call-detection.log` show applications releasing and
+re-acquiring the input device mid-meeting: 1s, 1s, 3s, 3s and 7s dropouts,
+two of them inside recorded Zoom meetings that demonstrably continued. The 2s
+threshold fired an end on the 3s and 7s cases, which was harmless only because
+the prompt did nothing on its own. Making the prompt authoritative without a
+grace period would have split those meetings. A longer threshold alone was
+rejected: it delays a genuine end, and the person has usually walked away.
+
+**Consequence:** The grace period, not the threshold, is the safety mechanism,
+so 4s can stay short and reactive. A dropout that still crosses it shows the
+prompt for a few seconds and cancels itself. The worst case is a stop up to 25
+seconds late with all of that audio captured. `postCallEnded` is now wired, so
+a detected end is also visible when the companion is dismissed or off-screen.
+Absorbed dropouts, arming, cancellation and firing are all logged with
+durations, so an application that releases input on mute can be identified
+from the log before it costs a meeting.
+
+## 2026-09-07: The possible-end companion announces, it does not ask
+
+**Decision:** The possible-end state drops the `?` icon, the `Meeting ended?`
+question and the elapsed counter. It shows a red recording dot, the countdown
+as its title, `<application> ended` beneath, `Keep Recording` as the prominent
+button, carrying the return key as `Record` and `Review` do, and `Stop now` as
+a bordered but unprominent one. The chevron is hidden in this state and
+never means anything but hide. The deadline bar is red.
+
+**Why:** Once the stop is automatic, the outcome is decided and the pill's job
+is to announce it and offer a veto. A prominent `Stop` repeated the default the
+countdown was already going to reach, and read as "stop the countdown" next to
+`Stopping in 42s`. The elapsed counter climbed while the countdown fell, giving
+two numbers moving in opposite directions for one decision. `Keep Recording`
+lived on an unlabelled chevron whose only other meaning is collapse.
+
+**Consequence:** The prominent button is the one that deviates from what will
+happen anyway, matching `Meeting detected`, where `Record` is also the
+non-default. Losing collapse in this state is deliberate: the state resolves in
+at most 60 seconds, and collapsing would hide the only surface carrying the
+veto. Escape dismisses the pill as it does elsewhere, and the banner remains
+for a companion that is not on screen.
+
 ## 2026-09-01: Stamp development bundles with trunk build order
 
 **Decision:** `bundle.sh` derives `CFBundleVersion` from master's first-parent

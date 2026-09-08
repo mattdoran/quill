@@ -340,20 +340,34 @@ struct InputSnapshotChangeDetector {
     }
 }
 
+/// An input dropout that reappeared before the end threshold. Reported so the
+/// log shows whether an application releases the device for something other
+/// than hanging up, such as muting.
+struct AbsorbedDropout: Equatable, Sendable {
+    let application: CallApplication
+    let seconds: TimeInterval
+}
+
 struct CallLifecycleChange {
     let started: Set<CallApplication>
     let ended: Set<CallApplication>
+    let absorbed: [AbsorbedDropout]
 }
 
+/// Call applications release and re-acquire the input device mid-meeting, most
+/// visibly during Zoom's join sequence. Ending needs a longer stable window
+/// than starting or those dropouts read as the meeting finishing.
 struct CallLifecycleReducer {
-    private let stabilityInterval: TimeInterval
+    private let startInterval: TimeInterval
+    private let endInterval: TimeInterval
     private var initialized = false
     private(set) var active: Set<CallApplication> = []
     private var pendingStarts: [CallApplication: Date] = [:]
     private var pendingEnds: [CallApplication: Date] = [:]
 
-    init(stabilityInterval: TimeInterval = 2) {
-        self.stabilityInterval = stabilityInterval
+    init(startInterval: TimeInterval = 2, endInterval: TimeInterval = 4) {
+        self.startInterval = startInterval
+        self.endInterval = endInterval
     }
 
     mutating func observe(
@@ -362,8 +376,17 @@ struct CallLifecycleReducer {
         guard initialized else {
             initialized = true
             active = observed
-            return CallLifecycleChange(started: [], ended: [])
+            return CallLifecycleChange(started: [], ended: [], absorbed: [])
         }
+
+        let absorbed = pendingEnds
+            .filter { observed.contains($0.key) }
+            .map {
+                AbsorbedDropout(
+                    application: $0.key, seconds: now.timeIntervalSince($0.value)
+                )
+            }
+            .sorted { $0.application.name < $1.application.name }
 
         pendingStarts = pendingStarts.filter { observed.contains($0.key) }
         pendingEnds = pendingEnds.filter { !observed.contains($0.key) }
@@ -376,10 +399,10 @@ struct CallLifecycleReducer {
         }
 
         let started = Set(pendingStarts.compactMap { application, since in
-            now.timeIntervalSince(since) >= stabilityInterval ? application : nil
+            now.timeIntervalSince(since) >= startInterval ? application : nil
         })
         let ended = Set(pendingEnds.compactMap { application, since in
-            now.timeIntervalSince(since) >= stabilityInterval ? application : nil
+            now.timeIntervalSince(since) >= endInterval ? application : nil
         })
 
         active.formUnion(started)
@@ -387,7 +410,7 @@ struct CallLifecycleReducer {
         for application in started { pendingStarts.removeValue(forKey: application) }
         for application in ended { pendingEnds.removeValue(forKey: application) }
 
-        return CallLifecycleChange(started: started, ended: ended)
+        return CallLifecycleChange(started: started, ended: ended, absorbed: absorbed)
     }
 }
 
@@ -474,10 +497,18 @@ final class CallObservationController {
             let snapshot = try ActiveInputProcessScanner.snapshot(includeUnknown: includeUnknown)
             let applications = Set(snapshot.compactMap(\.callApplication))
             let lifecycleChange = lifecycle.observe(applications, at: Date())
+            for dropout in lifecycleChange.absorbed {
+                note(
+                    "dropout absorbed: \(dropout.application.name)"
+                        + " held input again after \(Self.seconds(dropout.seconds))"
+                )
+            }
             for application in lifecycleChange.started.sorted(by: { $0.name < $1.name }) {
+                note("call started: \(application.name)")
                 onStarted(application)
             }
             for application in lifecycleChange.ended.sorted(by: { $0.name < $1.name }) {
+                note("call ended: \(application.name)")
                 onEnded(application)
             }
 
@@ -493,6 +524,18 @@ final class CallObservationController {
             FileHandle.standardError.write(Data(text.utf8))
             log?.write(text)
         }
+    }
+
+    /// Timestamped line into the same log as the input snapshots, so a session
+    /// can be reconstructed from one file after the fact.
+    func note(_ text: String) {
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+        log?.write("\(timestamp) \(text)\n")
+        if printSnapshots { FileHandle.standardOutput.write(Data("\(text)\n".utf8)) }
+    }
+
+    private static func seconds(_ interval: TimeInterval) -> String {
+        String(format: "%.1fs", interval)
     }
 
     private static func format(_ snapshot: [ActiveInputProcess]) -> String {

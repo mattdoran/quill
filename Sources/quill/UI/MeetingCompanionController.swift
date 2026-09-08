@@ -8,6 +8,14 @@ struct MeetingCompanionPlacement: Equatable, Sendable {
 @MainActor
 final class MeetingCompanionController: NSObject, NSWindowDelegate {
     static let expandedSize = NSSize(width: 380, height: 72)
+    /// Only the possible-end state carries two buttons, so only it pays for
+    /// the width. The panel keeps its right edge, so it grows leftward.
+    static let possibleEndSize = NSSize(width: 430, height: 72)
+
+    static func expandedSize(for phase: MeetingCompanionState.Phase) -> NSSize {
+        if case .possibleEnd = phase { return possibleEndSize }
+        return expandedSize
+    }
     static let collapsedSize = NSSize(width: 40, height: 58)
 
     private let panel: MeetingCompanionPanel
@@ -29,6 +37,7 @@ final class MeetingCompanionController: NSObject, NSWindowDelegate {
 
     var onRecord: ((UUID) -> Void)?
     var onStop: (() -> Void)?
+    var onKeepRecording: (() -> Void)?
     var onDismiss: (() -> Void)?
     var onReadyDismissed: (() -> Void)?
     var onReviewTranscript: ((URL) -> Void)?
@@ -69,6 +78,7 @@ final class MeetingCompanionController: NSObject, NSWindowDelegate {
         panel.delegate = self
 
         content.onAction = { [weak self] in self?.performPrimaryAction() }
+        content.onSecondaryAction = { [weak self] in self?.onStop?() }
         content.onDismiss = { [weak self] in self?.closeCompanion() }
         content.onExpand = { [weak self] in
             guard let self else { return }
@@ -102,6 +112,12 @@ final class MeetingCompanionController: NSObject, NSWindowDelegate {
         }
     }
 
+    func keepRecording() {
+        guard case .possibleEnd = state.phase else { return }
+        handle(.keepRecording)
+        onKeepRecording?()
+    }
+
     func showRecordingControls() {
         handle(.showControls)
     }
@@ -125,8 +141,7 @@ final class MeetingCompanionController: NSObject, NSWindowDelegate {
         case .recording:
             collapseRecordingControls()
         case .possibleEnd:
-            state.handle(.keepRecording)
-            collapseRecordingControls()
+            dismiss()
         default:
             dismiss()
         }
@@ -170,11 +185,9 @@ final class MeetingCompanionController: NSObject, NSWindowDelegate {
         switch event {
         case .recordingStarted:
             expandRecordingControls(after: initialCollapseDelay)
-        case .showControls, .callRecovered:
+        case .showControls, .callRecovered, .keepRecording:
             expandRecordingControls(after: reopenedCollapseDelay)
-        case .keepRecording:
-            break
-        case .elapsed:
+        case .elapsed, .autoStopTick:
             break
         case .callDetected, .callEnded, .startRequested, .stopRequested,
              .finalizationFinished, .transcriptReady, .failed:
@@ -273,7 +286,9 @@ final class MeetingCompanionController: NSObject, NSWindowDelegate {
     }
 
     private func applyPanelSize() {
-        let size = isCollapsed ? Self.collapsedSize : Self.expandedSize
+        let size = isCollapsed
+            ? Self.collapsedSize
+            : Self.expandedSize(for: state.phase)
         guard panel.frame.size != size else { return }
         let old = panel.frame
         var frame = NSRect(
@@ -337,8 +352,10 @@ final class MeetingCompanionController: NSObject, NSWindowDelegate {
         switch state.phase {
         case .detected(_, let token):
             onRecord?(token)
-        case .recording, .possibleEnd:
+        case .recording:
             onStop?()
+        case .possibleEnd:
+            keepRecording()
         case .ready(let session):
             onReviewTranscript?(session)
         case .hidden, .starting, .finalizing, .processing, .failed:
@@ -406,10 +423,14 @@ final class MeetingCompanionView: NSVisualEffectView {
     private let elapsedLabel = NSTextField(labelWithString: "")
     private let detailLabel = NSTextField(labelWithString: "")
     private let actionButton = NSButton()
+    private let secondaryButton = NSButton()
     private let spinner = NSProgressIndicator()
     private let collapsedSymbol = NSImageView()
     private let expandButton = NSButton()
     private let timeoutBar = NSView()
+    private var timeoutBarWidth: NSLayoutConstraint!
+    private var symbolLeading: NSLayoutConstraint!
+    private var actionWidth: NSLayoutConstraint!
     private var expandedConstraints: [NSLayoutConstraint] = []
     private var collapsedConstraints: [NSLayoutConstraint] = []
     private var isCollapsedPresentation = false
@@ -419,8 +440,10 @@ final class MeetingCompanionView: NSVisualEffectView {
     private var reduceMotion = false
     private var materialMaskSize = NSSize.zero
     private var materialMaskRadius: CGFloat = 0
+    private static let autoStopAnimation = "meeting-auto-stop"
 
     var onAction: (() -> Void)?
+    var onSecondaryAction: (() -> Void)?
     var onDismiss: (() -> Void)?
     var onExpand: (() -> Void)?
     var onInteractionBegan: (() -> Void)?
@@ -452,7 +475,7 @@ final class MeetingCompanionView: NSVisualEffectView {
         symbol.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 18, weight: .medium)
         symbol.contentTintColor = .labelColor
 
-        titleLabel.font = .systemFont(ofSize: 15, weight: .semibold)
+        titleLabel.font = .monospacedDigitSystemFont(ofSize: 15, weight: .semibold)
         titleLabel.lineBreakMode = .byTruncatingTail
         titleLabel.maximumNumberOfLines = 1
         elapsedLabel.font = .monospacedDigitSystemFont(ofSize: 15, weight: .semibold)
@@ -468,6 +491,13 @@ final class MeetingCompanionView: NSVisualEffectView {
         actionButton.font = .systemFont(ofSize: 13, weight: .semibold)
         actionButton.target = self
         actionButton.action = #selector(actionClicked)
+
+        secondaryButton.bezelStyle = .rounded
+        secondaryButton.controlSize = .regular
+        secondaryButton.font = .systemFont(ofSize: 13)
+        secondaryButton.target = self
+        secondaryButton.action = #selector(secondaryClicked)
+        secondaryButton.isHidden = true
 
         spinner.style = .spinning
         spinner.controlSize = .small
@@ -495,6 +525,11 @@ final class MeetingCompanionView: NSVisualEffectView {
         expandButton.toolTip = "Show recording controls"
         expandButton.isHidden = true
 
+        symbolLeading = symbol.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 38)
+        actionWidth = actionButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 72)
+        timeoutBarWidth = timeoutBar.widthAnchor.constraint(
+            equalToConstant: MeetingCompanionController.expandedSize.width
+        )
         timeoutBar.wantsLayer = true
         timeoutBar.layer?.backgroundColor = NSColor.controlAccentColor.cgColor
         timeoutBar.isHidden = true
@@ -515,7 +550,12 @@ final class MeetingCompanionView: NSVisualEffectView {
         titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         detailLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
-        for view in [closeButton, symbol, textStack, spinner, actionButton,
+        let buttonStack = NSStackView(views: [secondaryButton, actionButton])
+        buttonStack.orientation = .horizontal
+        buttonStack.alignment = .centerY
+        buttonStack.spacing = 6
+
+        for view in [closeButton, symbol, textStack, spinner, buttonStack,
                      collapsedSymbol, expandButton, timeoutBar] {
             view.translatesAutoresizingMaskIntoConstraints = false
             addSubview(view)
@@ -527,7 +567,7 @@ final class MeetingCompanionView: NSVisualEffectView {
             closeButton.widthAnchor.constraint(equalToConstant: 28),
             closeButton.heightAnchor.constraint(equalToConstant: 28),
 
-            symbol.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 38),
+            symbolLeading,
             symbol.centerYAnchor.constraint(equalTo: centerYAnchor),
             symbol.widthAnchor.constraint(equalToConstant: 24),
             symbol.heightAnchor.constraint(equalToConstant: 24),
@@ -537,10 +577,12 @@ final class MeetingCompanionView: NSVisualEffectView {
             textStack.trailingAnchor.constraint(lessThanOrEqualTo: spinner.leadingAnchor, constant: -12),
 
             spinner.centerYAnchor.constraint(equalTo: centerYAnchor),
-            spinner.trailingAnchor.constraint(equalTo: actionButton.leadingAnchor, constant: -12),
-            actionButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
-            actionButton.centerYAnchor.constraint(equalTo: centerYAnchor),
-            actionButton.widthAnchor.constraint(equalToConstant: 72),
+            spinner.trailingAnchor.constraint(
+                equalTo: buttonStack.leadingAnchor, constant: -12
+            ),
+            buttonStack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
+            buttonStack.centerYAnchor.constraint(equalTo: centerYAnchor),
+            actionWidth,
             actionButton.heightAnchor.constraint(equalToConstant: 32),
         ]
         collapsedConstraints = [
@@ -556,7 +598,7 @@ final class MeetingCompanionView: NSVisualEffectView {
         NSLayoutConstraint.activate(expandedConstraints)
         NSLayoutConstraint.activate([
             timeoutBar.leadingAnchor.constraint(equalTo: leadingAnchor),
-            timeoutBar.trailingAnchor.constraint(equalTo: trailingAnchor),
+            timeoutBarWidth,
             timeoutBar.bottomAnchor.constraint(equalTo: bottomAnchor),
             timeoutBar.heightAnchor.constraint(equalToConstant: 2),
         ])
@@ -581,6 +623,8 @@ final class MeetingCompanionView: NSVisualEffectView {
     }
 
     func render(_ phase: MeetingCompanionState.Phase) {
+        let staysInPossibleEnd: Bool
+        if case .possibleEnd = phase { staysInPossibleEnd = true } else { staysInPossibleEnd = false }
         isCollapsedPresentation = false
         toolTip = nil
         resetCursorRects()
@@ -588,8 +632,13 @@ final class MeetingCompanionView: NSVisualEffectView {
         NSLayoutConstraint.activate(expandedConstraints)
         layer?.cornerRadius = 18
         refreshMaterialMask(radius: 18)
-        timeoutBar.layer?.removeAllAnimations()
+        if !staysInPossibleEnd { timeoutBar.layer?.removeAllAnimations() }
+        timeoutBar.layer?.backgroundColor = NSColor.controlAccentColor.cgColor
+        timeoutBarWidth.constant = bounds.width
         timeoutBar.isHidden = true
+        secondaryButton.isHidden = true
+        symbolLeading.constant = 38
+        titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         collapsedSymbol.isHidden = true
         expandButton.isHidden = true
         closeButton.isHidden = false
@@ -648,23 +697,26 @@ final class MeetingCompanionView: NSVisualEffectView {
             )
             closeButton.setAccessibilityLabel("Collapse recording controls")
             setAccessibility(title: "Recording, \(elapsed)", detail: application?.name)
-        case .possibleEnd(let application, let elapsed):
-            setSymbol("questionmark.circle", description: "Meeting may have ended")
-            titleLabel.stringValue = "Meeting ended?"
-            elapsedLabel.stringValue = elapsed
-            elapsedLabel.isHidden = false
-            detailLabel.stringValue = application.name
-            actionButton.title = "Stop"
-            actionButton.keyEquivalent = ""
-            closeButton.toolTip = "Keep recording"
-            closeButton.image = NSImage(
-                systemSymbolName: "chevron.right",
-                accessibilityDescription: "Keep recording and collapse controls"
-            )
-            closeButton.setAccessibilityLabel("Keep recording and collapse controls")
+        case .possibleEnd(let application, _, let remaining):
+            setSymbol("circle.fill", description: "Still recording")
+            symbol.contentTintColor = .systemRed
+            titleLabel.stringValue = "Stopping in \(remaining)s"
+            titleLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+            elapsedLabel.isHidden = true
+            detailLabel.stringValue = "\(application.name) ended"
+            secondaryButton.isHidden = false
+            secondaryButton.title = "Stop now"
+            actionButton.title = "Keep Recording"
+            actionButton.keyEquivalent = "\r"
+            // Collapsing would hide the only control that countermands the stop.
+            closeButton.isHidden = true
+            symbolLeading.constant = 12
+            timeoutBar.layer?.backgroundColor = NSColor.systemRed.cgColor
+            showAutoStopCountdown(remaining: remaining)
             setAccessibility(
-                title: "Meeting ended? Still recording, \(elapsed)",
-                detail: application.name
+                title: "\(application.name) ended."
+                    + " Still recording, stopping in \(remaining) seconds",
+                detail: nil
             )
         case .finalizing:
             setSymbol("waveform.badge.checkmark", description: "Saving recording")
@@ -722,6 +774,36 @@ final class MeetingCompanionView: NSVisualEffectView {
         resetCursorRects()
     }
 
+    /// Driven by one-second ticks rather than an animation, so Keep Recording
+    /// and an input recovery both leave the bar where the state says it is.
+    /// Started once on entering the state, not restarted per tick, or the bar
+    /// visibly jumps back a second at a time.
+    private func showAutoStopCountdown(remaining: Int) {
+        timeoutBar.isHidden = false
+        let fraction = min(max(Double(remaining) / Double(autoStopGrace), 0), 1)
+        guard !reduceMotion else {
+            // A frozen full-width red bar reads as an error, and the numeral
+            // already carries the countdown.
+            timeoutBar.isHidden = true
+            return
+        }
+        timeoutBarWidth.constant = bounds.width
+        layoutSubtreeIfNeeded()
+        guard let layer = timeoutBar.layer else { return }
+        guard layer.animation(forKey: Self.autoStopAnimation) == nil else { return }
+        let frame = layer.frame
+        layer.anchorPoint = CGPoint(x: 0, y: 0.5)
+        layer.position = CGPoint(x: frame.minX, y: frame.midY)
+        let animation = CABasicAnimation(keyPath: "transform.scale.x")
+        animation.fromValue = fraction
+        animation.toValue = 0
+        animation.duration = Double(remaining)
+        animation.timingFunction = CAMediaTimingFunction(name: .linear)
+        animation.fillMode = .forwards
+        animation.isRemovedOnCompletion = false
+        layer.add(animation, forKey: Self.autoStopAnimation)
+    }
+
     private func showDetectionCountdown() {
         timeoutBar.isHidden = false
         layoutSubtreeIfNeeded()
@@ -757,9 +839,38 @@ final class MeetingCompanionView: NSVisualEffectView {
 
     func visibleControlsFitBounds() -> Bool {
         [closeButton, symbol, titleLabel, elapsedLabel, detailLabel,
-         actionButton, collapsedSymbol, expandButton]
+         secondaryButton, actionButton, collapsedSymbol, expandButton]
             .filter { !$0.isHidden }
             .allSatisfy { bounds.contains($0.convert($0.bounds, to: self)) }
+    }
+
+    /// A truncated application name is expected; a truncated title is always a
+    /// layout bug, so the preview harness fails on it.
+    func titleIsTruncated() -> Bool {
+        guard !titleLabel.isHidden else { return false }
+        return titleLabel.frame.width + 0.5 < titleLabel.intrinsicContentSize.width
+    }
+
+    func frameReport() -> String {
+        let named: [(String, NSView)] = [
+            ("close", closeButton), ("symbol", symbol), ("title", titleLabel),
+            ("elapsed", elapsedLabel), ("detail", detailLabel),
+            ("secondary", secondaryButton), ("action", actionButton),
+        ]
+        return named.filter { !$0.1.isHidden }.map {
+            let f = $0.1.convert($0.1.bounds, to: self)
+            return "  \($0.0): x \(Int(f.minX))..\(Int(f.maxX)) of \(Int(bounds.width))\n"
+        }.joined()
+    }
+
+    func timeoutBarAnimation() -> CAAnimation? {
+        timeoutBar.layer?.animation(forKey: Self.autoStopAnimation)
+    }
+
+    func timeoutBarIsVisible() -> Bool { !timeoutBar.isHidden }
+
+    func autoStopCountdownIsAnimating() -> Bool {
+        timeoutBar.layer?.animation(forKey: Self.autoStopAnimation) != nil
     }
 
     func detectionCountdownIsAnimating() -> Bool {
@@ -875,6 +986,10 @@ final class MeetingCompanionView: NSVisualEffectView {
 
     @objc private func actionClicked() { onAction?() }
     @objc private func dismissClicked() { onDismiss?() }
+
+    @objc private func secondaryClicked() {
+        onSecondaryAction?()
+    }
 
     @objc private func expandClicked() { onExpand?() }
 }

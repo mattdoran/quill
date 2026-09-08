@@ -123,6 +123,7 @@ final class AppController {
     private var startingCallToken: UUID?
     private var recordingCallApplication: CallApplication?
     private var recordingCallToken: UUID?
+    private var autoStopDeadline: Date?
     private var ticker: Timer?
     private var retentionTimer: Timer?
     private var processingSession: URL?
@@ -212,6 +213,9 @@ final class AppController {
             self?.pendingReadySession = nil
         }
         companion.onStop = { [weak self] in self?.requestStopSession() }
+        companion.onKeepRecording = { [weak self] in
+            self?.cancelAutoStop(reason: "keep recording")
+        }
         companion.onDismiss = { [weak self] in self?.companionDismissed() }
         companion.onReviewTranscript = { [weak self] session in
             self?.pendingReadySession = nil
@@ -413,6 +417,7 @@ final class AppController {
             "○ stopped · \(elapsed) · \(session.dir.path)\n".utf8
         ))
         self.session = nil
+        cancelAutoStop(reason: "recording stopped")
         recordingCallApplication = nil
         recordingCallToken = nil
 
@@ -458,8 +463,8 @@ final class AppController {
     }
 
     private func callStarted(_ application: CallApplication) {
-        if recordingCallApplication == application, let recordingCallToken {
-            Notifier.shared.removeCallEnded(recordingToken: recordingCallToken)
+        if recordingCallApplication == application, recordingCallToken != nil {
+            cancelAutoStop(reason: "\(application.name) holding input again")
             companion.handle(.callRecovered(application))
         }
         guard session == nil, !isStarting, promptedCallApplication == nil else { return }
@@ -479,9 +484,17 @@ final class AppController {
         guard
             session != nil,
             recordingCallApplication == application,
-            recordingCallToken != nil
+            let recordingCallToken
         else { return }
         companion.handle(.callEnded(application))
+        autoStopDeadline = Date().addingTimeInterval(TimeInterval(autoStopGrace))
+        if !companion.isVisible {
+            Notifier.shared.postCallEnded(application, recordingToken: recordingCallToken)
+        }
+        logCall(
+            "auto-stop armed for \(application.name), \(autoStopGrace)s grace"
+                + (companion.isVisible ? "" : " (notified)")
+        )
     }
 
     private func showModelDownload(_ status: ModelDownload.Status) {
@@ -568,6 +581,35 @@ final class AppController {
 
     private func tick() {
         refreshMenuStatus()
+        advanceAutoStop()
+    }
+
+    /// The detected end keeps recording through its grace period, so a late
+    /// stop costs a minute of audio while a wrong one would cost the meeting.
+    private func advanceAutoStop() {
+        guard let autoStopDeadline else { return }
+        let remaining = autoStopDeadline.timeIntervalSinceNow
+        guard remaining > 0 else {
+            self.autoStopDeadline = nil
+            logCall("auto-stop firing after \(autoStopGrace)s grace")
+            requestStopSession()
+            return
+        }
+        companion.handle(.autoStopTick(Int(remaining.rounded(.up))))
+    }
+
+    private func cancelAutoStop(reason: String) {
+        guard let autoStopDeadline else { return }
+        let remaining = Int(autoStopDeadline.timeIntervalSinceNow.rounded(.up))
+        self.autoStopDeadline = nil
+        if let recordingCallToken {
+            Notifier.shared.removeCallEnded(recordingToken: recordingCallToken)
+        }
+        logCall("auto-stop cancelled by \(reason) with \(remaining)s remaining")
+    }
+
+    private func logCall(_ text: String) {
+        callObserver?.note(text)
     }
 
     private func refreshMenuStatus() {

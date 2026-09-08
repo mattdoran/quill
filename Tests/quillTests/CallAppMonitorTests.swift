@@ -59,7 +59,7 @@ import Testing
 
     @Test func initialActiveLifecycleDoesNotClaimTheCallJustStarted() {
         let application = CallApplication(id: "facetime", name: "FaceTime")
-        var lifecycle = CallLifecycleReducer(stabilityInterval: 2)
+        var lifecycle = CallLifecycleReducer(startInterval: 2, endInterval: 2)
         let origin = Date(timeIntervalSinceReferenceDate: 500)
 
         let initial = lifecycle.observe([application], at: origin)
@@ -72,7 +72,7 @@ import Testing
     @Test func lifecycleRequiresTwoStableSecondsToStartAndEnd() {
         let zen = CallApplication(id: "zen", name: "Zen Browser")
         let origin = Date(timeIntervalSinceReferenceDate: 1_000)
-        var lifecycle = CallLifecycleReducer(stabilityInterval: 2)
+        var lifecycle = CallLifecycleReducer(startInterval: 2, endInterval: 2)
 
         #expect(lifecycle.observe([], at: origin).started == [])
         #expect(lifecycle.observe([zen], at: origin.addingTimeInterval(1)).started == [])
@@ -86,7 +86,7 @@ import Testing
     @Test func lifecycleCancelsTransientStartAndEnd() {
         let zen = CallApplication(id: "zen", name: "Zen Browser")
         let origin = Date(timeIntervalSinceReferenceDate: 2_000)
-        var lifecycle = CallLifecycleReducer(stabilityInterval: 2)
+        var lifecycle = CallLifecycleReducer(startInterval: 2, endInterval: 2)
 
         _ = lifecycle.observe([], at: origin)
         _ = lifecycle.observe([zen], at: origin.addingTimeInterval(1))
@@ -100,11 +100,48 @@ import Testing
         #expect(lifecycle.active == [zen])
     }
 
+    @Test func lifecycleIgnoresDropoutsShorterThanTheEndInterval() {
+        let zoom = CallApplication(id: "zoom", name: "Zoom")
+        let origin = Date(timeIntervalSinceReferenceDate: 4_000)
+        var lifecycle = CallLifecycleReducer(startInterval: 2, endInterval: 4)
+
+        _ = lifecycle.observe([zoom], at: origin)
+        _ = lifecycle.observe([], at: origin.addingTimeInterval(60))
+        let recovered = lifecycle.observe([zoom], at: origin.addingTimeInterval(63))
+
+        #expect(recovered.ended == [])
+        #expect(lifecycle.active == [zoom])
+        #expect(recovered.absorbed == [AbsorbedDropout(application: zoom, seconds: 3)])
+    }
+
+    @Test func lifecycleEndsOnceTheDropoutOutlastsTheEndInterval() {
+        let zoom = CallApplication(id: "zoom", name: "Zoom")
+        let origin = Date(timeIntervalSinceReferenceDate: 5_000)
+        var lifecycle = CallLifecycleReducer(startInterval: 2, endInterval: 4)
+
+        _ = lifecycle.observe([zoom], at: origin)
+        _ = lifecycle.observe([], at: origin.addingTimeInterval(60))
+
+        #expect(lifecycle.observe([], at: origin.addingTimeInterval(63)).ended == [])
+        #expect(lifecycle.observe([], at: origin.addingTimeInterval(64)).ended == [zoom])
+    }
+
+    @Test func lifecycleStartsFasterThanItEnds() {
+        let zoom = CallApplication(id: "zoom", name: "Zoom")
+        let origin = Date(timeIntervalSinceReferenceDate: 6_000)
+        var lifecycle = CallLifecycleReducer(startInterval: 2, endInterval: 4)
+
+        _ = lifecycle.observe([], at: origin)
+        _ = lifecycle.observe([zoom], at: origin.addingTimeInterval(1))
+
+        #expect(lifecycle.observe([zoom], at: origin.addingTimeInterval(3)).started == [zoom])
+    }
+
     @Test func lifecycleTreatsApplicationsIndependently() {
         let zen = CallApplication(id: "zen", name: "Zen Browser")
         let zoom = CallApplication(id: "zoom", name: "Zoom")
         let origin = Date(timeIntervalSinceReferenceDate: 3_000)
-        var lifecycle = CallLifecycleReducer(stabilityInterval: 2)
+        var lifecycle = CallLifecycleReducer(startInterval: 2, endInterval: 2)
 
         _ = lifecycle.observe([zen], at: origin)
         _ = lifecycle.observe([zen, zoom], at: origin.addingTimeInterval(1))

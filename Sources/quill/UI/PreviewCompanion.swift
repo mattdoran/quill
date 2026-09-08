@@ -32,7 +32,8 @@ struct PreviewCompanion: ParsableCommand {
                 )),
                 ("possible-end", .possibleEnd(
                     application: zoom,
-                    elapsed: "12:34"
+                    elapsed: "12:34",
+                    remaining: 42
                 )),
                 ("saving", .finalizing),
                 ("processing", .processing),
@@ -43,14 +44,20 @@ struct PreviewCompanion: ParsableCommand {
             for appearance in ["light", "dark"] {
                 for (name, state) in states {
                     let view = MeetingCompanionView(
-                        frame: NSRect(origin: .zero, size: MeetingCompanionController.expandedSize)
+                        frame: NSRect(
+                            origin: .zero,
+                            size: MeetingCompanionController.expandedSize(for: state)
+                        )
                     )
                     view.appearance = NSAppearance(
                         named: appearance == "dark" ? .darkAqua : .aqua
                     )
                     view.render(state)
                     view.layoutSubtreeIfNeeded()
-                    guard view.visibleControlsFitBounds() else {
+                    guard view.visibleControlsFitBounds(), !view.titleIsTruncated() else {
+                        FileHandle.standardError.write(Data(
+                            view.frameReport().utf8
+                        ))
                         throw PreviewError.controlsOutsideBounds("\(appearance)-\(name)")
                     }
                     guard

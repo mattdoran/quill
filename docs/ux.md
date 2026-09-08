@@ -9,8 +9,11 @@ everything else is what ships today.
 1. **The menu bar reports one thing: whether quill is recording.** Nothing else
    ever changes the icon. Transcription, downloads and queues live in the menu.
 2. **Nothing animates without conveying state.** Nothing in the macOS menu bar
-   blinks. The detected-meeting deadline bar is the exception because it shows
-   when an unanswered prompt will disappear.
+   blinks. The deadline bars are the exception because they show when an
+   unanswered prompt will disappear or act on its own. A bar that precedes an
+   action Quill takes itself is red, not the accent colour. Both drain
+   smoothly rather than in one-second steps, and Reduce Motion hides them and
+   leaves the countdown to the numeral.
 3. **State differs in shape before it differs in colour.** Colour alone is one
    state to a colourblind user, in the strip of screen with the least contrast.
 4. **Quill interrupts only when acting in the next minute changes the outcome.**
@@ -214,7 +217,7 @@ on within a minute.
 | 4 | A track down 30s continuously, or a source archive fails | *see below* | *see below* | — | — | Yes | Ships |
 | 5 | Every audible track quiet 10 minutes | `Still recording` | `No one has spoken for 10 minutes. Is the meeting over?` | `Stop Recording` | — | Yes | Ships |
 | 6 | Recognized call input active for 2s | `Meeting detected` | `Zen Browser` | `Record` | — | Yes | Ships |
-| 7 | Bound call input absent for 2s | `Meeting ended?` | `Zen Browser` | `Stop` | — | Yes | Ships |
+| 7 | Bound call input absent for 4s, companion not visible | `Meeting ended?` | `Zen Browser` | `Stop` | — | Yes | Ships |
 
 Changes to the three that ship: #1 currently interpolates a raw Swift error into
 a banner — the error belongs on stderr and in the log, not in front of a person
@@ -304,17 +307,23 @@ wrong is ten minutes of junk audio and about four seconds of transcription.
 ### #6 and #7: call lifecycle prompts
 
 The menu app observes audio-input processes once per second. It normalizes
-recognized application families and requires two continuous seconds before
-either prompt. Initial state establishes a baseline and never produces a false
-start at launch.
+recognized application families and requires two continuous seconds before the
+start prompt and four before the end prompt, because call applications release
+and re-acquire the input device mid-meeting. Initial state establishes a
+baseline and never produces a false start at launch.
 
 The start action is the only path that binds a recording to the detected app.
-Manual recordings never inherit a call association. The end prompt appears only
-for that bound recording, and stopping remains explicit because mute, route
-changes and browser navigation can all interrupt input without ending a call.
-Unknown input processes are logged but never prompt.
+Manual recordings never inherit a call association, so they are never stopped
+automatically. The end prompt appears only for that bound recording, and keeps
+recording for a 20-second grace period before Quill stops on its own. Mute,
+route changes and browser navigation can all interrupt input without ending a
+call, so the grace period is what makes an automatic stop safe: an application
+that holds input again cancels it before it expires. Unknown input processes
+are logged but never prompt.
 
-Both prompts request banner and Notification Center list presentation. A banner
+The end prompt is a banner only when the companion is not on screen; the pill
+and the banner never both announce the same end. Both prompts request banner
+and Notification Center list presentation. A banner
 covered by another app remains recoverable from Notification Center. If a bound
 application recovers after an end prompt, Quill removes that prompt and rejects
 its action if it is already in flight.
@@ -442,12 +451,14 @@ or a custom implementation of every notification:
 | Detected | Application, `Record`, 12-second deadline | Record, dismiss, timeout, or call ends |
 | Recording, brief/expanded | Red dot, elapsed time, `Stop` | Collapses after three seconds |
 | Recording, collapsed | Small record capsule and ellipsis | Expand controls or possible end |
-| Possible end | `Meeting ended?`, application, `Stop` | Stop, Keep Recording, or input recovery |
+| Possible end | Red dot, `Stopping in Ns`, `<app> ended`, `Stop now`, prominent `Keep Recording`, red 20-second deadline bar | Keep Recording, Stop now, input recovery, or the grace period expiring |
 | Stopping | `Saving recording…` | Processing |
 | Processing | `Creating transcript…` | Ready or dismiss |
 | Ready while visible | `Transcript ready`, `Review` | Review or dismiss |
 
-The expanded companion is 380 × 72 points. It appears without activating Quill
+The expanded companion is 380 × 72 points, and 430 in the possible-end state,
+which is the only one carrying two buttons. It keeps its right edge when the
+size changes, so it grows leftward. It appears without activating Quill
 or stealing keyboard focus. A deliberate interaction may make it key for
 keyboard or VoiceOver use. In Recording, Escape and the right-chevron control collapse
 the controls back to the pill; in other states they dismiss the surface. Quill

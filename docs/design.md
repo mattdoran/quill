@@ -16,6 +16,11 @@ Quill is one local macOS process with four responsibilities:
 It has no server and no database. A session directory is both the durable record
 of a meeting and the unit of recovery and queued processing.
 
+A detected end never stops a recording immediately. `AppController` arms a
+20-second deadline, keeps capturing through it, and stops only if the bound
+application has not taken the input device back. The 1-second session ticker
+drives the countdown, so no second timer can outlive the recording.
+
 `AppController` owns the status-menu actions and shares one
 `ApplicationPresenceController` across every user-facing Quill window, panel,
 alert and Sparkle session. That controller keeps the application regular while
