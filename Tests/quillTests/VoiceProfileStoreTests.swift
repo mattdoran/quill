@@ -89,6 +89,30 @@ import Testing
         #expect(abs(profile.embedding[1] - 0.707) < 0.001)
     }
 
+    @Test func acceptedProfileCanBeRenamedWithoutCreatingAnotherIdentity() throws {
+        let store = VoiceProfileStore(url: try temporaryURL())
+        let remembered = try store.remember(
+            document: transcript(voice: voice(name: "Alice", embedding: [1, 0])),
+            sessionID: "meeting-1",
+            voiceIDs: ["mic:1"]
+        )
+        let profileID = try #require(remembered["mic:1"]?.id)
+        var renamed = voice(name: "Alice Smith", embedding: [0.98, 0.2])
+        renamed.remembered_profile_id = profileID
+
+        _ = try store.remember(
+            document: transcript(voice: renamed),
+            sessionID: "meeting-2",
+            voiceIDs: ["mic:1"]
+        )
+
+        let profiles = try store.load()
+        #expect(profiles.count == 1)
+        #expect(profiles[0].id == profileID)
+        #expect(profiles[0].name == "Alice Smith")
+        #expect(profiles[0].contribution_count == 2)
+    }
+
     @Test func sameNameWithoutAcceptedProfileCreatesSeparateProfiles() throws {
         let store = VoiceProfileStore(url: try temporaryURL())
         _ = try store.remember(

@@ -507,18 +507,19 @@ always captures both tracks and produces a baseline transcript with coarse
 
 `Review Last Transcript…` opens a task-scoped, read-only window after the
 transcript exists. The transcript is the primary content. Its Speakers sidebar
-lets the user sample and name `Me` and `Them` immediately. `Separate Remote
-Voices` and `Separate Local Voices` appear below them when their respective
-source audio is available. The user chooses the source based on the shape of the
-meeting. `Separate Local and Remote…` analyzes both tracks together, using a
-separate count for each group. The individual actions remain available after
-separation; each becomes `Separate Local/Remote Voices Again…` for an already
-separated source.
+lets the user sample and name `Me` and `Them` immediately. `Separate Voices…`
+opens one sheet with independent Local and Remote controls when their respective
+source audio is available. Each control offers `Leave unchanged`, an exact count
+from 1 through 20, or less-reliable automatic detection. Both initially use
+`Leave unchanged`, and separation cannot start until at least one source has a
+count or automatic detection selected. After separation, the action becomes
+`Separate Voices Again…` and restores the previous selections; either source
+can be left unchanged while the other is reprocessed.
 While any Quill task or utility window is open, Quill temporarily appears in
 the Dock and Command-Tab switcher. It returns to its menu-bar-only accessory
 state only after the last user-facing window closes. The transcript window
 remains part of the same app and process.
-Either action starts local analysis directly. The review window stays open until
+The action starts local analysis directly. The review window stays open until
 success or failure, and an active recording blocks the action with an explicit
 explanation. The existing timed words remain authoritative:
 Quill runs diarisation against retained source audio and reassigns speaker

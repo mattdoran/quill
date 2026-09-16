@@ -2,6 +2,32 @@
 
 Dated product and architecture decisions. Newest first.
 
+## 2026-09-17: One entry point for speaker separation
+
+**Decision:** Transcript review has one `Separate Voices…` action. Its sheet has
+independent Local and Remote controls offering `Leave unchanged`, an exact count
+from 1 through 20, or automatic detection. Both controls initially default to
+`Leave unchanged`, and the action stays disabled until at least one source has
+a speaker count or automatic detection selected. No remote speakers is expressed
+by leaving Remote unchanged, not by selecting a count of zero.
+
+After separation, the action becomes `Separate Voices Again…` and restores the
+previous selections. Either source can be left unchanged while the other is
+reprocessed. `Undo Voice Separation` remains a separate action that restores
+the original `Me` and `Them` transcript.
+
+**Why:** Choosing between separate Local, Remote and combined commands exposes
+the processing topology instead of the user's decision: how many people spoke
+at each location. `Leave unchanged` distinguishes skipping work from claiming
+that a track contains zero speakers, and remains unambiguous on a repeat run.
+
+**Consequence:** Independent per-source processing and atomic publication remain
+underneath one workflow. Voice-memory contributions use the capture start time
+from session metadata as their stable recording identity, with transcript
+creation time as a fallback for older recordings. Moving a recording therefore
+does not give its voices extra weight. The transcript stays at schema version 1;
+voice-memory fields are optional, recoverable metadata.
+
 ## 2026-09-07: Stop automatically after a detected meeting end
 
 **Decision:** A detected end no longer waits for a person. The end threshold

@@ -52,10 +52,10 @@ import Testing
         #expect(titles.contains("Open Transcript File"))
         #expect(titles.contains("Close"))
         #expect(titles.contains("Save Names"))
-        #expect(titles.contains("Separate Local Voices"))
+        #expect(titles.contains("Separate Voices…"))
     }
 
-    @Test func presentsIndependentLocalAndRemoteSeparationActions() throws {
+    @Test func presentsOneSeparationActionForLocalAndRemoteAudio() throws {
         _ = NSApplication.shared
         let session = FileManager.default.temporaryDirectory
             .appendingPathComponent("quill-review-separation-sources-\(UUID().uuidString)")
@@ -90,9 +90,7 @@ import Testing
         )
         let titles = buttonTitles(in: try #require(controller.window?.contentView))
 
-        #expect(titles.contains("Separate Remote Voices"))
-        #expect(titles.contains("Separate Local Voices"))
-        #expect(titles.contains("Separate Local and Remote…"))
+        #expect(titles.filter { $0 == "Separate Voices…" }.count == 1)
     }
 
     @Test func separationSavesTheNameStillBeingEdited() throws {
@@ -142,7 +140,7 @@ import Testing
         #expect(window.firstResponder === editor)
         editor.string = "Matt"
         let separate = try #require(buttons(in: content).first {
-            $0.title == "Separate Remote Voices"
+            $0.title == "Separate Voices…"
         })
 
         separate.performClick(nil)
@@ -188,7 +186,7 @@ import Testing
         let content = try #require(window.contentView)
         let fields = textFields(in: content).filter { $0.placeholderString == "Name this voice" }
         let play = buttons(in: content).filter { $0.title.hasPrefix("Play Sample") }
-        let separate = try #require(buttons(in: content).first { $0.title == "Separate Local Voices Again…" })
+        let separate = try #require(buttons(in: content).first { $0.title == "Separate Voices Again…" })
         let copy = try #require(buttons(in: content).first { $0.title == "Copy Markdown" })
         let finder = try #require(buttons(in: content).first { $0.title == "Show in Finder" })
         let markdown = try #require(buttons(in: content).first { $0.title == "Open Transcript File" })
@@ -293,7 +291,7 @@ import Testing
         )
         let content = try #require(controller.window?.contentView)
         #expect(buttonTitles(in: content).contains("Undo Voice Separation"))
-        #expect(buttonTitles(in: content).contains("Separate Remote Voices Again…"))
+        #expect(buttonTitles(in: content).contains("Separate Voices Again…"))
     }
 
     @Test func unavailableSampleHasAnAccurateAccessibilityLabel() throws {
@@ -393,6 +391,7 @@ import Testing
     @Test func countPickerKeepsLocalAndRemoteCountsIndependent() throws {
         _ = NSApplication.shared
         let (alert, picker) = SpeakerCountPicker.makeAlert(
+            tracks: [.microphone, .system],
             selections: [.microphone: .exact(2), .system: .exact(4)],
             replacingSeparatedTracks: true
         )
@@ -404,9 +403,27 @@ import Testing
         #expect(picker.selections == [.microphone: .exact(2), .system: .automatic])
         remote.selectItem(withTag: 1)
         #expect(picker.selections[.system] == .exact(1))
+        remote.selectItem(withTag: -1)
+        #expect(picker.selections == [.microphone: .exact(2)])
     }
 
-    @Test func combinedActionPassesTwoLocalAndFourRemoteCounts() async throws {
+    @Test func countPickerStartsUnchangedAndRequiresASelection() throws {
+        _ = NSApplication.shared
+        let (alert, picker) = SpeakerCountPicker.makeAlert(
+            tracks: [.microphone, .system], selections: [:], replacingSeparatedTracks: false
+        )
+        #expect(picker.selections.isEmpty)
+        #expect(!alert.buttons[0].isEnabled)
+
+        let remote = try #require(picker.arrangedSubviews.compactMap { $0 as? NSPopUpButton }
+            .first { $0.identifier?.rawValue == "system" })
+        remote.selectItem(withTag: 3)
+        remote.sendAction(remote.action, to: remote.target)
+        #expect(picker.selections == [.system: .exact(3)])
+        #expect(alert.buttons[0].isEnabled)
+    }
+
+    @Test func separationActionPassesSelectedLocalAndRemoteCounts() async throws {
         _ = NSApplication.shared
         let session = try makeHybridSession()
         defer { try? FileManager.default.removeItem(at: session) }
@@ -429,10 +446,8 @@ import Testing
             }
         )
         let content = try #require(controller.window?.contentView)
-        #expect(buttonTitles(in: content).contains("Separate Remote Voices"))
-        #expect(buttonTitles(in: content).contains("Separate Local Voices Again…"))
-        let combined = try #require(buttons(in: content).first { $0.title == "Separate Local and Remote…" })
-        combined.performClick(nil)
+        let separate = try #require(buttons(in: content).first { $0.title == "Separate Voices Again…" })
+        separate.performClick(nil)
         var completed = false
         for _ in 0..<100 {
             if await capture.received != nil,
@@ -445,8 +460,40 @@ import Testing
         }
         try #require(completed, "Wait for the review to finish refreshing before removing its session")
         let received = await capture.received
-        #expect(observedPrevious == [.microphone: .exact(2), .system: .exact(4)])
+        #expect(observedPrevious == [.microphone: .exact(2)])
         #expect(received == [.microphone: .exact(2), .system: .exact(4)])
+    }
+
+    @Test func separationActionRemembersSourcesLeftUnchanged() async throws {
+        _ = NSApplication.shared
+        let session = try makeHybridSession()
+        defer { try? FileManager.default.removeItem(at: session) }
+        var previousSelections: [[SourceTrack: SpeakerCountSelection]] = []
+        let controller = try VoiceReviewWindowController(
+            session: session, isRecording: { false },
+            separateSpeakers: { _, _ in },
+            chooseSpeakerCounts: { previous in
+                previousSelections.append(previous)
+                return previousSelections.count == 1 ? [.system: .exact(4)] : nil
+            }
+        )
+        var content = try #require(controller.window?.contentView)
+        try #require(buttons(in: content).first { $0.title == "Separate Voices Again…" })
+            .performClick(nil)
+        for _ in 0..<100 {
+            content = try #require(controller.window?.contentView)
+            if buttons(in: content).contains(where: { $0.title == "Separate Voices Again…" }) {
+                break
+            }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        try #require(buttons(in: content).first { $0.title == "Separate Voices Again…" })
+            .performClick(nil)
+
+        #expect(previousSelections == [
+            [.microphone: .exact(2)],
+            [.system: .exact(4)],
+        ])
     }
 
     @Test func cancellingCountSelectionDoesNotRunAnalysis() async throws {
@@ -465,12 +512,12 @@ import Testing
             chooseSpeakerCounts: { _ in nil }
         )
         let content = try #require(controller.window?.contentView)
-        let combined = try #require(buttons(in: content)
-            .first { $0.title == "Separate Local and Remote…" })
-        combined.performClick(nil)
+        let separate = try #require(buttons(in: content)
+            .first { $0.title == "Separate Voices Again…" })
+        separate.performClick(nil)
         let invoked = await capture.isInvoked()
         #expect(!invoked)
-        #expect(combined.isEnabled)
+        #expect(separate.isEnabled)
     }
 
     @Test func copyMarkdownIncludesActiveNameEditsAndAllSegments() throws {
@@ -507,6 +554,16 @@ import Testing
         _ = NSApplication.shared
         let session = try makeHybridSession()
         defer { try? FileManager.default.removeItem(at: session) }
+        try SessionMetadataStore.writeManifest(
+            SessionManifest(
+                started: "2026-09-16T09:30:00Z",
+                files: SessionAudioFiles(
+                    microphone: "Source Audio/Local.m4a",
+                    system: "Source Audio/Remote.m4a"
+                )
+            ),
+            to: session
+        )
         let store = TranscriptStore(session: session)
         var document = try store.read()
         document.voices["mic:1"]?.embedding_model = "test-embedding"
@@ -527,6 +584,7 @@ import Testing
         #expect(remember.isEnabled)
         remember.performClick(nil)
         #expect(try memory.load().count == 1)
+        #expect(try memory.load().first?.contributions.first?.session_id == "2026-09-16T09:30:00Z")
         #expect(try store.read().voices["mic:1"]?.remembered_profile_id != nil)
         #expect(buttonTitles(in: try #require(controller.window?.contentView)).contains("Voice Remembered"))
 

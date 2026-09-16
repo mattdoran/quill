@@ -173,6 +173,7 @@ struct PreviewVoices: ParsableCommand {
                 ("light", NSAppearance.Name.aqua), ("dark", .darkAqua),
             ] {
                 let (alert, _) = SpeakerCountPicker.makeAlert(
+                    tracks: [.microphone, .system],
                     selections: [.microphone: .exact(2), .system: .exact(4)],
                     replacingSeparatedTracks: true
                 )

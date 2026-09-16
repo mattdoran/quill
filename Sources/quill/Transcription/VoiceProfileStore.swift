@@ -208,7 +208,6 @@ struct VoiceProfileStore {
             guard let index = profiles.firstIndex(where: { $0.id == id }) else {
                 return nil
             }
-            guard profiles[index].name == voice.name?.nilIfBlank else { return nil }
             try Self.requireCompatible(profiles[index], model: model, dimension: dimension)
             return index
         }

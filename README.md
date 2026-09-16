@@ -190,12 +190,11 @@ so audio already written survives an interruption, then safely remuxes it into
 familiar M4A files after stop. An interrupted session is recovered on launch.
 
 Quill first writes a useful transcript that distinguishes the room from the
-call. Completion opens a read-only transcript review where **Separate Remote
-Voices** and **Separate Local Voices** can optionally analyse the corresponding
-retained source. **Separate Local and Remote…** handles hybrid meetings with
-independent counts, such as two local people and four remote people. Separating
-one track keeps the other track's voices and names. Quill asks for the number of
-people who actually spoke, then shows real analysis progress. The resulting
+call. Completion opens a read-only transcript review where **Separate Voices…**
+can optionally analyse local audio, remote audio or both, with an independent
+speaker count for each side. Leaving one side unchanged keeps its voices and
+names. Quill asks for the number of people who actually spoke, then shows real
+analysis progress. The resulting
 voices can be sampled, named, undone or separated again with a corrected count.
 **Copy Markdown** (⇧⌘C) saves current name edits and copies the whole transcript.
 **Open Transcript File** opens the editable Markdown copy. **Review Earlier Transcript…** opens

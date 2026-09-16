@@ -56,8 +56,8 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
     private var focusEntries: [FocusEntry] = []
     private weak var transcriptTextView: NSTextView?
     private var separationState = SeparationState.idle
-    private var lastSeparationTracks: Set<SourceTrack> = [.system]
-    private var lastSpeakerCounts: [SourceTrack: SpeakerCountSelection] = [.microphone: .exact(2), .system: .exact(3)]
+    private var lastSeparationTracks: Set<SourceTrack> = []
+    private var lastSpeakerCounts: [SourceTrack: SpeakerCountSelection] = [:]
     private var player: AVAudioPlayer?
     private var stopTimer: Timer?
     private var nextSampleIndex: [String: Int] = [:]
@@ -88,8 +88,10 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
         self.profileStore = profileStore
         self.presence = presence
         for track in SourceTrack.allCases {
-            let count = transcript.voices.values.filter { $0.source == track.rawValue }.count
-            if count > 1 { lastSpeakerCounts[track] = .exact(count) }
+            let voices = transcript.voices.values.filter { $0.source == track.rawValue }
+            if voices.contains(where: { $0.machine_label.hasPrefix("Voice ") }) {
+                lastSpeakerCounts[track] = .exact(voices.count)
+            }
         }
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 840, height: 620),
@@ -433,21 +435,10 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
                 unavailable.textColor = .secondaryLabelColor
                 stack.addArrangedSubview(unavailable)
             }
-            if sourceAvailable(for: .system) {
+            let availableTracks = Set(SourceTrack.allCases.filter(sourceAvailable))
+            if !availableTracks.isEmpty {
                 stack.addArrangedSubview(separationButton(
-                    title: separationTitle(for: .system),
-                    tracks: [.system]
-                ))
-            }
-            if sourceAvailable(for: .microphone) {
-                stack.addArrangedSubview(separationButton(
-                    title: separationTitle(for: .microphone),
-                    tracks: [.microphone]
-                ))
-            }
-            if sourceAvailable(for: .microphone), sourceAvailable(for: .system) {
-                stack.addArrangedSubview(separationButton(
-                    title: "Separate Local and Remote…", tracks: [.microphone, .system]
+                    title: separationTitle(), tracks: availableTracks
                 ))
             }
             if !profiles.isEmpty {
@@ -702,10 +693,13 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
         if let chooseSpeakerCounts {
             selections = chooseSpeakerCounts(previous)
         } else {
-            selections = promptForSpeakerCounts(previous: previous)
+            selections = promptForSpeakerCounts(tracks: tracks, previous: previous)
         }
-        guard let selections, Set(selections.keys) == tracks else { return }
-        lastSeparationTracks = tracks
+        guard let selections, !selections.isEmpty, Set(selections.keys).isSubset(of: tracks) else {
+            return
+        }
+        lastSeparationTracks = Set(selections.keys)
+        lastSpeakerCounts = lastSpeakerCounts.filter { !tracks.contains($0.key) }
         lastSpeakerCounts.merge(selections) { _, new in new }
         separationState = .separating("Preparing the speaker model…")
         refreshContent()
@@ -749,19 +743,21 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
         if window?.isVisible == true { refreshContent() }
     }
 
-    private func separationTitle(for track: SourceTrack) -> String {
+    private func separationTitle() -> String {
         let separated = transcript.voices.values.contains {
-            $0.source == track.rawValue && $0.machine_label.hasPrefix("Voice ")
+            $0.machine_label.hasPrefix("Voice ")
         }
-        let source = track == .microphone ? "Local" : "Remote"
-        return separated ? "Separate \(source) Voices Again…" : "Separate \(source) Voices"
+        return separated ? "Separate Voices Again…" : "Separate Voices…"
     }
 
     private func promptForSpeakerCounts(
+        tracks: Set<SourceTrack>,
         previous: [SourceTrack: SpeakerCountSelection]
     ) -> [SourceTrack: SpeakerCountSelection]? {
         let (alert, choices) = SpeakerCountPicker.makeAlert(
-            selections: previous, replacingSeparatedTracks: transcript.diarizer != nil
+            tracks: tracks,
+            selections: previous,
+            replacingSeparatedTracks: transcript.diarizer != nil
         )
         guard presence.runModal(alert) == .alertFirstButtonReturn else { return nil }
         return choices.selections
@@ -778,6 +774,8 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
         do {
             try TranscriptStore(session: session).restoreBeforeSpeakerSeparation()
             transcript = try TranscriptStore(session: session).read()
+            lastSeparationTracks = []
+            lastSpeakerCounts = [:]
             separationState = .idle
             refreshContent()
         } catch {
@@ -848,7 +846,11 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
     }
 
     private var memorySessionID: String {
-        "\(session.standardizedFileURL.path)|\(transcript.created_at)"
+        let started = try? SessionMetadataStore.readManifest(session).started
+        if let started, !started.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return started
+        }
+        return transcript.created_at
     }
 
     private func loadVoiceMemory() {
