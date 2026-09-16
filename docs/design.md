@@ -334,8 +334,9 @@ transcription is still enqueued and can operate on paths that remain valid in
 metadata. This is degraded operation, not the normal path.
 
 Optional speaker separation happens later against retained source audio. The
-normal call path analyzes only Remote and preserves the coarse local `Me`
-identity. Local analysis is an explicit in-room option. It updates speaker
+user can analyze Local, Remote, or both with independent speaker counts. A pass
+replaces only its selected tracks and preserves the other track's voices, names
+and segments. It updates speaker
 attribution in the existing timed document without rerunning speech recognition.
 The coordinator logs the prepared input's actual filename, not the source path
 from the manifest. Local and remote model passes are serial.
@@ -344,16 +345,35 @@ Before publishing the first separated document, `TranscriptStore` atomically
 preserves the baseline as
 `.quill/transcript-before-speaker-separation.json`. Undo republishes that
 snapshot as canonical JSON and Markdown, then removes the snapshot. A later
-separation pass reads that baseline but does not replace the current separated
-document until the new result succeeds. A failed analysis therefore leaves the
+separation pass reads timing and source attribution from that baseline and
+patches only selected tracks into the displayed document. Machine labels avoid
+numbers already used by preserved voices. All requested tracks must succeed
+before the current document is replaced. A failed analysis therefore leaves the
 canonical transcript unchanged.
 
 Long-form separation uses FluidAudio's offline VBx pipeline. The user supplies
-the exact number of speakers on the selected track, or explicitly chooses less
-reliable automatic detection. Segmentation and embedding extraction run over
+the exact number of speakers on each selected track, or explicitly chooses less
+reliable automatic detection per track. Segmentation and embedding extraction run over
 10-second chunks and expose completed/total chunk progress. Clustering remains
 an indeterminate final stage. The diarization model output is then mapped onto
 the existing ASR segments by greatest time overlap.
+
+### Remembered voices
+
+`DiarizationEngine.Analysis` carries FluidAudio's speaker-database centroids,
+keyed by the same speaker numbers as its spans. The updater attaches each
+centroid and its model identity to the matching canonical voice. Optional fields
+preserve schema-v1 compatibility with existing transcripts. Embeddings stay out
+of rendered Markdown.
+
+`VoiceProfileStore` persists explicitly remembered names and embeddings under
+`QUILL_HOME/voice-profiles.json` (the normal application-support home in production).
+Profiles have independent IDs; identical names do not identify the same person.
+Confirmed meeting/voice contributions produce a normalized mean. Suggestions
+require compatible model and vector dimensions, a cosine threshold and a margin
+over the runner-up. These are conservative heuristics, not calibrated identity
+confidence. Review offers a suggestion for explicit acceptance; it never writes
+an inferred name by itself. Forgetting memory leaves transcript names intact.
 
 ## 7. Session artifacts and authority
 

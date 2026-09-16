@@ -2,6 +2,32 @@
 
 Dated product and architecture decisions. Newest first.
 
+## 2026-09-17: One entry point for speaker separation
+
+**Decision:** Transcript review has one `Separate Voices…` action. Its sheet has
+independent Local and Remote controls offering `Leave unchanged`, an exact count
+from 1 through 20, or automatic detection. Both controls initially default to
+`Leave unchanged`, and the action stays disabled until at least one source has
+a speaker count or automatic detection selected. No remote speakers is expressed
+by leaving Remote unchanged, not by selecting a count of zero.
+
+After separation, the action becomes `Separate Voices Again…` and restores the
+previous selections. Either source can be left unchanged while the other is
+reprocessed. `Undo Voice Separation` remains a separate action that restores
+the original `Me` and `Them` transcript.
+
+**Why:** Choosing between separate Local, Remote and combined commands exposes
+the processing topology instead of the user's decision: how many people spoke
+at each location. `Leave unchanged` distinguishes skipping work from claiming
+that a track contains zero speakers, and remains unambiguous on a repeat run.
+
+**Consequence:** Independent per-source processing and atomic publication remain
+underneath one workflow. Voice-memory contributions use the capture start time
+from session metadata as their stable recording identity, with transcript
+creation time as a fallback for older recordings. Moving a recording therefore
+does not give its voices extra weight. The transcript stays at schema version 1;
+voice-memory fields are optional, recoverable metadata.
+
 ## 2026-09-07: Stop automatically after a detected meeting end
 
 **Decision:** A detected end no longer waits for a person. The end threshold
@@ -1037,3 +1063,22 @@ declared alignment resolution. The existing limitations remain explicit:
 buffer arrival uses non-monotonic wall time, overlapping frames are not trimmed,
 and independent device-clock drift is not corrected. A host-time or drift model
 requires measured need rather than being introduced for hypothetical live ASR.
+
+
+## 2026-09-16: Independent hybrid separation and explicit voice memory
+
+**Decision:** Transcript review can separate local and remote tracks together
+with different speaker counts, or process either track while preserving the
+other's voices and names. Replacement is published only after every requested
+pass succeeds; the original transcript remains available for undo.
+
+**Decision:** Reuse offline VBx cluster embeddings for optional local voice
+memory. A user explicitly remembers a named voice and explicitly accepts each
+future suggestion. Model/dimension compatibility and a similarity threshold
+with a runner-up margin suppress weak or ambiguous suggestions. Profiles use
+stable identities rather than names as keys. These matching heuristics are not
+an accuracy guarantee, especially across different microphones or call codecs.
+
+**Decision:** Copy Markdown exports the full canonical transcript and saves any
+speaker name currently being edited. Its shortcut is Shift-Command-C, leaving
+Command-C as ordinary selection copying.

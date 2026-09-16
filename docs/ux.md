@@ -507,15 +507,19 @@ always captures both tracks and produces a baseline transcript with coarse
 
 `Review Last Transcript…` opens a task-scoped, read-only window after the
 transcript exists. The transcript is the primary content. Its Speakers sidebar
-lets the user sample and name `Me` and `Them` immediately. `Separate Remote
-Voices` and `Separate Local Voices` appear below them when their respective
-source audio is available. The user chooses the source based on the shape of the
-meeting; the actions never implicitly process the other track.
+lets the user sample and name `Me` and `Them` immediately. `Separate Voices…`
+opens one sheet with independent Local and Remote controls when their respective
+source audio is available. Each control offers `Leave unchanged`, an exact count
+from 1 through 20, or less-reliable automatic detection. Both initially use
+`Leave unchanged`, and separation cannot start until at least one source has a
+count or automatic detection selected. After separation, the action becomes
+`Separate Voices Again…` and restores the previous selections; either source
+can be left unchanged while the other is reprocessed.
 While any Quill task or utility window is open, Quill temporarily appears in
 the Dock and Command-Tab switcher. It returns to its menu-bar-only accessory
 state only after the last user-facing window closes. The transcript window
 remains part of the same app and process.
-Either action starts local analysis directly. The review window stays open until
+The action starts local analysis directly. The review window stays open until
 success or failure, and an active recording blocks the action with an explicit
 explanation. The existing timed words remain authoritative:
 Quill runs diarisation against retained source audio and reassigns speaker
@@ -523,15 +527,15 @@ metadata without rerunning speech recognition.
 
 Before analysis, Quill asks how many distinct people spoke on that track. The
 Remote question excludes the user; the Local question includes everyone near
-the Mac. Counts from 2 through 20 select exact-count VBx clustering. `Detect
+the Mac. Counts from 1 through 20 select exact-count VBx clustering. `Detect
 automatically (less reliable)` is an explicit fallback rather than the default.
 
 The operation is serialised with transcript work. It shows model preparation,
 real completed-chunk progress while the selected source is analysed, then an
 indeterminate clustering stage and transcript update. It stages the enriched
 document and atomically publishes `.quill/transcript.json` and `transcript.md`;
-failure leaves the baseline unchanged. Separating one source preserves the
-other source's coarse identity. A track with one detected person still
+failure leaves the current transcript unchanged. Separating one source preserves
+the other source's voices and saved names. A track with one detected person still
 receives a nameable voice ID. Speech that cannot be attributed remains
 unassigned rather than being forced onto a person.
 
@@ -539,9 +543,9 @@ Before first separation, Quill preserves the exact baseline transcript. After a
 successful result, `Undo Voice Separation` restores `Me` and `Them`, including
 their saved names, and removes separated voice names. Sessions processed by an
 older version have no snapshot and cannot offer exact undo without rerunning
-speech recognition. `Run Voice Separation Again` reuses the preserved baseline
+speech recognition. Each source's repeat action reuses its preserved baseline
 with a new speaker count while retaining the current separated result until its
-replacement succeeds.
+replacement succeeds. Repeating both sources can use unequal counts.
 
 ### Finished session audio
 
@@ -603,11 +607,22 @@ If it produces several, none inherits the group name.
 If retention removed the source track, existing names remain editable and only
 the sample control becomes unavailable.
 
+After separation, `Remember Voice` becomes available when a voice has an embedding
+and a name. Clicking it saves current names and remembers that voice on this Mac.
+Saving names alone does not opt into voice memory. In a later meeting, an unnamed
+voice may offer `Use Alice`; the name field stays empty until that action is chosen.
+A sample lets the user check the suggestion. `Forget Remembered Voices…` removes
+all remembered profiles after confirmation, preserving names in saved transcripts.
+Older separated transcripts acquire embeddings by running separation again.
+
 Assigning `Alice` changes the human label mapped to the stable machine ID and
 updates every segment in that cluster. It does not rewrite diarization output.
 Per-sentence reassignment and cluster merging are outside the first scope.
 Markdown remains the editable and export artifact. `Open Transcript File` and
-`Show in Finder` are explicit actions in the review window. The native review is
+`Show in Finder` are explicit actions in the review window. `Copy Markdown`
+(⇧⌘C) saves pending speaker-name edits and copies the complete canonical
+transcript as Markdown text, including its heading, timestamps and names.
+`Copied!` confirms success; ordinary ⌘C continues to copy the text selection. The native review is
 justified by a coherent completion flow, audio playback and identity management
 that Markdown cannot do.
 Those file actions sit at the footer's left. `Close` and, after separation,
@@ -629,6 +644,21 @@ there is no second label database or sidecar. Incompatible JSON is ignored by
 voice review without affecting Quill or the readable Markdown.
 Model and diarizer provenance stays in the internal JSON. It does not appear in
 the human-facing Markdown.
+
+### Review screenshots
+
+These previews render the actual AppKit controls with synthetic transcript text
+and a two-local, four-remote speaker fixture.
+
+![Independent local and remote speaker counts](images/hybrid-speaker-counts.png)
+
+![Transcript review with a remembered-name suggestion and Copy Markdown](images/voice-review.png)
+
+Regenerate them with `preview-voices --out <directory>` using the executable in a
+debug app bundle. Build with `./build.sh debug`, bundle with `./bundle.sh debug`,
+and keep `QUILL_HOME` set to an isolated directory for builds and previews.
+The images above are `light-hybrid-speaker-counts.png` and
+`dark-identify-voices.png` from that command.
 
 ## 8. Deliberately not doing
 

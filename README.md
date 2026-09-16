@@ -190,15 +190,23 @@ so audio already written survives an interruption, then safely remuxes it into
 familiar M4A files after stop. An interrupted session is recovered on launch.
 
 Quill first writes a useful transcript that distinguishes the room from the
-call. Completion opens a read-only transcript review where **Separate Remote
-Voices** and **Separate Local Voices** can optionally analyse the corresponding
-retained source. Quill asks for the number of people who actually spoke on that
-track, then shows real analysis progress. The resulting voices can be sampled,
-named, undone or separated again with a corrected count. **Open Transcript
-File** opens the editable Markdown copy. **Review Earlier Transcript…** opens
+call. Completion opens a read-only transcript review where **Separate Voices…**
+can optionally analyse local audio, remote audio or both, with an independent
+speaker count for each side. Leaving one side unchanged keeps its voices and
+names. Quill asks for the number of people who actually spoke, then shows real
+analysis progress. The resulting
+voices can be sampled, named, undone or separated again with a corrected count.
+**Copy Markdown** (⇧⌘C) saves current name edits and copies the whole transcript.
+**Open Transcript File** opens the editable Markdown copy. **Review Earlier Transcript…** opens
 the same review workflow for any past session selected from the recordings
 folder. This optional work happens after transcription and never complicates
 recording.
+
+After separation, name a speaker and click **Remember Voice** to keep their mean
+voice embedding on this Mac. Future separated meetings can offer **Use [name]**
+when a remembered voice is a clear match; names are never applied automatically.
+**Forget Remembered Voices…** clears this local memory without changing saved
+transcript names. Existing transcripts need separation again to acquire embeddings.
 
 macOS changes audio devices out from under a live recording — a headset
 connecting takes the default input and output at once, and switching Bluetooth

@@ -32,15 +32,14 @@ actor TranscriptionCoordinator {
         case transcript(URL)
         case separateSpeakers(
             URL,
-            Set<SourceTrack>,
-            SpeakerCountSelection,
+            [SourceTrack: SpeakerCountSelection],
             @Sendable (SpeakerSeparationProgress) -> Void,
             CheckedContinuation<Void, any Error>
         )
 
         var session: URL {
             switch self {
-            case .transcript(let session), .separateSpeakers(let session, _, _, _, _): session
+            case .transcript(let session), .separateSpeakers(let session, _, _, _): session
             }
         }
     }
@@ -68,16 +67,25 @@ actor TranscriptionCoordinator {
 
     func separateSpeakers(
         in sessionDir: URL,
-        tracks: Set<SourceTrack> = Set(SourceTrack.allCases),
-        speakerCount: SpeakerCountSelection = .automatic,
+        selections: [SourceTrack: SpeakerCountSelection],
         progress: @escaping @Sendable (SpeakerSeparationProgress) -> Void = { _ in }
     ) async throws {
         try await withCheckedThrowingContinuation { continuation in
             queue.append(.separateSpeakers(
-                sessionDir, tracks, speakerCount, progress, continuation
+                sessionDir, selections, progress, continuation
             ))
             drainIfIdle()
         }
+    }
+
+    func separateSpeakers(
+        in sessionDir: URL,
+        tracks: Set<SourceTrack> = Set(SourceTrack.allCases),
+        speakerCount: SpeakerCountSelection = .automatic,
+        progress: @escaping @Sendable (SpeakerSeparationProgress) -> Void = { _ in }
+    ) async throws {
+        let selections = Dictionary(uniqueKeysWithValues: tracks.map { ($0, speakerCount) })
+        try await separateSpeakers(in: sessionDir, selections: selections, progress: progress)
     }
 
     /// Scan the recordings root for sessions that finished (meta.json exists)
@@ -143,15 +151,12 @@ actor TranscriptionCoordinator {
                         opens: SessionFiles.transcriptionLog(dir)
                     )
                 }
-            case .separateSpeakers(
-                _, let tracks, let speakerCount, let progress, let continuation
-            ):
+            case .separateSpeakers(_, let selections, let progress, let continuation):
                 do {
                     publish(.separatingSpeakers(session: session, queued: queue.count))
                     try await applySpeakerSeparation(
                         to: dir,
-                        tracks: tracks,
-                        speakerCount: speakerCount,
+                        selections: selections,
                         progress: progress
                     )
                     continuation.resume()
@@ -267,58 +272,51 @@ actor TranscriptionCoordinator {
 
     private func applySpeakerSeparation(
         to dir: URL,
-        tracks selectedTracks: Set<SourceTrack>,
-        speakerCount: SpeakerCountSelection,
+        selections: [SourceTrack: SpeakerCountSelection],
         progress: @escaping @Sendable (SpeakerSeparationProgress) -> Void
     ) async throws {
         let separationStarted = Date()
         let store = TranscriptStore(session: dir)
         let displayed = try store.read()
-        let current = displayed.diarizer == nil
+        let baseline = displayed.diarizer == nil
             ? displayed
             : try store.readBeforeSpeakerSeparation()
-        guard current.canEditVoices else {
+        guard baseline.canEditVoices else {
             throw TranscriptStore.StoreError.unsupportedSchema
         }
+        let selectedTracks = Set(selections.keys)
+        guard !selectedTracks.isEmpty else {
+            throw SpeakerSeparationError.sourceAudioUnavailable
+        }
         let meta = try SessionMetadataStore.readManifest(dir)
+        let tracks = meta.sourceAudio.filter { selectedTracks.contains($0.track) }
+        guard Set(tracks.map(\.track)) == selectedTracks else {
+            throw SpeakerSeparationError.sourceAudioUnavailable
+        }
         let prepared = try AudioPreparation.prepare(
             session: dir,
             manifest: meta,
             log: { log(dir, $0) }
         )
-        let tracks = meta.sourceAudio.filter { selectedTracks.contains($0.track) }
-        guard !tracks.isEmpty else { throw SpeakerSeparationError.sourceAudioUnavailable }
         progress(.init(stage: .preparingModel))
         let engine = try await preparedDiarizer()
-        var voices = current.voices.filter { _, voice in
-            guard let source = SourceTrack(rawValue: voice.source) else { return true }
-            return !selectedTracks.contains(source)
-        }
-        var segments = current.segments
-        var processedTrack = false
-        var voiceLabels = VoiceLabelSequence()
+        var analyses: [SpeakerSeparationTrackAnalysis] = []
 
         for track in tracks {
             guard let audio = prepared.transcriptionSource(for: track.track) else {
                 throw SpeakerSeparationError.sourceAudioUnavailable
             }
-            let indices = segments.indices.filter { index in
+            let indices = baseline.segments.indices.filter { index in
                 guard
-                    let voiceID = segments[index].voice_id,
-                    let voice = current.voices[voiceID]
+                    let voiceID = baseline.segments[index].voice_id,
+                    let voice = baseline.voices[voiceID]
                 else { return false }
                 return voice.source == track.track.rawValue
             }
-            guard !indices.isEmpty else { continue }
-            processedTrack = true
-            let offset = TimeInterval(track.offsetMilliseconds) / 1000
-            let timed = indices.map { index in
-                TranscriptSegment(
-                    start: max(0, TimeInterval(segments[index].start_ms) / 1000 - offset),
-                    end: max(0, TimeInterval(segments[index].end_ms) / 1000 - offset),
-                    text: segments[index].text
-                )
+            guard !indices.isEmpty else {
+                throw SpeakerSeparationError.incompatibleTranscript
             }
+            guard let speakerCount = selections[track.track] else { continue }
             let started = Date()
             log(dir, "separating speakers in \(audio.lastPathComponent) (\(speakerCount.description))")
             let analysis = try await engine.analyse(
@@ -334,62 +332,19 @@ actor TranscriptionCoordinator {
                     }
                 }
             )
-            let spans = analysis.spans
-            let assignments = DiarizationEngine.assignments(for: timed, spans: spans)
-            var ordinals: [Int: Int] = [:]
-            for assignment in assignments {
-                guard let assignment, ordinals[assignment] == nil else { continue }
-                ordinals[assignment] = ordinals.count + 1
-            }
             let audioFile = audio.path.replacingOccurrences(of: dir.path + "/", with: "")
-
-            if ordinals.isEmpty {
-                let id = "\(track.track.rawValue):1"
-                let label = voiceLabels.next()
-                var voice = makeVoice(
-                    source: track.track.rawValue, audioFile: audioFile,
-                    label: label, indices: Array(timed.indices), segments: timed
-                )
-                voice.name = current.nameToCarry(
-                    source: track.track.rawValue, separatedVoiceCount: 1
-                )
-                voices[id] = voice
-                for index in indices {
-                    segments[index].speaker = voice.displayName
-                    segments[index].voice_id = id
-                }
-                continue
-            }
-
-            for (speaker, ordinal) in ordinals.sorted(by: { $0.value < $1.value }) {
-                let id = "\(track.track.rawValue):\(ordinal)"
-                let label = voiceLabels.next()
-                let positions = assignments.indices.filter { assignments[$0] == speaker }
-                var voice = makeVoice(
-                    source: track.track.rawValue, audioFile: audioFile,
-                    label: label, indices: positions, segments: timed
-                )
-                voice.name = current.nameToCarry(
-                    source: track.track.rawValue, separatedVoiceCount: ordinals.count
-                )
-                voices[id] = voice
-            }
-            for (position, index) in indices.enumerated() {
-                guard
-                    let speaker = assignments[position],
-                    let ordinal = ordinals[speaker]
-                else {
-                    segments[index].speaker = "Unassigned"
-                    segments[index].voice_id = nil
-                    continue
-                }
-                let id = "\(track.track.rawValue):\(ordinal)"
-                segments[index].speaker = voices[id]?.displayName ?? "Voice \(ordinal)"
-                segments[index].voice_id = id
-            }
+            analyses.append(.init(
+                track: track.track,
+                audioFile: audioFile,
+                offsetMilliseconds: track.offsetMilliseconds,
+                spans: analysis.spans,
+                embeddingModel: engine.model,
+                speakerEmbeddings: analysis.speakerEmbeddings
+            ))
+            let speakers = Set(analysis.spans.map(\.speaker)).count
             log(dir, String(
                 format: "found %d speaker(s) in %@ (%.1fs)",
-                ordinals.count,
+                speakers,
                 audio.lastPathComponent,
                 Date().timeIntervalSince(started)
             ))
@@ -405,47 +360,22 @@ actor TranscriptionCoordinator {
             }
         }
 
-        guard processedTrack else { throw SpeakerSeparationError.incompatibleTranscript }
-        let enriched = TranscriptDocument(
-            schema_version: current.schema_version,
-            engine: current.engine,
-            model: current.model,
+        guard Set(analyses.map(\.track)) == selectedTracks else {
+            throw SpeakerSeparationError.incompatibleTranscript
+        }
+        let enriched = try SpeakerSeparationTranscriptUpdater.apply(
+            baseline: baseline,
+            displayed: displayed,
             diarizer: engine.model,
-            created_at: current.created_at,
-            voices: voices,
-            segments: segments
+            analyses: analyses
         )
         progress(.init(stage: .updatingTranscript))
-        try store.preserveBeforeSpeakerSeparation(current)
+        try store.preserveBeforeSpeakerSeparation(baseline)
         try store.write(enriched)
         log(dir, String(
             format: "speaker separation complete in %.1fs",
             Date().timeIntervalSince(separationStarted)
         ))
-    }
-
-    private func makeVoice(
-        source: String,
-        audioFile: String,
-        label: String,
-        indices: [Int],
-        segments: [TranscriptSegment]
-    ) -> TranscriptDocument.Voice {
-        var candidates = indices.map { index in
-            let sample = TranscriptDocument.Voice.Sample(
-                start_ms: Int(segments[index].start * 1000),
-                end_ms: Int(segments[index].end * 1000)
-            )
-            return (sample, Self.sampleScore(sample, text: segments[index].text))
-        }
-        candidates.sort { $0.1 > $1.1 }
-        return TranscriptDocument.Voice(
-            source: source,
-            audio_file: audioFile,
-            machine_label: label,
-            name: nil,
-            samples: candidates.prefix(3).map(\.0)
-        )
     }
 
     private enum SpeakerSeparationError: LocalizedError {
@@ -462,7 +392,7 @@ actor TranscriptionCoordinator {
         }
     }
 
-    private static func sampleScore(
+    static func sampleScore(
         _ sample: TranscriptDocument.Voice.Sample, text: String
     ) -> Int {
         let duration = sample.end_ms - sample.start_ms

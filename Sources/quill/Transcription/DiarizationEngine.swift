@@ -26,6 +26,17 @@ actor DiarizationEngine {
     struct Analysis: Sendable {
         let spans: [Span]
         let timings: PipelineTimings?
+        let speakerEmbeddings: [Int: [Float]]
+
+        init(
+            spans: [Span],
+            timings: PipelineTimings?,
+            speakerEmbeddings: [Int: [Float]] = [:]
+        ) {
+            self.spans = spans
+            self.timings = timings
+            self.speakerEmbeddings = speakerEmbeddings
+        }
     }
 
     enum EngineError: Error, CustomStringConvertible {
@@ -76,7 +87,20 @@ actor DiarizationEngine {
                 end: TimeInterval(segment.endTimeSeconds)
             )
         }.sorted { $0.start < $1.start }
-        return Analysis(spans: spans, timings: result.timings)
+        let speakerEmbeddings = (result.speakerDatabase ?? [:]).reduce(
+            into: [Int: [Float]]()
+        ) { embeddings, entry in
+            guard
+                let speaker = speakerNumbers[entry.key],
+                Self.isUsableEmbedding(entry.value)
+            else { return }
+            embeddings[speaker] = entry.value
+        }
+        return Analysis(
+            spans: spans,
+            timings: result.timings,
+            speakerEmbeddings: speakerEmbeddings
+        )
     }
 
     func release() {
@@ -133,5 +157,11 @@ actor DiarizationEngine {
             }
         }
         return best
+    }
+
+    private static func isUsableEmbedding(_ embedding: [Float]) -> Bool {
+        guard !embedding.isEmpty, embedding.allSatisfy(\.isFinite) else { return false }
+        let sum = embedding.reduce(Double(0)) { $0 + Double($1) * Double($1) }
+        return sum.isFinite && sum > 0
     }
 }
