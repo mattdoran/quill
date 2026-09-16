@@ -726,11 +726,10 @@ final class AppController {
             let controller = try VoiceReviewWindowController(
                 session: session,
                 isRecording: { [weak self] in self?.session != nil },
-                separateSpeakers: { [transcription] tracks, speakerCount, progress in
+                separateSpeakers: { [transcription] selections, progress in
                     try await transcription.separateSpeakers(
                         in: session,
-                        tracks: tracks,
-                        speakerCount: speakerCount,
+                        selections: selections,
                         progress: progress
                     )
                 },

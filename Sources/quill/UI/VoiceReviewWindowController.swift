@@ -9,6 +9,18 @@ private final class TranscriptReviewRootView: NSView {
     }
 }
 
+private final class VoiceListStackView: NSStackView {
+    override var isFlipped: Bool { true }
+}
+
+/// Review advertises an explicit Tab path through samples and actions, even when
+/// macOS's global keyboard-navigation preference is off.
+private final class ReviewButton: NSButton {
+    override var canBecomeKeyView: Bool {
+        window != nil && isEnabled && !isHiddenOrHasHiddenAncestor
+    }
+}
+
 @MainActor
 final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
     NSTextFieldDelegate
@@ -18,6 +30,7 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
         let voiceID: String
         let field: NSTextField
         let playButton: NSButton
+        let memoryButtons: [NSButton]
     }
     private struct FocusEntry {
         let id: String
@@ -28,11 +41,15 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
     private var transcript: TranscriptDocument
     private let isRecording: () -> Bool
     private let separateSpeakers: (
-        Set<SourceTrack>,
-        SpeakerCountSelection,
+        [SourceTrack: SpeakerCountSelection],
         @escaping @Sendable (SpeakerSeparationProgress) -> Void
     ) async throws -> Void
-    private let chooseSpeakerCount: ((Set<SourceTrack>, SpeakerCountSelection) -> SpeakerCountSelection?)?
+    private let chooseSpeakerCounts: (([SourceTrack: SpeakerCountSelection]) -> [SourceTrack: SpeakerCountSelection]?)?
+    private let pasteboard: NSPasteboard
+    private let profileStore: VoiceProfileStore
+    private var profiles: [VoiceProfile] = []
+    private var suggestions: [String: VoiceProfileSuggestion] = [:]
+    private var profileError: String?
     private let presence: ApplicationPresenceController
     private var rows: [Row] = []
     private var speakerActionButtons: [NSButton] = []
@@ -40,7 +57,7 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
     private weak var transcriptTextView: NSTextView?
     private var separationState = SeparationState.idle
     private var lastSeparationTracks: Set<SourceTrack> = [.system]
-    private var lastSpeakerCount: SpeakerCountSelection = .exact(3)
+    private var lastSpeakerCounts: [SourceTrack: SpeakerCountSelection] = [.microphone: .exact(2), .system: .exact(3)]
     private var player: AVAudioPlayer?
     private var stopTimer: Timer?
     private var nextSampleIndex: [String: Int] = [:]
@@ -53,13 +70,12 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
         session: URL,
         isRecording: @escaping () -> Bool,
         separateSpeakers: @escaping (
-            Set<SourceTrack>,
-            SpeakerCountSelection,
+            [SourceTrack: SpeakerCountSelection],
             @escaping @Sendable (SpeakerSeparationProgress) -> Void
         ) async throws -> Void,
-        chooseSpeakerCount: (
-            (Set<SourceTrack>, SpeakerCountSelection) -> SpeakerCountSelection?
-        )? = nil,
+        chooseSpeakerCounts: (([SourceTrack: SpeakerCountSelection]) -> [SourceTrack: SpeakerCountSelection]?)? = nil,
+        pasteboard: NSPasteboard = .general,
+        profileStore: VoiceProfileStore = VoiceProfileStore(),
         appearance: NSAppearance? = nil,
         presence: ApplicationPresenceController = ApplicationPresenceController()
     ) throws {
@@ -67,8 +83,14 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
         transcript = try TranscriptStore(session: session).read()
         self.isRecording = isRecording
         self.separateSpeakers = separateSpeakers
-        self.chooseSpeakerCount = chooseSpeakerCount
+        self.chooseSpeakerCounts = chooseSpeakerCounts
+        self.pasteboard = pasteboard
+        self.profileStore = profileStore
         self.presence = presence
+        for track in SourceTrack.allCases {
+            let count = transcript.voices.values.filter { $0.source == track.rawValue }.count
+            if count > 1 { lastSpeakerCounts[track] = .exact(count) }
+        }
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 840, height: 620),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -101,8 +123,8 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
         try self.init(
             session: session,
             isRecording: isRecording,
-            separateSpeakers: { _, _, _ in try await separateSpeakers() },
-            chooseSpeakerCount: { _, _ in .automatic },
+            separateSpeakers: { _, _ in try await separateSpeakers() },
+            chooseSpeakerCounts: { $0.mapValues { _ in .automatic } },
             appearance: appearance,
             presence: presence
         )
@@ -145,6 +167,7 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
     private func buildContent() -> NSView {
         rows = []
         speakerActionButtons = []
+        loadVoiceMemory()
         let root = TranscriptReviewRootView()
         let title = NSTextField(labelWithString: "Transcript")
         title.font = .systemFont(ofSize: 24, weight: .semibold)
@@ -155,21 +178,27 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
         heading.alignment = .leading
         heading.spacing = 3
 
-        let markdown = NSButton(title: "Open Transcript File", target: self, action: #selector(openMarkdownClicked))
+        let markdown = ReviewButton(title: "Open Transcript File", target: self, action: #selector(openMarkdownClicked))
         markdown.bezelStyle = .rounded
-        let finder = NSButton(title: "Show in Finder", target: self, action: #selector(showFolderClicked))
+        let finder = ReviewButton(title: "Show in Finder", target: self, action: #selector(showFolderClicked))
         finder.bezelStyle = .rounded
-        let fileActions = NSStackView(views: [finder, markdown])
+        let copy = ReviewButton(title: "Copy Markdown", target: self, action: #selector(copyMarkdownClicked(_:)))
+        copy.bezelStyle = .rounded
+        copy.keyEquivalent = "c"
+        copy.keyEquivalentModifierMask = [.command, .shift]
+        copy.toolTip = "Copy the entire transcript as Markdown, including current speaker names (⇧⌘C)"
+        if case .separating = separationState { copy.isEnabled = false }
+        let fileActions = NSStackView(views: [copy, finder, markdown])
         fileActions.orientation = .horizontal
         fileActions.spacing = 8
 
-        let close = NSButton(title: "Close", target: self, action: #selector(closeClicked))
+        let close = ReviewButton(title: "Close", target: self, action: #selector(closeClicked))
         close.bezelStyle = .rounded
         close.keyEquivalent = "\u{1b}"
         if case .separating = separationState { close.isEnabled = false }
         var reviewButtons = [close]
         if !transcript.voiceIDs.isEmpty {
-            let save = NSButton(title: "Save Names", target: self, action: #selector(saveClicked))
+            let save = ReviewButton(title: "Save Names", target: self, action: #selector(saveClicked))
             save.bezelStyle = .rounded
             save.keyEquivalent = "\r"
             if case .separating = separationState { save.isEnabled = false }
@@ -214,12 +243,15 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
             [
                 FocusEntry(id: "name:\(row.voiceID)", view: row.field),
                 FocusEntry(id: "play:\(row.voiceID)", view: row.playButton),
-            ]
+            ] + row.memoryButtons.enumerated().map {
+                FocusEntry(id: "memory:\(row.voiceID):\($0.offset)", view: $0.element)
+            }
         }
         focusEntries += speakerActionButtons.enumerated().map {
             FocusEntry(id: "speaker-action:\($0.offset)", view: $0.element)
         }
         focusEntries += [
+            FocusEntry(id: "copy-markdown", view: copy),
             FocusEntry(id: "show-in-finder", view: finder),
             FocusEntry(id: "open-transcript", view: markdown),
         ]
@@ -351,39 +383,18 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
     }
 
     private func makeSeparatedReview() -> NSView {
-        let voices = makeVoiceList(showSource: true, minimumHeight: 220)
-        guard TranscriptStore(session: session).canRestoreBeforeSpeakerSeparation else {
-            return voices
+        let voices = makeVoiceList(showSource: true, minimumHeight: 110)
+        let action = makeSeparationPrompt()
+        if TranscriptStore(session: session).canRestoreBeforeSpeakerSeparation,
+           let actions = action as? NSStackView {
+            let restore = ReviewButton(
+                title: "Undo Voice Separation", target: self,
+                action: #selector(restoreSeparationClicked)
+            )
+            restore.bezelStyle = .rounded
+            speakerActionButtons.append(restore)
+            actions.addArrangedSubview(restore)
         }
-        let detail = NSTextField(wrappingLabelWithString:
-            "Run again with a different speaker count, or restore the original Me and Them transcript."
-        )
-        detail.textColor = .secondaryLabelColor
-        let tracks = Set<SourceTrack>(transcript.voices.values.compactMap { voice in
-            guard
-                voice.machine_label.hasPrefix("Voice "),
-                sourceURL(for: voice) != nil
-            else { return nil }
-            return SourceTrack(rawValue: voice.source)
-        })
-        let restore = NSButton(
-            title: "Undo Voice Separation",
-            target: self,
-            action: #selector(restoreSeparationClicked)
-        )
-        restore.bezelStyle = .rounded
-        speakerActionButtons.append(restore)
-        var actionViews: [NSView] = [detail]
-        if !tracks.isEmpty {
-            actionViews.append(separationButton(
-                title: "Run Voice Separation Again", tracks: tracks
-            ))
-        }
-        actionViews.append(restore)
-        let action = NSStackView(views: actionViews)
-        action.orientation = .vertical
-        action.alignment = .leading
-        action.spacing = 8
         let stack = NSStackView(views: [voices, action])
         stack.orientation = .vertical
         stack.alignment = .leading
@@ -424,15 +435,33 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
             }
             if sourceAvailable(for: .system) {
                 stack.addArrangedSubview(separationButton(
-                    title: "Separate Remote Voices",
+                    title: separationTitle(for: .system),
                     tracks: [.system]
                 ))
             }
             if sourceAvailable(for: .microphone) {
                 stack.addArrangedSubview(separationButton(
-                    title: "Separate Local Voices",
+                    title: separationTitle(for: .microphone),
                     tracks: [.microphone]
                 ))
+            }
+            if sourceAvailable(for: .microphone), sourceAvailable(for: .system) {
+                stack.addArrangedSubview(separationButton(
+                    title: "Separate Local and Remote…", tracks: [.microphone, .system]
+                ))
+            }
+            if !profiles.isEmpty {
+                let forget = ReviewButton(title: "Forget Remembered Voices…", target: self,
+                                      action: #selector(forgetVoicesClicked))
+                forget.bezelStyle = .rounded
+                speakerActionButtons.append(forget)
+                stack.addArrangedSubview(forget)
+            }
+            if let profileError {
+                let error = NSTextField(wrappingLabelWithString: "Voice memory unavailable: \(profileError)")
+                error.font = .systemFont(ofSize: 11)
+                error.textColor = .secondaryLabelColor
+                stack.addArrangedSubview(error)
             }
         case .separating(let detailText):
             let spinner = NSProgressIndicator()
@@ -462,7 +491,7 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
     }
 
     private func separationButton(title: String, tracks: Set<SourceTrack>) -> NSButton {
-        let button = NSButton(title: title, target: self, action: #selector(separateClicked(_:)))
+        let button = ReviewButton(title: title, target: self, action: #selector(separateClicked(_:)))
         button.bezelStyle = .rounded
         button.identifier = NSUserInterfaceItemIdentifier(
             tracks.map(\.rawValue).sorted().joined(separator: ",")
@@ -475,7 +504,7 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
         showSource: Bool,
         minimumHeight: CGFloat = 250
     ) -> NSView {
-        let voiceStack = NSStackView()
+        let voiceStack = VoiceListStackView()
         voiceStack.orientation = .vertical
         voiceStack.alignment = .leading
         voiceStack.spacing = 10
@@ -524,7 +553,7 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
         field.placeholderString = "Name this voice"
         field.setAccessibilityLabel("Name for \(context)")
         field.delegate = self
-        let play = NSButton(title: "Play Sample", target: self, action: #selector(playClicked(_:)))
+        let play = ReviewButton(title: "Play Sample", target: self, action: #selector(playClicked(_:)))
         play.bezelStyle = .rounded
         play.controlSize = .small
         play.image = NSImage(systemSymbolName: "play.fill", accessibilityDescription: nil)
@@ -537,8 +566,28 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
         play.setAccessibilityLabel(
             sampleAvailable ? "Play sample for \(context)" : "Sample unavailable for \(context)"
         )
-        rows.append(Row(voiceID: id, field: field, playButton: play))
-        let stack = NSStackView(views: [header, field, play])
+        var memoryButtons: [NSButton] = []
+        if let suggestion = suggestions[id] {
+            let use = ReviewButton(title: "Use \(suggestion.name)", target: self,
+                               action: #selector(useSuggestionClicked(_:)))
+            use.bezelStyle = .rounded
+            use.controlSize = .small
+            use.identifier = NSUserInterfaceItemIdentifier(id)
+            use.toolTip = "Suggested from a remembered voice. Listen to a sample to check."
+            memoryButtons.append(use)
+        }
+        if voice.embedding != nil, voice.embedding_model != nil {
+            let remember = ReviewButton(title: "Remember Voice", target: self,
+                                    action: #selector(rememberVoiceClicked(_:)))
+            remember.bezelStyle = .rounded
+            remember.controlSize = .small
+            remember.identifier = NSUserInterfaceItemIdentifier(id)
+            remember.toolTip = "Save this name and voice on this Mac for suggestions in future meetings."
+            configureRememberButton(remember, voice: voice, name: field.stringValue, voiceID: id)
+            memoryButtons.append(remember)
+        }
+        rows.append(Row(voiceID: id, field: field, playButton: play, memoryButtons: memoryButtons))
+        let stack = NSStackView(views: [header, field, play] + memoryButtons)
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 6
@@ -566,6 +615,8 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
 
     private func refreshContent() {
         let focusedID = currentFocusID()
+        // End the field editor's attachment before replacing its owning view.
+        window?.makeFirstResponder(nil)
         let separating: Bool
         if case .separating = separationState { separating = true } else { separating = false }
         window?.standardWindowButton(.closeButton)?.isEnabled = !separating
@@ -646,21 +697,22 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
             return
         }
         if hasUnsavedNames, !saveNames(refresh: false) { return }
-        let speakerCount: SpeakerCountSelection?
-        if let chooseSpeakerCount {
-            speakerCount = chooseSpeakerCount(tracks, lastSpeakerCount)
+        let previous = lastSpeakerCounts.filter { tracks.contains($0.key) }
+        let selections: [SourceTrack: SpeakerCountSelection]?
+        if let chooseSpeakerCounts {
+            selections = chooseSpeakerCounts(previous)
         } else {
-            speakerCount = promptForSpeakerCount(tracks: tracks, previous: lastSpeakerCount)
+            selections = promptForSpeakerCounts(previous: previous)
         }
-        guard let speakerCount else { return }
+        guard let selections, Set(selections.keys) == tracks else { return }
         lastSeparationTracks = tracks
-        lastSpeakerCount = speakerCount
+        lastSpeakerCounts.merge(selections) { _, new in new }
         separationState = .separating("Preparing the speaker model…")
         refreshContent()
         Task { [weak self] in
             guard let self else { return }
             do {
-                try await separateSpeakers(tracks, speakerCount) { [weak self] progress in
+                try await separateSpeakers(selections) { [weak self] progress in
                     Task { @MainActor [weak self] in
                         self?.updateSeparationProgress(progress)
                     }
@@ -697,42 +749,22 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
         if window?.isVisible == true { refreshContent() }
     }
 
-    private func promptForSpeakerCount(
-        tracks: Set<SourceTrack>, previous: SpeakerCountSelection
-    ) -> SpeakerCountSelection? {
-        let alert = NSAlert()
-        if tracks == [.system] {
-            alert.messageText = "How many other people spoke in this recording?"
-            alert.informativeText = "Count distinct remote voices that actually spoke. Do not include yourself."
-        } else if tracks == [.microphone] {
-            alert.messageText = "How many people spoke near this Mac?"
-            alert.informativeText = "Count distinct local voices that actually spoke."
-        } else {
-            alert.messageText = "How many people spoke on each selected track?"
-            alert.informativeText = "Use this only when the selected tracks contain the same number of distinct voices."
+    private func separationTitle(for track: SourceTrack) -> String {
+        let separated = transcript.voices.values.contains {
+            $0.source == track.rawValue && $0.machine_label.hasPrefix("Voice ")
         }
-        if transcript.diarizer != nil {
-            alert.informativeText += " The new result will replace the current separated voices and names only after it succeeds."
-        }
-        let picker = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 260, height: 28))
-        for count in 2...20 {
-            picker.addItem(withTitle: "\(count) speakers")
-            picker.lastItem?.tag = count
-        }
-        picker.menu?.addItem(.separator())
-        picker.addItem(withTitle: "Detect automatically (less reliable)")
-        picker.lastItem?.tag = 0
-        switch previous {
-        case .exact(let count) where (2...20).contains(count):
-            picker.selectItem(withTag: count)
-        default:
-            picker.selectItem(withTag: 0)
-        }
-        alert.accessoryView = picker
-        alert.addButton(withTitle: "Separate Voices")
-        alert.addButton(withTitle: "Cancel")
+        let source = track == .microphone ? "Local" : "Remote"
+        return separated ? "Separate \(source) Voices Again…" : "Separate \(source) Voices"
+    }
+
+    private func promptForSpeakerCounts(
+        previous: [SourceTrack: SpeakerCountSelection]
+    ) -> [SourceTrack: SpeakerCountSelection]? {
+        let (alert, choices) = SpeakerCountPicker.makeAlert(
+            selections: previous, replacingSeparatedTracks: transcript.diarizer != nil
+        )
         guard presence.runModal(alert) == .alertFirstButtonReturn else { return nil }
-        return picker.selectedTag() == 0 ? .automatic : .exact(picker.selectedTag())
+        return choices.selections
     }
 
     @objc private func restoreSeparationClicked() {
@@ -801,15 +833,121 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
     private func saveNames(refresh: Bool = true) -> Bool {
         stopPlayback()
         do {
-            try transcript.applyVoiceNames(Dictionary(uniqueKeysWithValues: rows.map {
+            var updated = transcript
+            try updated.applyVoiceNames(Dictionary(uniqueKeysWithValues: rows.map {
                 ($0.voiceID, enteredName(in: $0))
             }))
-            try TranscriptStore(session: session).write(transcript)
+            try TranscriptStore(session: session).write(updated)
+            transcript = updated
             if refresh { refreshContent() }
             return true
         } catch {
             _ = presence.runModal(NSAlert(error: error))
             return false
+        }
+    }
+
+    private var memorySessionID: String {
+        "\(session.standardizedFileURL.path)|\(transcript.created_at)"
+    }
+
+    private func loadVoiceMemory() {
+        do {
+            profiles = try profileStore.load()
+            suggestions = try profileStore.suggestions(for: transcript)
+            profileError = nil
+        } catch {
+            profiles = []
+            suggestions = [:]
+            profileError = error.localizedDescription
+        }
+    }
+
+    private func configureRememberButton(
+        _ button: NSButton, voice: TranscriptDocument.Voice, name: String, voiceID: String
+    ) {
+        let remembered = profiles.contains { profile in
+            profile.id == voice.remembered_profile_id && profile.name == normalized(name)
+                && profile.contributions.contains {
+                    $0.session_id == memorySessionID && $0.voice_id == voiceID
+                        && $0.embedding.count == voice.embedding?.count
+                }
+        }
+        button.title = remembered ? "Voice Remembered" : "Remember Voice"
+        button.isEnabled = normalized(name) != nil && !remembered && profileError == nil
+    }
+
+    func controlTextDidChange(_ notification: Notification) {
+        guard let field = notification.object as? NSTextField,
+              let row = rows.first(where: { $0.field === field }),
+              let voice = transcript.voices[row.voiceID] else { return }
+        for button in row.memoryButtons where button.action == #selector(rememberVoiceClicked(_:)) {
+            configureRememberButton(button, voice: voice, name: enteredName(in: row), voiceID: row.voiceID)
+        }
+    }
+
+    @objc private func useSuggestionClicked(_ sender: NSButton) {
+        guard let id = sender.identifier?.rawValue,
+              let suggestion = suggestions[id],
+              let row = rows.first(where: { $0.voiceID == id }) else { return }
+        window?.makeFirstResponder(row.field)
+        row.field.stringValue = suggestion.name
+        row.field.currentEditor()?.string = suggestion.name
+        transcript.voices[id]?.remembered_profile_id = suggestion.profileID
+        for button in row.memoryButtons where button.action == #selector(rememberVoiceClicked(_:)) {
+            if let voice = transcript.voices[id] {
+                configureRememberButton(button, voice: voice, name: suggestion.name, voiceID: id)
+            }
+        }
+    }
+
+    @objc private func rememberVoiceClicked(_ sender: NSButton) {
+        guard let id = sender.identifier?.rawValue, saveNames(refresh: false) else { return }
+        do {
+            let remembered = try profileStore.remember(
+                document: transcript, sessionID: memorySessionID, voiceIDs: [id]
+            )
+            guard let profile = remembered[id] else { return }
+            transcript.voices[id]?.remembered_profile_id = profile.id
+            try TranscriptStore(session: session).write(transcript)
+            refreshContent()
+        } catch {
+            _ = presence.runModal(NSAlert(error: error))
+        }
+    }
+
+    @objc private func forgetVoicesClicked() {
+        let alert = NSAlert()
+        alert.messageText = "Forget all remembered voices?"
+        alert.informativeText = "Future meetings will no longer suggest these names. Saved transcript names are kept."
+        alert.addButton(withTitle: "Forget Voices")
+        alert.addButton(withTitle: "Cancel")
+        guard presence.runModal(alert) == .alertFirstButtonReturn else { return }
+        do {
+            try profileStore.forgetAll()
+            for id in transcript.voiceIDs { transcript.voices[id]?.remembered_profile_id = nil }
+            // Preserve pending field edits when rebuilding the sidebar.
+            guard saveNames(refresh: false) else { return }
+            refreshContent()
+        } catch {
+            _ = presence.runModal(NSAlert(error: error))
+        }
+    }
+
+    @objc private func copyMarkdownClicked(_ sender: NSButton) {
+        if hasUnsavedNames, !saveNames(refresh: false) { return }
+        let markdown = transcript.rendered(title: session.lastPathComponent)
+        pasteboard.clearContents()
+        let item = NSPasteboardItem()
+        item.setString(markdown, forType: .string)
+        item.setString(markdown, forType: NSPasteboard.PasteboardType("net.daringfireball.markdown"))
+        if pasteboard.writeObjects([item]) {
+            sender.title = "Copied!"
+            Task { @MainActor [weak sender] in
+                try? await Task.sleep(for: .seconds(2))
+                sender?.title = "Copy Markdown"
+            }
+            transcriptTextView?.textStorage?.setAttributedString(transcriptText())
         }
     }
 

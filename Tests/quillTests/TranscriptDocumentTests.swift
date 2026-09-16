@@ -80,6 +80,40 @@ import Testing
         ) == "Matt")
     }
 
+    @Test func legacyVoicesDecodeWithoutEmbeddingFields() throws {
+        let data = Data("""
+        {
+          "schema_version": 1,
+          "engine": "parakeet",
+          "model": "test",
+          "diarizer": "offline-vbx-community-1",
+          "created_at": "2026-09-16T00:00:00Z",
+          "voices": {
+            "mic:1": {
+              "source": "mic",
+              "audio_file": "Source Audio/Local.m4a",
+              "machine_label": "Voice 1",
+              "samples": []
+            }
+          },
+          "segments": [
+            {
+              "speaker": "Voice 1",
+              "voice_id": "mic:1",
+              "start_ms": 0,
+              "end_ms": 1000,
+              "text": "Hello"
+            }
+          ]
+        }
+        """.utf8)
+
+        let transcript = try JSONDecoder().decode(TranscriptDocument.self, from: data)
+        #expect(transcript.voices["mic:1"]?.embedding_model == nil)
+        #expect(transcript.voices["mic:1"]?.embedding == nil)
+        #expect(transcript.voices["mic:1"]?.remembered_profile_id == nil)
+    }
+
     @Test func newerSchemaCannotBeOverwritten() throws {
         let session = try temporarySession()
         defer { try? FileManager.default.removeItem(at: session) }

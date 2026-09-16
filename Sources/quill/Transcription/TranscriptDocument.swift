@@ -31,6 +31,9 @@ struct TranscriptDocument: Codable, Sendable {
         let machine_label: String
         var name: String?
         let samples: [Sample]
+        var embedding_model: String? = nil
+        var embedding: [Float]? = nil
+        var remembered_profile_id: String? = nil
 
         var displayName: String { name?.nilIfBlank ?? machine_label }
     }

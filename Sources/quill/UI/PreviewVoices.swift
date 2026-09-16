@@ -26,24 +26,46 @@ struct PreviewVoices: ParsableCommand {
             try Data().write(to: source.appendingPathComponent("Local.m4a"))
             try Data().write(to: source.appendingPathComponent("Remote.m4a"))
 
-            @MainActor func render(_ suffix: String) throws {
+            let profiles = VoiceProfileStore(url: previewRoot.appendingPathComponent("profiles.json"))
+
+            @MainActor func snapshot(_ view: NSView, filename: String) throws {
+                view.layoutSubtreeIfNeeded()
+                guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds)
+                else { return }
+                view.cacheDisplay(in: view.bounds, to: bitmap)
+                // Alert material is transparent when rendered offscreen. Give
+                // snapshots the same appearance-specific window background.
+                let opaque = NSImage(size: view.bounds.size)
+                opaque.lockFocus()
+                view.effectiveAppearance.performAsCurrentDrawingAppearance {
+                    NSColor.windowBackgroundColor.setFill()
+                    view.bounds.fill()
+                }
+                let foreground = NSImage(size: view.bounds.size)
+                foreground.addRepresentation(bitmap)
+                foreground.draw(in: view.bounds, from: .zero, operation: .sourceOver, fraction: 1)
+                opaque.unlockFocus()
+                guard let tiff = opaque.tiffRepresentation,
+                      let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:])
+                else { return }
+                try png.write(to: output.appendingPathComponent(filename))
+            }
+
+            @MainActor func render(_ suffix: String, size: NSSize? = nil) throws {
                 for (name, appearance) in [
                     ("light", NSAppearance.Name.aqua), ("dark", .darkAqua),
                 ] {
                     let controller = try VoiceReviewWindowController(
                         session: session,
                         isRecording: { false },
-                        separateSpeakers: {},
+                        separateSpeakers: { _, _ in },
+                        chooseSpeakerCounts: { $0 },
+                        profileStore: profiles,
                         appearance: NSAppearance(named: appearance)
                     )
+                    if let size { controller.window?.setContentSize(size) }
                     guard let view = controller.window?.contentView else { continue }
-                    view.layoutSubtreeIfNeeded()
-                    guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds)
-                    else { continue }
-                    view.cacheDisplay(in: view.bounds, to: bitmap)
-                    guard let png = bitmap.representation(using: .png, properties: [:])
-                    else { continue }
-                    try png.write(to: output.appendingPathComponent("\(name)-\(suffix).png"))
+                    try snapshot(view, filename: "\(name)-\(suffix).png")
                 }
             }
 
@@ -81,7 +103,7 @@ struct PreviewVoices: ParsableCommand {
             ))
             try render("review-speakers")
 
-            let voices = [
+            var voices = [
                 "mic:1": TranscriptDocument.Voice(
                     source: "mic", audio_file: "Source Audio/Local.m4a",
                     machine_label: "Voice 1", name: nil,
@@ -106,10 +128,22 @@ struct PreviewVoices: ParsableCommand {
                     machine_label: "Voice 4", name: nil,
                     samples: [.init(start_ms: 31_000, end_ms: 36_000)]
                 ),
+                "system:3": TranscriptDocument.Voice(
+                    source: "system", audio_file: "Source Audio/Remote.m4a",
+                    machine_label: "Voice 5", name: nil,
+                    samples: [.init(start_ms: 38_000, end_ms: 43_000)]
+                ),
+                "system:4": TranscriptDocument.Voice(
+                    source: "system", audio_file: "Source Audio/Remote.m4a",
+                    machine_label: "Voice 6", name: nil,
+                    samples: [.init(start_ms: 45_000, end_ms: 51_000)]
+                ),
             ]
+            voices["mic:1"]?.embedding_model = "preview"
+            voices["mic:1"]?.embedding = [1, 0]
             let transcript = TranscriptDocument(
                 schema_version: 1,
-                engine: "parakeet", model: "tdt-0.6b-v3", diarizer: "sortformer-offline-v2.1",
+                engine: "parakeet", model: "tdt-0.6b-v3", diarizer: "offline-vbx-community-1",
                 created_at: "2026-08-19T12:00:00Z", voices: voices,
                 segments: [
                     .init(
@@ -126,8 +160,31 @@ struct PreviewVoices: ParsableCommand {
                     ),
                 ]
             )
-            try TranscriptStore(session: session).write(transcript)
+            var remembered = transcript
+            remembered.voices["mic:1"]?.name = "Alex"
+            try profiles.remember(document: remembered, sessionID: "earlier-preview", voiceIDs: ["mic:1"])
+            let store = TranscriptStore(session: session)
+            try store.preserveBeforeSpeakerSeparation(store.read())
+            try store.write(transcript)
             try render("identify-voices")
+            try render("identify-voices-minimum", size: NSSize(width: 760, height: 478))
+
+            for (name, appearance) in [
+                ("light", NSAppearance.Name.aqua), ("dark", .darkAqua),
+            ] {
+                let (alert, _) = SpeakerCountPicker.makeAlert(
+                    selections: [.microphone: .exact(2), .system: .exact(4)],
+                    replacingSeparatedTracks: true
+                )
+                if let icon = Bundle.main.url(forResource: "AppIcon", withExtension: "icns") {
+                    alert.icon = NSImage(contentsOf: icon)
+                }
+                alert.window.appearance = NSAppearance(named: appearance)
+                alert.layout()
+                if let view = alert.window.contentView {
+                    try snapshot(view, filename: "\(name)-hybrid-speaker-counts.png")
+                }
+            }
         }
     }
 }

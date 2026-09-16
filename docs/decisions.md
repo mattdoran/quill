@@ -1037,3 +1037,22 @@ declared alignment resolution. The existing limitations remain explicit:
 buffer arrival uses non-monotonic wall time, overlapping frames are not trimmed,
 and independent device-clock drift is not corrected. A host-time or drift model
 requires measured need rather than being introduced for hypothetical live ASR.
+
+
+## 2026-09-16: Independent hybrid separation and explicit voice memory
+
+**Decision:** Transcript review can separate local and remote tracks together
+with different speaker counts, or process either track while preserving the
+other's voices and names. Replacement is published only after every requested
+pass succeeds; the original transcript remains available for undo.
+
+**Decision:** Reuse offline VBx cluster embeddings for optional local voice
+memory. A user explicitly remembers a named voice and explicitly accepts each
+future suggestion. Model/dimension compatibility and a similarity threshold
+with a runner-up margin suppress weak or ambiguous suggestions. Profiles use
+stable identities rather than names as keys. These matching heuristics are not
+an accuracy guarantee, especially across different microphones or call codecs.
+
+**Decision:** Copy Markdown exports the full canonical transcript and saves any
+speaker name currently being edited. Its shortcut is Shift-Command-C, leaving
+Command-C as ordinary selection copying.
