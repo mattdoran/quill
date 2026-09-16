@@ -60,8 +60,8 @@ is not in play.
   the latest stable appcast item so a hotfix updates stable users without
   replacing a newer beta.
 - Use `./build.sh` for shared debug and release builds. It fixes SwiftPM's
-  TTY-dependent diagnostic mode; direct terminal and non-terminal builds
-  otherwise invalidate each other's artifacts.
+  TTY-dependent diagnostic mode and pins the native backend. Apple Swift 6.4's
+  default backend rejects Quill's valid embedded `__info_plist` before building.
 - Do not add `--disable-sandbox` to builds using the normal `.build` directory.
   Switching that flag invalidated every release target, including FluidAudio;
   run outside the outer sandbox or use a separate scratch path.

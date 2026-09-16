@@ -2,6 +2,24 @@
 
 Dated product and architecture decisions. Newest first.
 
+## 2026-09-17: Pin SwiftPM's native build backend
+
+**Decision:** `build.sh` passes `--build-system native` for debug, test and
+release builds. All shared and release builds continue to go through that
+script.
+
+**Why:** Apple Swift 6.4 changed SwiftPM's default to the SwiftBuild backend.
+That backend fails during initialization with `Unknown error parsing property
+list` when a target uses `-sectcreate` to embed a valid plist in the
+`__TEXT,__info_plist` section. A minimal package reproduced the failure, while
+the native backend built both the minimal package and Quill. Quill needs the
+embedded plist so macOS can attribute TCC access when the raw executable is run
+without its app bundle.
+
+**Consequence:** The repository does not inherit SwiftPM's backend default.
+The regression test verifies that `build.sh` supplies the native backend. The
+pin can be reconsidered when SwiftBuild accepts the embedded plist.
+
 ## 2026-09-17: One entry point for speaker separation
 
 **Decision:** Transcript review has one `Separate Voices…` action. Its sheet has

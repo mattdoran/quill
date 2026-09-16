@@ -17,7 +17,9 @@ fi
 
 # SwiftPM fingerprints its otherwise TTY-dependent diagnostic mode.
 if [ "$action" = test ]; then
-    "$swift" test --package-path "$root" --no-color-diagnostics
-    exec "$root/Tests/ReleaseVersioningTests.sh"
+    "$swift" test --package-path "$root" --build-system native --no-color-diagnostics
+    "$root/Tests/ReleaseVersioningTests.sh"
+    exec "$root/Tests/BuildScriptTests.sh"
 fi
-exec "$swift" build --package-path "$root" --no-color-diagnostics -c "$action"
+exec "$swift" build --package-path "$root" --build-system native \
+    --no-color-diagnostics -c "$action"
