@@ -75,7 +75,11 @@ updater-driven relaunch until capture has stopped and its recoverable source
 state is on disk.
 
 The source plist names the exact release being developed, such as
-`0.4.0-dev`. A release tag supplies the packaged version:
+`0.4.0-dev`. A release tag supplies the packaged version. Each release needs
+reviewed notes in `docs/release-notes/<version>.md`, for example
+`0.4.0-beta.1.md`; `check` refuses a release without them, and `publish` uses
+them, plus a changelog link from the previous tag, as both the GitHub
+Release body and the Sparkle update notes.
 
 ```sh
 ./release.sh check v0.4.0-beta.1

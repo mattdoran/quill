@@ -80,5 +80,9 @@ is not in play.
   items from elsewhere by executable path, and Bartender cannot see them.
 - Keep the status item's accessibility title constant. Bartender keys items by
   it, so a title carrying state or the clock makes the icon disappear.
+- Before a release, draft `docs/release-notes/<version>.md` from the changes
+  since the last tag and have Matt review it. Users read it in Sparkle: lead
+  with what they notice, a few short bullets, no internal or install-script
+  changes.
 - `docs/design.md` owns implementation and data flow; `docs/ux.md` owns product
   behaviour and UI. Record settled choices in `docs/decisions.md`.

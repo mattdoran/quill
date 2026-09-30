@@ -54,6 +54,7 @@ parse_tag() {
         die "release tag must be vX.Y.Z or vX.Y.Z-beta.N"
     fi
     release_line=${base_version%.*}
+    notes="$root/docs/release-notes/$version.md"
 }
 
 require_release_source() {
@@ -188,6 +189,7 @@ check_release() {
     source_version=$(plist_value CFBundleShortVersionString)
     [ "$source_version" = "$base_version-dev" ] \
         || die "$tag requires source version $base_version-dev, found $source_version"
+    [ -s "$notes" ] || die "write reviewed release notes first: docs/release-notes/$version.md"
     require_release_source
     build_number=$(release_build_number)
     check_signing
@@ -344,7 +346,13 @@ publish_release() {
     [ "${GITHUB_ACTIONS:-}" = true ] || git -C "$root" push origin "$tag"
 
     if ! gh release view "$tag" --repo "$repo" >/dev/null 2>&1; then
-        release_args="--repo $repo --title $tag --generate-notes"
+        release_notes="$publish_dir/release-notes.md"
+        cp "$notes" "$release_notes"
+        if previous_tag=$(git -C "$root" describe --tags --abbrev=0 "$tag^" 2>/dev/null); then
+            printf '\n[Full changelog](https://github.com/%s/compare/%s...%s)\n' \
+                "$repo" "$previous_tag" "$tag" >>"$release_notes"
+        fi
+        release_args="--repo $repo --title $tag --notes-file $release_notes"
         [ "$channel" = beta ] && release_args="$release_args --prerelease"
         # Repository and tag values are validated constants or parsed release tags.
         # shellcheck disable=SC2086
