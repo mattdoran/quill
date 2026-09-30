@@ -55,6 +55,9 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
     private var speakerActionButtons: [NSButton] = []
     private var focusEntries: [FocusEntry] = []
     private weak var transcriptTextView: NSTextView?
+    private weak var speakerScrollView: NSScrollView?
+    private var speakerScrollOrigin = NSPoint.zero
+    private weak var separationDetail: NSTextField?
     private var separationState = SeparationState.idle
     private var lastSeparationTracks: Set<SourceTrack> = []
     private var lastSpeakerCounts: [SourceTrack: SpeakerCountSelection] = [:]
@@ -169,6 +172,8 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
     private func buildContent() -> NSView {
         rows = []
         speakerActionButtons = []
+        speakerScrollView = nil
+        separationDetail = nil
         loadVoiceMemory()
         let root = TranscriptReviewRootView()
         let title = NSTextField(labelWithString: "Transcript")
@@ -465,6 +470,7 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
             row.spacing = 8
             row.alignment = .centerY
             let detail = NSTextField(wrappingLabelWithString: detailText)
+            separationDetail = detail
             detail.textColor = .secondaryLabelColor
             stack.addArrangedSubview(row)
             stack.addArrangedSubview(detail)
@@ -510,6 +516,7 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
         scroll.hasVerticalScroller = voiceStack.arrangedSubviews.count > 3
         scroll.drawsBackground = false
         scroll.documentView = voiceStack
+        speakerScrollView = scroll
         scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: minimumHeight).isActive = true
         voiceStack.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor).isActive = true
         return scroll
@@ -606,6 +613,12 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
 
     private func refreshContent() {
         let focusedID = currentFocusID()
+        let transcriptOrigin = transcriptTextView?.enclosingScrollView?.contentView.bounds.origin
+        let selectedRanges = transcriptTextView?.selectedRanges
+        let previousText = transcriptTextView?.string
+        if let speakerScrollView {
+            speakerScrollOrigin = speakerScrollView.contentView.bounds.origin
+        }
         // End the field editor's attachment before replacing its owning view.
         window?.makeFirstResponder(nil)
         let separating: Bool
@@ -614,6 +627,26 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
         window?.contentView = buildContent()
         setInitialFocus()
         restoreFocus(focusedID)
+        if previousText == transcriptTextView?.string, let selectedRanges {
+            transcriptTextView?.selectedRanges = selectedRanges
+        }
+        restoreScrollPositions(transcriptOrigin: transcriptOrigin)
+    }
+
+    private func restoreScrollPositions(transcriptOrigin: NSPoint?) {
+        window?.contentView?.layoutSubtreeIfNeeded()
+        if let textView = transcriptTextView, let container = textView.textContainer {
+            textView.layoutManager?.ensureLayout(for: container)
+            textView.sizeToFit()
+        }
+        for (scroll, origin) in [
+            (transcriptTextView?.enclosingScrollView, transcriptOrigin),
+            (speakerScrollView, Optional(speakerScrollOrigin)),
+        ] {
+            guard let scroll, let origin else { continue }
+            scroll.contentView.scroll(to: origin)
+            scroll.reflectScrolledClipView(scroll.contentView)
+        }
     }
 
     private func configureKeyViewLoop() {
@@ -740,7 +773,9 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
         case .updatingTranscript:
             separationState = .separating("Updating the transcript…")
         }
-        if window?.isVisible == true { refreshContent() }
+        if case .separating(let detail) = separationState {
+            separationDetail?.stringValue = detail
+        }
     }
 
     private func separationTitle() -> String {
@@ -949,7 +984,18 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
                 try? await Task.sleep(for: .seconds(2))
                 sender?.title = "Copy Markdown"
             }
-            transcriptTextView?.textStorage?.setAttributedString(transcriptText())
+            let text = transcriptText()
+            if let textView = transcriptTextView, textView.attributedString() != text {
+                let origin = textView.enclosingScrollView?.contentView.bounds.origin
+                let selectedRanges = textView.selectedRanges
+                let sameText = textView.string == text.string
+                textView.textStorage?.setAttributedString(text)
+                if sameText { textView.selectedRanges = selectedRanges }
+                if let speakerScrollView {
+                    speakerScrollOrigin = speakerScrollView.contentView.bounds.origin
+                }
+                restoreScrollPositions(transcriptOrigin: origin)
+            }
         }
     }
 

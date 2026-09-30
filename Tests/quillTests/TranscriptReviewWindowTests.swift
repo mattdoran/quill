@@ -611,6 +611,106 @@ import Testing
         #expect(try memory.load().first?.contribution_count == 1)
     }
 
+    @Test(arguments: ["Remember Voice", "Save Names", "Copy Markdown"], [false, true])
+    func reviewActionsPreserveReadingPosition(action: String, editName: Bool) async throws {
+        try await checkReadingPosition(action: action, editName: editName)
+    }
+
+    @Test func separationPreservesSelection() async throws {
+        try await checkReadingPosition(action: "Separate Voices Again…", editName: false)
+    }
+
+    @Test func separationPreservesReadingPosition() async throws {
+        try await checkReadingPosition(action: "Separate Voices Again…", editName: true)
+    }
+
+    private func checkReadingPosition(action: String, editName: Bool) async throws {
+        _ = NSApplication.shared
+        let session = try makeHybridSession()
+        defer { try? FileManager.default.removeItem(at: session) }
+        let store = TranscriptStore(session: session)
+        var document = try store.read()
+        for id in document.voiceIDs {
+            document.voices[id]?.name = id
+            document.voices[id]?.embedding_model = "test-embedding"
+            document.voices[id]?.embedding = [1, 0, 0]
+        }
+        document.segments = (0..<100).map {
+            .init(speaker: "mic:1", voice_id: "mic:1", start_ms: $0 * 1000,
+                  end_ms: ($0 + 1) * 1000, text: "Transcript paragraph \($0)")
+        }
+        try store.write(document)
+        var finishSeparation: CheckedContinuation<Void, Never>?
+        defer { finishSeparation?.resume() }
+        let controller = try VoiceReviewWindowController(
+            session: session, isRecording: { false },
+            separateSpeakers: { _, progress in
+                progress(.init(stage: .analysing(source: .system, completed: 1, total: 2)))
+                await withCheckedContinuation { finishSeparation = $0 }
+            },
+            chooseSpeakerCounts: { _ in [.system: .exact(4)] },
+            pasteboard: NSPasteboard(name: .init("quill-scroll-\(UUID().uuidString)")),
+            profileStore: VoiceProfileStore(url: session.appendingPathComponent("profiles.json"))
+        )
+        let window = try #require(controller.window)
+        window.makeKeyAndOrderFront(nil)
+        defer { window.orderOut(nil) }
+        let content = try #require(window.contentView)
+        content.layoutSubtreeIfNeeded()
+        if editName {
+            let field = try #require(textFields(in: content).first { $0.placeholderString == "Name this voice" })
+            field.stringValue = "New name"
+            field.currentEditor()?.string = "New name"
+        }
+        let transcript = try #require(textViews(in: content).first { !$0.isFieldEditor })
+        transcript.layoutManager?.ensureLayout(for: try #require(transcript.textContainer))
+        transcript.sizeToFit()
+        let selection = NSRange(location: 300, length: 15)
+        transcript.setSelectedRange(selection)
+        let transcriptScroll = try #require(transcript.enclosingScrollView)
+        transcriptScroll.contentView.scroll(to: NSPoint(x: 0, y: 600))
+        let remember = try #require(buttons(in: content).last { $0.title == "Remember Voice" })
+        remember.scrollToVisible(remember.bounds)
+        let speakersScroll = try #require(remember.enclosingScrollView)
+        let transcriptOrigin = transcriptScroll.contentView.bounds.origin
+        let speakersOrigin = speakersScroll.contentView.bounds.origin
+        #expect(transcriptOrigin.y > 0)
+        #expect(speakersOrigin.y > 0)
+
+        let button = action == "Remember Voice" ? remember
+            : try #require(buttons(in: content).first { $0.title == action })
+        button.performClick(nil)
+        if action == "Separate Voices Again…" {
+            let progressContent = try #require(window.contentView)
+            for _ in 0..<100 {
+                try await Task.sleep(for: .milliseconds(10))
+                if textFields(in: progressContent).contains(where: { $0.stringValue == "Analysing remote audio: 50%." }) { break }
+            }
+            #expect(window.contentView === progressContent)
+            #expect(textFields(in: progressContent).contains { $0.stringValue == "Analysing remote audio: 50%." })
+            finishSeparation?.resume()
+            finishSeparation = nil
+            for _ in 0..<100 {
+                try await Task.sleep(for: .milliseconds(10))
+                if buttonTitles(in: try #require(window.contentView)).contains("Remember Voice") { break }
+            }
+        }
+
+        let refreshed = try #require(window.contentView)
+        refreshed.layoutSubtreeIfNeeded()
+        let newTranscript = try #require(textViews(in: refreshed).first { !$0.isFieldEditor })
+        let lastMemoryButton = try #require(buttons(in: refreshed).last {
+            $0.title == "Voice Remembered" || $0.title == "Remember Voice"
+        })
+        #expect(newTranscript.enclosingScrollView?.contentView.bounds.origin == transcriptOrigin)
+        #expect(lastMemoryButton.enclosingScrollView?.contentView.bounds.origin == speakersOrigin)
+        if editName {
+            #expect(newTranscript.string.contains("New name"))
+        } else {
+            #expect(newTranscript.selectedRange() == selection)
+        }
+    }
+
     private func makeHybridSession() throws -> URL {
         let session = FileManager.default.temporaryDirectory
             .appendingPathComponent("quill-review-hybrid-\(UUID().uuidString)")
