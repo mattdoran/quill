@@ -6,6 +6,28 @@
         <description>Signed updates for Quill.</description>
         <language>en</language>
         <item>
+            <title>0.7.0</title>
+            <pubDate>Wed, 30 Sep 2026 17:40:48 +1000</pubDate>
+            <link>https://github.com/mattdoran/quill</link>
+            <sparkle:version>113</sparkle:version>
+            <sparkle:shortVersionString>0.7.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description sparkle:format="markdown"><![CDATA[## Quill 0.7.0
+
+**Works with macOS Golden Gate and Bartender**
+- Quill's menu bar icon no longer disappears when Bartender is running.
+- Keep Quill in /Applications: Golden Gate hides menu bar icons from apps run anywhere else.
+
+**Transcript review**
+- The review window keeps your scroll position and selection when it refreshes.
+
+[Full changelog](https://github.com/mattdoran/quill/compare/v0.6.0...v0.7.0)
+
+]]></description>
+            <enclosure url="https://github.com/mattdoran/quill/releases/download/v0.7.0/Quill-0.7.0.zip" length="4905994" type="application/octet-stream" sparkle:edSignature="z1tTLE1BrA0NxhpxzE+ZMzL74uOXDqbluAS7ByYAD2e1FOZnepMNPgs7sq/BYwctgB6oLy9sDr5Db1jG2YeBCg=="/>
+        </item>
+        <item>
             <title>0.6.0</title>
             <pubDate>Thu, 17 Sep 2026 09:04:58 +1000</pubDate>
             <link>https://github.com/mattdoran/quill</link>
