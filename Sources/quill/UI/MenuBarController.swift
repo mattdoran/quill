@@ -8,7 +8,7 @@ import AppKit
 /// lines in sentence case.
 @MainActor
 final class MenuBarController: NSObject, NSMenuDelegate {
-    private let statusItem: NSStatusItem
+    let statusItem: NSStatusItem
     private let stateLabel: NSMenuItem
     private let troubleLabel: NSMenuItem
     private let transcriptionLabel: NSMenuItem
@@ -232,6 +232,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             button.font = NSFont.monospacedDigitSystemFont(
                 ofSize: NSFont.systemFontSize, weight: .regular
             )
+            // Keep the title constant; state goes in the value. Bartender keys
+            // items by this title, so a changing one hides the icon.
+            button.setAccessibilityTitle("Quill")
         }
     }
 
@@ -275,17 +278,17 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         case (false, _):
             button.image = Self.featherImage()
             button.contentTintColor = nil
-            button.setAccessibilityTitle("Quill, idle")
+            button.setAccessibilityValue("idle")
         case (true, false):
             button.image = Self.coloredSymbol("circle.fill", "recording", .systemRed)
             button.contentTintColor = nil
-            button.setAccessibilityTitle("Quill, recording, \(Self.spoken(clock))")
+            button.setAccessibilityValue("recording, \(Self.spoken(clock))")
         case (true, true):
             button.image = Self.coloredSymbol(
                 "exclamationmark.triangle.fill", "capture problem", .systemOrange
             )
             button.contentTintColor = nil
-            button.setAccessibilityTitle("Quill, capture problem, \(Self.spoken(clock))")
+            button.setAccessibilityValue("capture problem, \(Self.spoken(clock))")
         }
     }
 
@@ -313,7 +316,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         guard let button = statusItem.button else { return }
         button.image = Self.symbol("record.circle", "starting recording")
         button.contentTintColor = nil
-        button.setAccessibilityTitle("Quill, starting recording")
+        button.setAccessibilityValue("starting recording")
     }
 
     /// Show transcription progress/failure as a status line in the menu; nil

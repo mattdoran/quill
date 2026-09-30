@@ -38,14 +38,16 @@ everything else is what ships today.
 Set once at launch: `statusItem.autosaveName = "com.mattdoran.quill.status"`, so
 the item keeps the position the user dragged it to.
 
-| State | Glyph | Tint | Button title | Accessibility title |
+The accessibility title is always `Quill`; state is the accessibility value.
+
+| State | Glyph | Tint | Button title | Accessibility value |
 |---|---|---|---|---|
-| Idle | feather (inline SVG, template) | none | *(empty)* | `Quill, idle` |
-| Starting | `record.circle` | none | *(empty)* | `Quill, starting recording` |
-| Recording | `circle.fill` | `.systemRed` | ` 12:03` | `Quill, recording, 12 minutes 3 seconds` |
-| Degraded | `exclamationmark.triangle.fill` | `.systemOrange` | ` 12:03` | `Quill, capture problem, 12 minutes 3 seconds` |
-| Transcribing, not recording | feather | none | *(empty)* | `Quill, idle` |
-| Downloading models | feather | none | *(empty)* | `Quill, idle` |
+| Idle | feather (inline SVG, template) | none | *(empty)* | `idle` |
+| Starting | `record.circle` | none | *(empty)* | `starting recording` |
+| Recording | `circle.fill` | `.systemRed` | ` 12:03` | `recording, 12 minutes 3 seconds` |
+| Degraded | `exclamationmark.triangle.fill` | `.systemOrange` | ` 12:03` | `capture problem, 12 minutes 3 seconds` |
+| Transcribing, not recording | feather | none | *(empty)* | `idle` |
+| Downloading models | feather | none | *(empty)* | `idle` |
 
 Rules:
 
@@ -61,7 +63,10 @@ Rules:
 - **Starting changes shape, not width.** The menu action returns before audio
   devices attach, so the outline record glyph acknowledges the click at once.
   The clock appears only after capture succeeds.
-- Accessibility titles are spelled out for speech, not read off the clock face.
+- Accessibility values are spelled out for speech, not read off the clock face.
+- **The accessibility title never changes.** Bartender 7 identifies a menu bar
+  item by bundle ID plus accessibility title, so a title carrying state or the
+  clock made each tick a new item and the icon vanished.
 
 ## 3. Menu
 
