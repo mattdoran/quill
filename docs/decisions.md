@@ -2,6 +2,22 @@
 
 Dated product and architecture decisions. Newest first.
 
+## 2026-09-30: Install to /Applications
+
+**Decision:** `install.sh` installs `/Applications/Quill.app` and retires a
+`~/Applications/Quill.app` left by earlier installs. An enabled login item is
+re-registered at launch from the `/Applications` copy only.
+
+**Why:** macOS 27 tracks menu bar items from apps outside `/Applications` by
+executable path rather than bundle ID, and Bartender 7 cannot see or place
+those items. The same ad-hoc signed probe app was path-tracked from a scratch
+folder and bundle-tracked from `/Applications`. The login item had also been
+captured by a `.build` copy of the bundle.
+
+**Consequence:** Sparkle updates in place, so a copy installed elsewhere stays
+there. `SMAppService` follows whichever bundle last registered, so builds run
+from `.build` must not register.
+
 ## 2026-09-17: Pin SwiftPM's native build backend
 
 **Decision:** `build.sh` passes `--build-system native` for debug, test and
@@ -877,7 +893,8 @@ of scope until application-specific false transitions have been measured.
 
 ## 2026-08-19: The installed app bundle is the only executable copy
 
-**Decision:** Install Quill at `~/Applications/Quill.app`. The `quill` command
+**Decision:** Install Quill at `/Applications/Quill.app` (originally
+`~/Applications`; see 2026-09-30). The `quill` command
 is a symlink to the executable inside that bundle. Every install quits the
 running app, replaces the bundle and relaunches it.
 

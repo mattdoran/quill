@@ -34,6 +34,15 @@ enum LoginItem {
         }
     }
 
+    /// Point an enabled login item at this bundle. Only the installed copy
+    /// does this, or a run from `.build` would capture startup.
+    static func followInstalledBundle() {
+        guard isAvailable, isEnabled,
+            Bundle.main.bundleURL.deletingLastPathComponent().path == "/Applications"
+        else { return }
+        setEnabled(true)
+    }
+
     static func enableByDefaultOnFirstRun() {
         guard isAvailable, !Config.loginItemInitialized() else { return }
         if !isEnabled { setEnabled(true) }

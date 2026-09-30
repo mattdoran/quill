@@ -51,6 +51,7 @@ struct Run: ParsableCommand {
             FileHandle.standardError.write(Data("\(message)\n".utf8))
         }
         LoginItem.enableByDefaultOnFirstRun()
+        LoginItem.followInstalledBundle()
         let controller = AppController(root: root)
         Notifier.shared.onStopRequested = { [weak controller] in
             controller?.stopFromNotification()

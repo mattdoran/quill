@@ -36,7 +36,7 @@ cd quill
 ./build-dmg.sh                                # optional distributable image
 ```
 
-`install.sh` installs to `~/Applications/Quill.app`, replaces
+`install.sh` installs to `/Applications/Quill.app`, replaces
 `~/.local/bin/quill` with a symlink to the bundle executable, and always quits
 and relaunches Quill. The app bundle is the single installed copy of the code.
 

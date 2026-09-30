@@ -76,5 +76,9 @@ is not in play.
 - Wait for forced process termination before replacing or reopening the app.
   Skipping the post-`pkill` wait produced LaunchServices error `-600` during an
   otherwise valid signed install.
+- Install to `/Applications`, not `~/Applications`. macOS 27 tracks menu bar
+  items from elsewhere by executable path, and Bartender cannot see them.
+- Keep the status item's accessibility title constant. Bartender keys items by
+  it, so a title carrying state or the clock makes the icon disappear.
 - `docs/design.md` owns implementation and data flow; `docs/ux.md` owns product
   behaviour and UI. Record settled choices in `docs/decisions.md`.

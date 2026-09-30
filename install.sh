@@ -13,8 +13,12 @@ case "$user_home" in
     *) echo "refusing unexpected user home: $user_home" >&2; exit 1 ;;
 esac
 
-applications_dir="$user_home/Applications"
+# macOS 27 tracks menu bar items from apps outside /Applications by executable
+# path, and Bartender cannot see or manage those items.
+applications_dir="/Applications"
 target_app="$applications_dir/Quill.app"
+legacy_app="$user_home/Applications/Quill.app"
+legacy_backup="$user_home/Applications/.Quill.app.previous.$$"
 target_executable="$target_app/Contents/MacOS/quill"
 bin_dir="$user_home/.local/bin"
 cli_link="$bin_dir/quill"
@@ -24,7 +28,7 @@ cli_backup="$bin_dir/.quill.previous.$$"
 rollback_needed=no
 
 case "$target_app" in
-    /Users/*/Applications/Quill.app) ;;
+    /Applications/Quill.app) ;;
     *) echo "refusing unexpected install target: $target_app" >&2; exit 1 ;;
 esac
 
@@ -38,6 +42,9 @@ cleanup() {
         if [ -d "$app_backup" ]; then
             mv "$app_backup" "$target_app"
         fi
+        if [ -d "$legacy_backup" ]; then
+            mv "$legacy_backup" "$legacy_app"
+        fi
         if [ -e "$cli_link" ] || [ -L "$cli_link" ]; then
             /bin/rm -f -- "$cli_link"
         fi
@@ -46,6 +53,8 @@ cleanup() {
         fi
         if [ -d "$target_app" ]; then
             /usr/bin/open "$target_app" || true
+        elif [ -d "$legacy_app" ]; then
+            /usr/bin/open "$legacy_app" || true
         fi
     fi
     if [ -d "$stage" ]; then
@@ -88,6 +97,9 @@ rollback_needed=yes
 if [ -d "$target_app" ]; then
     mv "$target_app" "$app_backup"
 fi
+if [ -d "$legacy_app" ]; then
+    mv "$legacy_app" "$legacy_backup"
+fi
 mv "$stage" "$target_app"
 
 if [ -e "$cli_link" ] || [ -L "$cli_link" ]; then
@@ -116,6 +128,9 @@ fi
 rollback_needed=no
 if [ -d "$app_backup" ]; then
     /bin/rm -rf -- "$app_backup"
+fi
+if [ -d "$legacy_backup" ]; then
+    /bin/rm -rf -- "$legacy_backup"
 fi
 if [ -e "$cli_backup" ] || [ -L "$cli_backup" ]; then
     /bin/rm -f -- "$cli_backup"
