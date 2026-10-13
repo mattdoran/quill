@@ -25,13 +25,10 @@ final class MeetingCompanionController: NSObject, NSWindowDelegate {
     private var hasPositioned = false
     private var isCollapsed = false
     private var collapseTask: DispatchWorkItem?
-    private var detectionTimeoutTask: DispatchWorkItem?
     private var collapseGeneration = 0
-    private var detectionTimeoutGeneration = 0
     private var interactionDepth = 0
     private let initialCollapseDelay: TimeInterval
     private let reopenedCollapseDelay: TimeInterval
-    private let detectionTimeout: TimeInterval
     private let loadPlacement: () -> MeetingCompanionPlacement?
     private let savePlacement: (MeetingCompanionPlacement) -> Void
 
@@ -46,13 +43,11 @@ final class MeetingCompanionController: NSObject, NSWindowDelegate {
     init(
         initialCollapseDelay: TimeInterval = 3,
         reopenedCollapseDelay: TimeInterval = 8,
-        detectionTimeout: TimeInterval = 12,
         loadPlacement: @escaping () -> MeetingCompanionPlacement? = { nil },
         savePlacement: @escaping (MeetingCompanionPlacement) -> Void = { _ in }
     ) {
         self.initialCollapseDelay = initialCollapseDelay
         self.reopenedCollapseDelay = reopenedCollapseDelay
-        self.detectionTimeout = detectionTimeout
         self.loadPlacement = loadPlacement
         self.savePlacement = savePlacement
         panel = MeetingCompanionPanel(
@@ -125,7 +120,6 @@ final class MeetingCompanionController: NSObject, NSWindowDelegate {
     func dismiss() {
         let dismissedPhase = state.phase
         cancelCollapse()
-        cancelDetectionTimeout()
         state.handle(.dismissed)
         panel.orderOut(nil)
         if case .ready = dismissedPhase {
@@ -177,11 +171,6 @@ final class MeetingCompanionController: NSObject, NSWindowDelegate {
     }
 
     private func updatePresentation(for event: MeetingCompanionState.Event) {
-        if case .callDetected = event {
-            scheduleDetectionTimeout()
-        } else {
-            cancelDetectionTimeout()
-        }
         switch event {
         case .recordingStarted:
             expandRecordingControls(after: initialCollapseDelay)
@@ -260,29 +249,6 @@ final class MeetingCompanionController: NSObject, NSWindowDelegate {
     func endInteraction() {
         interactionDepth = max(0, interactionDepth - 1)
         if interactionDepth == 0 { scheduleCollapse(after: reopenedCollapseDelay) }
-    }
-
-    private func scheduleDetectionTimeout() {
-        cancelDetectionTimeout()
-        guard case .detected = state.phase else { return }
-        let generation = detectionTimeoutGeneration
-        let task = DispatchWorkItem { [weak self] in
-            guard
-                let self,
-                detectionTimeoutGeneration == generation,
-                case .detected = state.phase
-            else { return }
-            detectionTimeoutTask = nil
-            dismiss()
-        }
-        detectionTimeoutTask = task
-        DispatchQueue.main.asyncAfter(deadline: .now() + detectionTimeout, execute: task)
-    }
-
-    private func cancelDetectionTimeout() {
-        detectionTimeoutGeneration += 1
-        detectionTimeoutTask?.cancel()
-        detectionTimeoutTask = nil
     }
 
     private func applyPanelSize() {
@@ -531,7 +497,6 @@ final class MeetingCompanionView: NSVisualEffectView {
             equalToConstant: MeetingCompanionController.expandedSize.width
         )
         timeoutBar.wantsLayer = true
-        timeoutBar.layer?.backgroundColor = NSColor.controlAccentColor.cgColor
         timeoutBar.isHidden = true
 
         let titleStack = NSStackView(views: [titleLabel, elapsedLabel])
@@ -633,7 +598,6 @@ final class MeetingCompanionView: NSVisualEffectView {
         layer?.cornerRadius = 18
         refreshMaterialMask(radius: 18)
         if !staysInPossibleEnd { timeoutBar.layer?.removeAllAnimations() }
-        timeoutBar.layer?.backgroundColor = NSColor.controlAccentColor.cgColor
         timeoutBarWidth.constant = bounds.width
         timeoutBar.isHidden = true
         secondaryButton.isHidden = true
@@ -666,11 +630,7 @@ final class MeetingCompanionView: NSVisualEffectView {
             detailLabel.stringValue = application.name
             actionButton.title = "Record"
             actionButton.keyEquivalent = "\r"
-            showDetectionCountdown()
-            setAccessibility(
-                title: "Meeting detected",
-                detail: "\(application.name). This prompt closes in 12 seconds"
-            )
+            setAccessibility(title: "Meeting detected", detail: application.name)
         case .starting(let application):
             setSymbol("record.circle", description: "Starting recording")
             titleLabel.stringValue = "Starting recording"
@@ -804,25 +764,6 @@ final class MeetingCompanionView: NSVisualEffectView {
         layer.add(animation, forKey: Self.autoStopAnimation)
     }
 
-    private func showDetectionCountdown() {
-        timeoutBar.isHidden = false
-        layoutSubtreeIfNeeded()
-        guard let layer = timeoutBar.layer else { return }
-        layer.removeAllAnimations()
-        guard !reduceMotion else { return }
-        let frame = layer.frame
-        layer.anchorPoint = CGPoint(x: 0, y: 0.5)
-        layer.position = CGPoint(x: frame.minX, y: frame.midY)
-        let animation = CABasicAnimation(keyPath: "transform.scale.x")
-        animation.fromValue = 1
-        animation.toValue = 0
-        animation.duration = 12
-        animation.timingFunction = CAMediaTimingFunction(name: .linear)
-        animation.fillMode = .forwards
-        animation.isRemovedOnCompletion = false
-        layer.add(animation, forKey: "meeting-timeout")
-    }
-
     func applyAccessibilityOptions(
         reduceTransparency: Bool,
         increaseContrast: Bool,
@@ -871,10 +812,6 @@ final class MeetingCompanionView: NSVisualEffectView {
 
     func autoStopCountdownIsAnimating() -> Bool {
         timeoutBar.layer?.animation(forKey: Self.autoStopAnimation) != nil
-    }
-
-    func detectionCountdownIsAnimating() -> Bool {
-        timeoutBar.layer?.animation(forKey: "meeting-timeout") != nil
     }
 
     override func layout() {

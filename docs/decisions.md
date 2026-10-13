@@ -2,6 +2,22 @@
 
 Dated product and architecture decisions. Newest first.
 
+## 2026-10-13: Keep the Detected prompt until the call ends
+
+**Decision:** The Detected prompt no longer expires. It leaves when the person
+records or dismisses it, or when the call application releases the input.
+This replaces the 12-second deadline and its accent bar from 2026-08-19.
+
+**Why:** A Phone call through the iPhone was detected and offered, but the
+prompt expired while the person was dialling and navigating a phone menu, and
+Granola's higher-level notification appeared in the same corner at the same
+moment. Unlike joining a meeting, placing a call does not keep attention on
+the screen, and the end of the call is already a natural deadline.
+
+**Consequence:** Dismissing is the only way to say "not this meeting", and it
+still suppresses another prompt for that call episode. The possible-end bar is
+the only remaining deadline bar.
+
 ## 2026-09-30: Install to /Applications
 
 **Decision:** `install.sh` installs `/Applications/Quill.app` and retires a

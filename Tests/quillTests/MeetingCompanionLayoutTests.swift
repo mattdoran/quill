@@ -43,30 +43,6 @@ import Testing
         #expect(collapsed.hitTest(NSPoint(x: 4, y: 4)) === collapsed)
     }
 
-    @Test func reduceMotionDisablesTheDetectionCountdownAnimation() {
-        _ = NSApplication.shared
-        let application = CallApplication(id: "teams", name: "Microsoft Teams")
-        let view = MeetingCompanionView(
-            frame: NSRect(origin: .zero, size: MeetingCompanionController.expandedSize)
-        )
-
-        view.applyAccessibilityOptions(
-            reduceTransparency: false,
-            increaseContrast: false,
-            reduceMotion: true
-        )
-        view.render(.detected(application: application, token: UUID()))
-        #expect(!view.detectionCountdownIsAnimating())
-
-        view.applyAccessibilityOptions(
-            reduceTransparency: false,
-            increaseContrast: false,
-            reduceMotion: false
-        )
-        view.render(.detected(application: application, token: UUID()))
-        #expect(view.detectionCountdownIsAnimating())
-    }
-
     @Test func autoStopCountdownAnimatesOnceAndSurvivesTicks() {
         _ = NSApplication.shared
         let application = CallApplication(id: "zoom", name: "Zoom")

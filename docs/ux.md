@@ -9,11 +9,10 @@ everything else is what ships today.
 1. **The menu bar reports one thing: whether quill is recording.** Nothing else
    ever changes the icon. Transcription, downloads and queues live in the menu.
 2. **Nothing animates without conveying state.** Nothing in the macOS menu bar
-   blinks. The deadline bars are the exception because they show when an
-   unanswered prompt will disappear or act on its own. A bar that precedes an
-   action Quill takes itself is red, not the accent colour. Both drain
-   smoothly rather than in one-second steps, and Reduce Motion hides them and
-   leaves the countdown to the numeral.
+   blinks. The possible-end deadline bar is the exception because it shows
+   when Quill will stop on its own. It is red, drains smoothly rather than in
+   one-second steps, and Reduce Motion hides it and leaves the countdown to
+   the numeral.
 3. **State differs in shape before it differs in colour.** Colour alone is one
    state to a colourblind user, in the strip of screen with the least contrast.
 4. **Quill interrupts only when acting in the next minute changes the outcome.**
@@ -453,7 +452,7 @@ or a custom implementation of every notification:
 
 | State | Content | Exit |
 |---|---|---|
-| Detected | Application, `Record`, 12-second deadline | Record, dismiss, timeout, or call ends |
+| Detected | Application, `Record` | Record, dismiss, or call ends |
 | Recording, brief/expanded | Red dot, elapsed time, `Stop` | Collapses after three seconds |
 | Recording, collapsed | Small record capsule and ellipsis | Expand controls or possible end |
 | Possible end | Red dot, `Stopping in Ns`, `<app> ended`, `Stop now`, prominent `Keep Recording`, red 20-second deadline bar | Keep Recording, Stop now, input recovery, or the grace period expiring |
@@ -479,9 +478,8 @@ application name. A manual recording has no subtitle. Normal capture does not
 repeat `microphone and computer audio`; capture failures replace the subtitle
 with an actionable exception instead.
 
-An unanswered Detected prompt expires after 12 seconds. A two-point accent bar
-drains across its lower edge to make that deadline visible. Timeout means "not
-this meeting" and suppresses another prompt for the same active call episode.
+An unanswered Detected prompt stays until the call application releases the
+input, so a phone call still offers recording after dialling and a phone menu.
 
 After recording begins, the expanded controls remain for three seconds, then
 collapse to a 48 × 72-point recording capsule. The capsule is confidence, not a
