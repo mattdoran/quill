@@ -24,6 +24,18 @@ import Testing
         )
     }
 
+    @Test(arguments: [
+        ("us.zoom.ZoomPhone", "zoom"),
+        ("com.microsoft.teams2.modulehost", "teams"),
+        ("Cisco-Systems.Spark", "webex"),
+        ("io.aircall.workspace.helper", "aircall"),
+        ("com.openai.atlas.web.helper", "atlas"),
+        ("com.google.Chrome.app.kjgfgldnnfoeklkmfkjfagphfepbbdan", "google-meet"),
+    ])
+    func callApplicationHelpersNormalizeToTheirApplication(bundleID: String, id: String) {
+        #expect(CallApplicationRegistry.application(for: bundleID)?.id == id)
+    }
+
     @Test func unknownMicrophoneApplicationIsNotClassifiedAsCall() {
         #expect(CallApplicationRegistry.application(for: "com.apple.VoiceMemos") == nil)
     }

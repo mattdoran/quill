@@ -38,13 +38,13 @@ enum CallApplicationRegistry {
         ),
         Entry(
             application: CallApplication(id: "zoom", name: "Zoom"),
-            bundleIDs: ["us.zoom.xos"],
+            bundleIDs: ["us.zoom.xos", "us.zoom.ZoomPhone", "us.zoom.ZoomHybridConf"],
             helperPrefixes: ["us.zoom.xos.helper"]
         ),
         Entry(
             application: CallApplication(id: "teams", name: "Microsoft Teams"),
             bundleIDs: ["com.microsoft.teams2"],
-            helperPrefixes: ["com.microsoft.teams2.helper"]
+            helperPrefixes: ["com.microsoft.teams2.helper", "com.microsoft.teams2.modulehost"]
         ),
         Entry(
             application: CallApplication(id: "slack", name: "Slack"),
@@ -53,7 +53,7 @@ enum CallApplicationRegistry {
         ),
         Entry(
             application: CallApplication(id: "webex", name: "Webex"),
-            bundleIDs: ["com.cisco.webexmeetingsapp"],
+            bundleIDs: ["com.cisco.webexmeetingsapp", "Cisco-Systems.Spark"],
             helperPrefixes: []
         ),
         Entry(
@@ -94,17 +94,17 @@ enum CallApplicationRegistry {
         Entry(
             application: CallApplication(id: "helium", name: "Helium"),
             bundleIDs: ["net.imput.helium"],
-            helperPrefixes: []
+            helperPrefixes: ["net.imput.helium.helper"]
         ),
         Entry(
             application: CallApplication(id: "comet", name: "Comet"),
             bundleIDs: ["ai.perplexity.comet"],
-            helperPrefixes: []
+            helperPrefixes: ["ai.perplexity.comet.helper"]
         ),
         Entry(
             application: CallApplication(id: "atlas", name: "Atlas"),
             bundleIDs: ["com.openai.atlas"],
-            helperPrefixes: []
+            helperPrefixes: ["com.openai.atlas.web.helper"]
         ),
         Entry(
             application: CallApplication(id: "zen", name: "Zen Browser"),
@@ -117,24 +117,34 @@ enum CallApplicationRegistry {
             helperPrefixes: ["com.hnc.Discord.helper"]
         ),
         Entry(
+            application: CallApplication(id: "google-meet", name: "Google Meet"),
+            bundleIDs: ["com.google.Chrome.app.kjgfgldnnfoeklkmfkjfagphfepbbdan", "com.google.Chrome.beta.app.kjgfgldnnfoeklkmfkjfagphfepbbdan", "company.thebrowser.dia.app.kjgfgldnnfoeklkmfkjfagphfepbbdan"],
+            helperPrefixes: []
+        ),
+        Entry(
+            application: CallApplication(id: "8x8", name: "8x8 Work"),
+            bundleIDs: ["com.electron.8x8---virtual-office"],
+            helperPrefixes: []
+        ),
+        Entry(
             application: CallApplication(id: "aircall", name: "Aircall"),
             bundleIDs: ["io.aircall.phone"],
-            helperPrefixes: []
+            helperPrefixes: ["io.aircall.phone.helper", "io.aircall.workspace.helper"]
         ),
         Entry(
             application: CallApplication(id: "dialpad", name: "Dialpad"),
             bundleIDs: ["com.electron.dialpad"],
-            helperPrefixes: []
+            helperPrefixes: ["com.electron.dialpad.helper"]
         ),
         Entry(
             application: CallApplication(id: "uberconference", name: "UberConference"),
             bundleIDs: ["com.electron.uberconference"],
-            helperPrefixes: []
+            helperPrefixes: ["com.electron.uberconference.helper"]
         ),
         Entry(
             application: CallApplication(id: "gather", name: "Gather"),
             bundleIDs: ["com.gather.Gather", "com.gather.GatherV2"],
-            helperPrefixes: []
+            helperPrefixes: ["com.gather.Gather.helper", "com.gather.GatherV2.helper"]
         ),
         Entry(
             application: CallApplication(id: "tuple", name: "Tuple"),
@@ -149,12 +159,12 @@ enum CallApplicationRegistry {
         Entry(
             application: CallApplication(id: "clickup", name: "ClickUp"),
             bundleIDs: ["com.clickup.desktop-app"],
-            helperPrefixes: []
+            helperPrefixes: ["com.clickup.desktop-app.helper"]
         ),
         Entry(
             application: CallApplication(id: "lark", name: "Lark"),
             bundleIDs: ["com.larksuite.larkApp"],
-            helperPrefixes: []
+            helperPrefixes: ["com.larksuite.larkApp.helper"]
         ),
     ]
 
