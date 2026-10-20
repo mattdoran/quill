@@ -69,6 +69,7 @@ SIGN_IDENTITY="${SIGN_IDENTITY:-}"
 NOTARY_PROFILE="${NOTARY_PROFILE:-}"
 # shellcheck source=/dev/null
 [ -f "$root/signing.conf" ] && . "$root/signing.conf"
+. "$root/notary.sh"
 
 # Fall back to whatever Developer ID is in the keychain, so a checkout needs no
 # configuration to produce a distributable build on a machine that has one.
@@ -158,13 +159,13 @@ else
 fi
 
 if [ "$notarize" = yes ]; then
-    if [ -z "$NOTARY_PROFILE" ]; then
-        echo "--notarize needs NOTARY_PROFILE in signing.conf" >&2
+    if ! notary_ready; then
+        echo "--notarize $notary_missing" >&2
         exit 1
     fi
     zip="$root/.build/$config/Quill.zip"
     ditto -c -k --keepParent "$app" "$zip"
-    xcrun notarytool submit "$zip" --keychain-profile "$NOTARY_PROFILE" --wait
+    notary submit "$zip" --wait
     # Staples the ticket into the bundle so it validates without a network trip.
     xcrun stapler staple "$app"
     rm -f "$zip"

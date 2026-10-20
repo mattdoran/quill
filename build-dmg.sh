@@ -18,6 +18,7 @@ SIGN_IDENTITY="${SIGN_IDENTITY:-}"
 NOTARY_PROFILE="${NOTARY_PROFILE:-}"
 # shellcheck source=/dev/null
 [ -f "$root/signing.conf" ] && . "$root/signing.conf"
+. "$root/notary.sh"
 if [ -z "$SIGN_IDENTITY" ]; then
     SIGN_IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null \
         | awk -F'"' '/Developer ID Application/ { print $2; exit }')
@@ -131,11 +132,11 @@ if [ "$notarize" = yes ]; then
         echo "--notarize needs a Developer ID Application identity" >&2
         exit 1
     fi
-    if [ -z "$NOTARY_PROFILE" ]; then
-        echo "--notarize needs NOTARY_PROFILE in signing.conf" >&2
+    if ! notary_ready; then
+        echo "--notarize $notary_missing" >&2
         exit 1
     fi
-    xcrun notarytool submit "$output" --keychain-profile "$NOTARY_PROFILE" --wait
+    notary submit "$output" --wait
     xcrun stapler staple "$output"
 fi
 

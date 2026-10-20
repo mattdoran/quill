@@ -169,12 +169,13 @@ check_signing() {
         # shellcheck source=/dev/null
         . "$root/signing.conf"
     fi
+    . "$root/notary.sh"
     if [ -z "$SIGN_IDENTITY" ]; then
         SIGN_IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null \
             | awk -F'"' '/Developer ID Application/ { print $2; exit }')
     fi
     [ -n "$SIGN_IDENTITY" ] || die "no Developer ID Application identity found"
-    [ -n "$NOTARY_PROFILE" ] || die "NOTARY_PROFILE is missing from signing.conf"
+    notary_ready || die "notarizing $notary_missing"
     security find-identity -v -p codesigning | grep -Fq "\"$SIGN_IDENTITY\"" \
         || die "Developer ID identity is unavailable"
     [ -x "$sparkle_bin/generate_keys" ] || die "resolve Swift packages first"

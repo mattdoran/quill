@@ -1,6 +1,11 @@
 # Copy to signing.conf (git-ignored) to configure release builds.
-# Nothing secret belongs here: the certificate lives in your keychain, and the
-# app-specific password lives in the notarytool keychain profile.
+# Nothing secret belongs here: the certificate lives in your keychain, and
+# notarizing uses the App Store Connect API key in ~/.config/notary
+# (AuthKey_<key ID>.p8 beside a file `issuer` holding its issuer ID), or the
+# notarytool keychain profile below when there is no key.
+
+# Where the API key is, if not ~/.config/notary.
+# NOTARY_KEYS=""
 
 # Code-signing identity. Leave empty to use whatever Developer ID Application
 # certificate is in the keychain, which is usually what you want.
