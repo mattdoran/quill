@@ -455,12 +455,12 @@ or a custom implementation of every notification:
 | Detected | Application, `Record` | Record, dismiss, or call ends |
 | Recording, brief/expanded | Red dot, elapsed time, `Stop` | Collapses after three seconds |
 | Recording, collapsed | Small record capsule and ellipsis | Expand controls or possible end |
-| Possible end | Red dot, `Stopping in Ns`, `<app> ended`, `Stop now`, prominent `Keep Recording`, red 20-second deadline bar | Keep Recording, Stop now, input recovery, or the grace period expiring |
+| Possible end | Red dot, `Recording stops in Ns`, `<app> ended`, `Stop now`, prominent `Keep Recording`, red 20-second deadline bar | Keep Recording, Stop now, input recovery, or the grace period expiring |
 | Stopping | `Saving recording…` | Processing |
 | Processing | `Creating transcript…` | Ready or dismiss |
 | Ready while visible | `Transcript ready`, `Review` | Review or dismiss |
 
-The expanded companion is 380 × 72 points, and 430 in the possible-end state,
+The expanded companion is 380 × 72 points, and 470 in the possible-end state,
 which is the only one carrying two buttons. It keeps its right edge when the
 size changes, so it grows leftward. It appears without activating Quill
 or stealing keyboard focus. A deliberate interaction may make it key for

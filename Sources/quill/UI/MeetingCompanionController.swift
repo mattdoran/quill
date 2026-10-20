@@ -10,7 +10,7 @@ final class MeetingCompanionController: NSObject, NSWindowDelegate {
     static let expandedSize = NSSize(width: 380, height: 72)
     /// Only the possible-end state carries two buttons, so only it pays for
     /// the width. The panel keeps its right edge, so it grows leftward.
-    static let possibleEndSize = NSSize(width: 430, height: 72)
+    static let possibleEndSize = NSSize(width: 470, height: 72)
 
     static func expandedSize(for phase: MeetingCompanionState.Phase) -> NSSize {
         if case .possibleEnd = phase { return possibleEndSize }
@@ -660,7 +660,7 @@ final class MeetingCompanionView: NSVisualEffectView {
         case .possibleEnd(let application, _, let remaining):
             setSymbol("circle.fill", description: "Still recording")
             symbol.contentTintColor = .systemRed
-            titleLabel.stringValue = "Stopping in \(remaining)s"
+            titleLabel.stringValue = "Recording stops in \(remaining)s"
             titleLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
             elapsedLabel.isHidden = true
             detailLabel.stringValue = "\(application.name) ended"
