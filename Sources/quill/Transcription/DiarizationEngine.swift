@@ -27,17 +27,26 @@ actor DiarizationEngine {
         let spans: [Span]
         let timings: PipelineTimings?
         let speakerEmbeddings: [Int: [Float]]
+        /// Similarity of each pair of voices folded together as one person.
+        let mergedVoiceSimilarities: [Float]
 
         init(
             spans: [Span],
             timings: PipelineTimings?,
-            speakerEmbeddings: [Int: [Float]] = [:]
+            speakerEmbeddings: [Int: [Float]] = [:],
+            mergedVoiceSimilarities: [Float] = []
         ) {
             self.spans = spans
             self.timings = timings
             self.speakerEmbeddings = speakerEmbeddings
+            self.mergedVoiceSimilarities = mergedVoiceSimilarities
         }
     }
+
+    /// An exact count above the number of distinguishable voices is met by
+    /// splitting the voice with the most speech. Measured same-person splits
+    /// scored 0.94 and 0.97; different people scored at most 0.62.
+    static let sameVoiceSimilarity: Float = 0.8
 
     enum EngineError: Error, CustomStringConvertible {
         case notPrepared
@@ -92,14 +101,82 @@ actor DiarizationEngine {
         ) { embeddings, entry in
             guard
                 let speaker = speakerNumbers[entry.key],
-                Self.isUsableEmbedding(entry.value)
+                VoiceEmbedding.isUsable(entry.value)
             else { return }
             embeddings[speaker] = entry.value
         }
-        return Analysis(
+        return Self.mergingSameVoices(Analysis(
             spans: spans,
             timings: result.timings,
             speakerEmbeddings: speakerEmbeddings
+        ))
+    }
+
+    static func mergingSameVoices(
+        _ analysis: Analysis, threshold: Float = sameVoiceSimilarity
+    ) -> Analysis {
+        var centroids = analysis.speakerEmbeddings.mapValues(VoiceEmbedding.normalized)
+        var speech = analysis.spans.reduce(into: [Int: TimeInterval]()) {
+            $0[$1.speaker, default: 0] += max(0, $1.end - $1.start)
+        }
+        var survivor: [Int: Int] = [:]
+        var similarities: [Float] = []
+
+        while true {
+            let speakers = centroids.keys.sorted()
+            var best: (keep: Int, drop: Int, similarity: Float)?
+            for (index, lhs) in speakers.enumerated() {
+                for rhs in speakers[(index + 1)...] {
+                    let similarity = VoiceEmbedding.cosineSimilarity(centroids[lhs]!, centroids[rhs]!)
+                    guard similarity >= threshold, similarity > best?.similarity ?? -.infinity
+                    else { continue }
+                    let keepLHS = speech[lhs, default: 0] >= speech[rhs, default: 0]
+                    best = (keepLHS ? lhs : rhs, keepLHS ? rhs : lhs, similarity)
+                }
+            }
+            guard let best else { break }
+
+            let keptSpeech = speech[best.keep, default: 0]
+            let droppedSpeech = speech[best.drop, default: 0]
+            let total = keptSpeech + droppedSpeech
+            let keptWeight = total > 0 ? keptSpeech / total : 0.5
+            centroids[best.keep] = VoiceEmbedding.normalized(
+                zip(centroids[best.keep]!, centroids[best.drop]!).map {
+                    Float(Double($0) * keptWeight + Double($1) * (1 - keptWeight))
+                }
+            )
+            centroids[best.drop] = nil
+            speech[best.keep] = total
+            speech[best.drop] = nil
+            for (speaker, target) in survivor where target == best.drop {
+                survivor[speaker] = best.keep
+            }
+            survivor[best.drop] = best.keep
+            similarities.append(best.similarity)
+        }
+        guard !similarities.isEmpty else { return analysis }
+
+        let remaining = Set(analysis.spans.map { survivor[$0.speaker] ?? $0.speaker })
+            .union(centroids.keys)
+            .sorted()
+        let renumbered = Dictionary(
+            uniqueKeysWithValues: remaining.enumerated().map { ($0.element, $0.offset) }
+        )
+        let spans = analysis.spans.map { span in
+            Span(
+                speaker: renumbered[survivor[span.speaker] ?? span.speaker]!,
+                start: span.start,
+                end: span.end
+            )
+        }
+        let embeddings = Dictionary(
+            uniqueKeysWithValues: centroids.map { (renumbered[$0.key]!, $0.value) }
+        )
+        return Analysis(
+            spans: spans,
+            timings: analysis.timings,
+            speakerEmbeddings: embeddings,
+            mergedVoiceSimilarities: similarities
         )
     }
 
@@ -157,11 +234,5 @@ actor DiarizationEngine {
             }
         }
         return best
-    }
-
-    private static func isUsableEmbedding(_ embedding: [Float]) -> Bool {
-        guard !embedding.isEmpty, embedding.allSatisfy(\.isFinite) else { return false }
-        let sum = embedding.reduce(Double(0)) { $0 + Double($1) * Double($1) }
-        return sum.isFinite && sum > 0
     }
 }

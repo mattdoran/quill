@@ -342,6 +342,11 @@ actor TranscriptionCoordinator {
                 speakerEmbeddings: analysis.speakerEmbeddings
             ))
             let speakers = Set(analysis.spans.map(\.speaker)).count
+            if !analysis.mergedVoiceSimilarities.isEmpty {
+                log(dir, "merged \(analysis.mergedVoiceSimilarities.count) voice(s) matching another (similarity "
+                    + analysis.mergedVoiceSimilarities.map { String(format: "%.2f", $0) }.joined(separator: ", ")
+                    + ")")
+            }
             log(dir, String(
                 format: "found %d speaker(s) in %@ (%.1fs)",
                 speakers,

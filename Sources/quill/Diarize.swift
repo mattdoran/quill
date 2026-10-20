@@ -106,6 +106,10 @@ struct Diarize: ParsableCommand {
         let speakers = Set(spans.map(\.speaker)).sorted()
         print("speakers: \(speakers.count) \(speakers.map { "#\($0)" }.joined(separator: " "))")
         print("spans:    \(spans.count)  (diarized in \(String(format: "%.1f", elapsed))s)")
+        if !analysis.mergedVoiceSimilarities.isEmpty {
+            print("merged:   " + analysis.mergedVoiceSimilarities.map { String(format: "%.2f", $0) }
+                .joined(separator: " ") + " (voices matching another)")
+        }
         print("")
 
         if spansOnly {

@@ -86,19 +86,19 @@ struct VoiceProfileStore {
                 voice.name?.nilIfBlank == nil,
                 let model = voice.embedding_model?.nilIfBlank,
                 let embedding = voice.embedding,
-                Self.isUsableEmbedding(embedding)
+                VoiceEmbedding.isUsable(embedding)
             else { continue }
 
             let candidates = profiles
                 .filter {
                     $0.embedding_model == model
                         && $0.embedding.count == embedding.count
-                        && Self.isUsableEmbedding($0.embedding)
+                        && VoiceEmbedding.isUsable($0.embedding)
                 }
                 .map {
                     (
                         profile: $0,
-                        score: Self.cosineSimilarity(embedding, $0.embedding)
+                        score: VoiceEmbedding.cosineSimilarity(embedding, $0.embedding)
                     )
                 }
                 .filter { $0.score.isFinite }
@@ -217,7 +217,7 @@ struct VoiceProfileStore {
                 profile.name == voice.name?.nilIfBlank,
                 profile.embedding_model == model,
                 profile.embedding.count == dimension,
-                Self.cosineSimilarity(profile.embedding, voice.embedding ?? []) >= matching.threshold
+                VoiceEmbedding.cosineSimilarity(profile.embedding, voice.embedding ?? []) >= matching.threshold
             else { return false }
             return profile.contributions.contains {
                 $0.session_id == sessionID && $0.voice_id == voiceID
@@ -280,34 +280,15 @@ struct VoiceProfileStore {
     private static func isValid(_ profile: VoiceProfile) -> Bool {
         profile.name.nilIfBlank != nil
             && profile.embedding_model.nilIfBlank != nil
-            && isUsableEmbedding(profile.embedding)
-            && profile.contributions.allSatisfy { isUsableEmbedding($0.embedding) }
+            && VoiceEmbedding.isUsable(profile.embedding)
+            && profile.contributions.allSatisfy { VoiceEmbedding.isUsable($0.embedding) }
     }
 
     private static func normalized(_ embedding: [Float]) throws -> [Float] {
-        guard isUsableEmbedding(embedding) else { throw StoreError.invalidEmbedding }
+        guard VoiceEmbedding.isUsable(embedding) else { throw StoreError.invalidEmbedding }
         let norm = sqrt(embedding.reduce(Double(0)) { $0 + Double($1) * Double($1) })
         guard norm.isFinite, norm > 0 else { throw StoreError.invalidEmbedding }
         return embedding.map { Float(Double($0) / norm) }
-    }
-
-    private static func isUsableEmbedding(_ embedding: [Float]) -> Bool {
-        guard !embedding.isEmpty, embedding.allSatisfy(\.isFinite) else { return false }
-        let sum = embedding.reduce(Double(0)) { $0 + Double($1) * Double($1) }
-        return sum.isFinite && sum > 0
-    }
-
-    private static func cosineSimilarity(_ lhs: [Float], _ rhs: [Float]) -> Float {
-        guard lhs.count == rhs.count, isUsableEmbedding(lhs), isUsableEmbedding(rhs) else {
-            return -.infinity
-        }
-        let dot = zip(lhs, rhs).reduce(Double(0)) { $0 + Double($1.0) * Double($1.1) }
-        let left = sqrt(lhs.reduce(Double(0)) { $0 + Double($1) * Double($1) })
-        let right = sqrt(rhs.reduce(Double(0)) { $0 + Double($1) * Double($1) })
-        guard left.isFinite, right.isFinite, left > 0, right > 0 else { return -.infinity }
-        let score = dot / (left * right)
-        guard score.isFinite else { return -.infinity }
-        return Float(score)
     }
 
     private static func timestamp() -> String {

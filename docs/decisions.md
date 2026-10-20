@@ -2,6 +2,28 @@
 
 Dated product and architecture decisions. Newest first.
 
+## 2026-10-13: Merge voices that are the same person after separation
+
+**Decision:** After VBx separation, voices whose centroids are at least 0.80
+cosine similar are merged into the voice with more speech, so separation may
+return fewer voices than requested. Each merge is logged with its similarity.
+
+**Why:** When the requested count differs from VBx's own, FluidAudio discards
+the VBx result and re-clusters with k-means at the requested count, which
+splits the dominant speaker instead of finding a quiet one. Asking for five on
+a four-voice call split the chair in two (0.97); asking for 11 and 12 on 30
+September split Matt (0.94). Across 94 pairs of different named people the
+highest similarity was 0.62. With the merge, overestimating became usable:
+8 requested for 5 people returned 6 voices at 96.7% duration agreement with
+the person's names, and 15 requested for 11 returned 12 at 99.0%. Automatic
+detection undercounted the same meetings badly (2 voices for 5 people, 7 for
+11), so it stays labelled less reliable.
+
+**Consequence:** Overestimating the count degrades to a small leftover voice
+rather than a person split in half. A participant with only seconds of speech
+still cannot be separated by any count. The threshold rests on five observed
+same-person splits (0.90 to 0.97).
+
 ## 2026-10-13: Keep the Detected prompt until the call ends
 
 **Decision:** The Detected prompt no longer expires. It leaves when the person

@@ -2,6 +2,68 @@ import Testing
 @testable import quill
 
 @Suite struct DiarizationEngineTests {
+    @Test func voicesMatchingAnotherFoldIntoTheVoiceWithMoreSpeech() {
+        let analysis = DiarizationEngine.Analysis(
+            spans: [
+                .init(speaker: 0, start: 0, end: 10),
+                .init(speaker: 1, start: 10, end: 12),
+                .init(speaker: 2, start: 12, end: 40),
+            ],
+            timings: nil,
+            speakerEmbeddings: [
+                0: [1, 0, 0],
+                1: [0, 1, 0],
+                2: [0.97, 0.1, 0.05],
+            ]
+        )
+
+        let merged = DiarizationEngine.mergingSameVoices(analysis)
+
+        #expect(merged.spans.map(\.speaker) == [1, 0, 1])
+        #expect(merged.speakerEmbeddings.count == 2)
+        #expect(merged.mergedVoiceSimilarities.count == 1)
+        #expect(merged.mergedVoiceSimilarities[0] > 0.99)
+    }
+
+    @Test func distinctVoicesAreLeftAlone() {
+        let analysis = DiarizationEngine.Analysis(
+            spans: [
+                .init(speaker: 0, start: 0, end: 10),
+                .init(speaker: 1, start: 10, end: 20),
+            ],
+            timings: nil,
+            speakerEmbeddings: [0: [1, 0.4, 0], 1: [0.4, 1, 0]]
+        )
+
+        let merged = DiarizationEngine.mergingSameVoices(analysis)
+
+        #expect(merged.spans.map(\.speaker) == [0, 1])
+        #expect(merged.mergedVoiceSimilarities.isEmpty)
+    }
+
+    @Test func aVoiceSplitThreeWaysBecomesOne() {
+        let analysis = DiarizationEngine.Analysis(
+            spans: [
+                .init(speaker: 0, start: 0, end: 5),
+                .init(speaker: 1, start: 5, end: 10),
+                .init(speaker: 2, start: 10, end: 15),
+                .init(speaker: 3, start: 15, end: 20),
+            ],
+            timings: nil,
+            speakerEmbeddings: [
+                0: [1, 0.1, 0],
+                1: [0, 0, 1],
+                2: [1, 0, 0.1],
+                3: [1, 0.05, 0.05],
+            ]
+        )
+
+        let merged = DiarizationEngine.mergingSameVoices(analysis)
+
+        #expect(merged.spans.map(\.speaker) == [0, 1, 0, 0])
+        #expect(merged.mergedVoiceSimilarities.count == 2)
+    }
+
     @Test func attributesTimedSegmentsAndLeavesUnmatchedSpeechUnassigned() {
         let segments = [
             TranscriptSegment(start: 0, end: 1, text: "one"),

@@ -355,8 +355,11 @@ Long-form separation uses FluidAudio's offline VBx pipeline. The user supplies
 the exact number of speakers on each selected track, or explicitly chooses less
 reliable automatic detection per track. Segmentation and embedding extraction run over
 10-second chunks and expose completed/total chunk progress. Clustering remains
-an indeterminate final stage. The diarization model output is then mapped onto
-the existing ASR segments by greatest time overlap.
+an indeterminate final stage. Voices whose centroids are at least 0.80 cosine
+similar are then folded into the one with more speech, because an exact count
+above the number of distinguishable voices is met by splitting the dominant
+voice. The diarization model output is then mapped onto the existing ASR
+segments by greatest time overlap.
 
 ### Remembered voices
 
