@@ -174,7 +174,7 @@ import Testing
         })
     }
 
-    @Test func closeAtPossibleEndMeansKeepRecordingAndCollapse() {
+    @Test func closeAtPossibleEndDismissesWithoutCancellingTheStop() {
         _ = NSApplication.shared
         let controller = MeetingCompanionController()
         defer { controller.dismiss() }
@@ -183,10 +183,11 @@ import Testing
         controller.handle(.callEnded(application))
         controller.closeCompanion()
 
-        #expect(controller.presentationIsCollapsed)
+        #expect(!controller.isVisible)
+        controller.showRecordingControls()
         #expect(controller.isVisible)
-        guard case .recording = controller.state.phase else {
-            Issue.record("Close did not acknowledge possible end")
+        guard case .possibleEnd = controller.state.phase else {
+            Issue.record("Close cancelled the possible end")
             return
         }
     }
