@@ -111,7 +111,7 @@ final class AppController {
     private let transcription = TranscriptionCoordinator()
     private let models = ModelDownload()
     private var settings: SettingsWindowController?
-    private var voiceReview: VoiceReviewWindowController?
+    private let reviews = TranscriptReviewWindows()
     private var reviewPanel: NSOpenPanel?
     private var recordingsFolderPanel: NSOpenPanel?
     private var session: RecordingSession?
@@ -719,25 +719,21 @@ final class AppController {
     }
 
     func reviewTranscript(at session: URL) {
-        if voiceReview?.sessionURL == session {
-            voiceReview?.show()
-            return
-        }
         do {
-            let controller = try VoiceReviewWindowController(
-                session: session,
-                isRecording: { [weak self] in self?.session != nil },
-                separateSpeakers: { [transcription] selections, progress in
-                    try await transcription.separateSpeakers(
-                        in: session,
-                        selections: selections,
-                        progress: progress
-                    )
-                },
-                presence: presence
-            )
-            voiceReview = controller
-            controller.show()
+            try reviews.show(session) {
+                try VoiceReviewWindowController(
+                    session: session,
+                    isRecording: { [weak self] in self?.session != nil },
+                    separateSpeakers: { [transcription] selections, progress in
+                        try await transcription.separateSpeakers(
+                            in: session,
+                            selections: selections,
+                            progress: progress
+                        )
+                    },
+                    presence: presence
+                )
+            }
         } catch {
             notifyUser(title: "Voice review unavailable", body: error.localizedDescription)
         }

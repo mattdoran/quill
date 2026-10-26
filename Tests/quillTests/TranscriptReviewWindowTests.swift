@@ -711,6 +711,74 @@ import Testing
         }
     }
 
+    @Test func earlierReviewKeepsWorkingAfterAnotherOpens() async throws {
+        _ = NSApplication.shared
+        let first = try makeHybridSession()
+        let second = try makeHybridSession()
+        defer {
+            try? FileManager.default.removeItem(at: first)
+            try? FileManager.default.removeItem(at: second)
+        }
+        let presence = ApplicationPresenceController(
+            setActivationPolicy: { _ in }, activateApplication: {}
+        )
+        let reviews = TranscriptReviewWindows()
+        func review(_ session: URL) throws -> VoiceReviewWindowController {
+            try VoiceReviewWindowController(
+                session: session, isRecording: { false }, separateSpeakers: { _, _ in },
+                profileStore: VoiceProfileStore(url: session.appendingPathComponent("profiles.json")),
+                presence: presence
+            )
+        }
+        weak var firstReview: VoiceReviewWindowController?
+        weak var secondReview: VoiceReviewWindowController?
+        var firstWindow: NSWindow?
+        // Without draining as the run loop does, a released controller survives in the pool.
+        try autoreleasepool {
+            try reviews.show(first) {
+                let controller = try review(first)
+                firstReview = controller
+                firstWindow = controller.window
+                return controller
+            }
+            try reviews.show(second) {
+                let controller = try review(second)
+                secondReview = controller
+                return controller
+            }
+            try reviews.show(first) {
+                Issue.record("An open review was created again")
+                return try review(first)
+            }
+        }
+        let window = try #require(firstWindow)
+        defer { window.orderOut(nil) }
+
+        try autoreleasepool {
+            let secondWindow = try #require(secondReview?.window)
+            let secondContent = try #require(secondWindow.contentView)
+            try #require(buttons(in: secondContent).first { $0.title == "Close" }).performClick(nil)
+            #expect(!secondWindow.isVisible)
+
+            let content = try #require(window.contentView)
+            try #require(textFields(in: content).first {
+                $0.placeholderString == "Name this voice"
+            }).stringValue = "Eugene"
+            try #require(buttons(in: content).first { $0.title == "Save Names" }).performClick(nil)
+            #expect(try TranscriptStore(session: first).read().voices["mic:1"]?.name == "Eugene")
+            let saved = try #require(window.contentView)
+            try #require(buttons(in: saved).first { $0.title == "Close" }).performClick(nil)
+            #expect(!window.isVisible)
+        }
+
+        for _ in 0..<100 {
+            if firstReview == nil, secondReview == nil { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(firstReview == nil)
+        #expect(secondReview == nil)
+    }
+
     private func makeHybridSession() throws -> URL {
         let session = FileManager.default.temporaryDirectory
             .appendingPathComponent("quill-review-hybrid-\(UUID().uuidString)")

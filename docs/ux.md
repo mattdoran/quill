@@ -641,6 +641,9 @@ Copy therefore works in the selectable transcript, while Quit still completes
 Quill's recording shutdown path.
 Closing with changed names offers Save, Don't Save and Cancel; closing never
 implies that optional speaker review is complete.
+Each recording has one review window. Reviewing a recording that is already
+open raises its window; reviews of different recordings stay open and usable
+side by side.
 The stable IDs, human label map and segments live together in schema v1 of the
 canonical `.quill/transcript.json`, which is rewritten atomically with `transcript.md`;
 there is no second label database or sidecar. Incompatible JSON is ignored by

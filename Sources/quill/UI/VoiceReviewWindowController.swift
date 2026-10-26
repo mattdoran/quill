@@ -67,7 +67,7 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
     private weak var activePlayButton: NSButton?
     private var activeVoiceID: String?
 
-    var sessionURL: URL { session }
+    var onClose: (() -> Void)?
 
     init(
         session: URL,
@@ -149,6 +149,7 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
 
     func windowWillClose(_ notification: Notification) {
         stopPlayback()
+        onClose?()
     }
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         if case .separating = separationState { return false }
