@@ -16,6 +16,18 @@ Work that remains. Product and architecture decisions live in
 - [ ] **Add WhisperKit large-v3-turbo as a fallback and re-transcription
       option.** Parakeet remains the fast English default. Re-transcription is
       one reason source audio is retained by default.
+- [ ] **Attribute short replies after separation.** FluidAudio drops every
+      speaker span under its 1-second `minSegmentDuration`, so 58% of 1,037
+      `Unassigned` segments across 18 meetings were under a second and 45% a
+      lone "yeah", "yep" or "okay". A 0.3-second minimum cut unassigned speech
+      from 1.9% to 0.7% but lowered accuracy on short named lines from 96.7% to
+      94.8%; 0.5 seconds is untested. The nearest span's voice was right only
+      39 to 51% of the time, so it is not a fallback.
+- [ ] **Find why echo cancellation failed on 26 October.** On built-in speakers
+      and microphone, 22% of local segments repeated remote speech, against 1%
+      or less in every other meeting. The microphone sat near -60 dBFS, against
+      -18 to -32 usually, it changed format twice in the first six seconds, and
+      live AEC attenuated only 1 to 4 dB.
 
 ## Controls
 
