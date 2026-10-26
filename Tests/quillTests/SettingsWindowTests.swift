@@ -5,7 +5,7 @@ import Testing
 @MainActor
 @Suite(.serialized) struct SettingsWindowTests {
     @Test func controlsExposeTheirPurposeAndKeyboardOrder() throws {
-        _ = NSApplication.shared
+        AppKitTestHost.start()
         let controller = SettingsWindowController()
         controller.refresh()
         let window = try #require(controller.window)

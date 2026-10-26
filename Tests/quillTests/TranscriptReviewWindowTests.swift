@@ -7,7 +7,7 @@ import Testing
 @Suite(.serialized) struct TranscriptReviewWindowTests {
 
     @Test func usesStandardVisibleWindowControls() throws {
-        _ = NSApplication.shared
+        AppKitTestHost.start()
         let session = FileManager.default.temporaryDirectory
             .appendingPathComponent("quill-review-window-\(UUID().uuidString)")
         let source = session.appendingPathComponent("Source Audio", isDirectory: true)
@@ -56,7 +56,7 @@ import Testing
     }
 
     @Test func presentsOneSeparationActionForLocalAndRemoteAudio() throws {
-        _ = NSApplication.shared
+        AppKitTestHost.start()
         let session = FileManager.default.temporaryDirectory
             .appendingPathComponent("quill-review-separation-sources-\(UUID().uuidString)")
         let source = session.appendingPathComponent("Source Audio", isDirectory: true)
@@ -94,7 +94,7 @@ import Testing
     }
 
     @Test func separationSavesTheNameStillBeingEdited() throws {
-        _ = NSApplication.shared
+        AppKitTestHost.start()
         let session = FileManager.default.temporaryDirectory
             .appendingPathComponent("quill-review-pending-name-\(UUID().uuidString)")
         let source = session.appendingPathComponent("Source Audio", isDirectory: true)
@@ -149,7 +149,7 @@ import Testing
     }
 
     @Test func speakerControlsHaveAnExplicitKeyboardPath() throws {
-        _ = NSApplication.shared
+        AppKitTestHost.start()
         let session = FileManager.default.temporaryDirectory
             .appendingPathComponent("quill-review-keyboard-\(UUID().uuidString)")
         let source = session.appendingPathComponent("Source Audio", isDirectory: true)
@@ -249,7 +249,7 @@ import Testing
     }
 
     @Test func separatedTranscriptOffersUndoWhenBaselineSnapshotExists() throws {
-        _ = NSApplication.shared
+        AppKitTestHost.start()
         let session = FileManager.default.temporaryDirectory
             .appendingPathComponent("quill-review-undo-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: session, withIntermediateDirectories: true)
@@ -295,7 +295,7 @@ import Testing
     }
 
     @Test func unavailableSampleHasAnAccurateAccessibilityLabel() throws {
-        _ = NSApplication.shared
+        AppKitTestHost.start()
         let session = FileManager.default.temporaryDirectory
             .appendingPathComponent("quill-review-unavailable-sample-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: session, withIntermediateDirectories: true)
@@ -327,7 +327,7 @@ import Testing
     }
 
     @Test func reviewIsCmdTabVisibleOnlyWhileItsWindowIsOpen() throws {
-        _ = NSApplication.shared
+        AppKitTestHost.start()
         let originalPolicy = NSApp.activationPolicy()
         defer { NSApp.setActivationPolicy(originalPolicy) }
         NSApp.setActivationPolicy(.accessory)
@@ -357,7 +357,7 @@ import Testing
     }
 
     @Test func sixSpeakerReviewStartsAtTheFirstVoiceAndScrolls() throws {
-        _ = NSApplication.shared
+        AppKitTestHost.start()
         let session = try makeHybridSession()
         defer { try? FileManager.default.removeItem(at: session) }
         let store = TranscriptStore(session: session)
@@ -389,7 +389,7 @@ import Testing
     }
 
     @Test func countPickerKeepsLocalAndRemoteCountsIndependent() throws {
-        _ = NSApplication.shared
+        AppKitTestHost.start()
         let (alert, picker) = SpeakerCountPicker.makeAlert(
             tracks: [.microphone, .system],
             selections: [.microphone: .exact(2), .system: .exact(4)],
@@ -408,7 +408,7 @@ import Testing
     }
 
     @Test func countPickerStartsUnchangedAndRequiresASelection() throws {
-        _ = NSApplication.shared
+        AppKitTestHost.start()
         let (alert, picker) = SpeakerCountPicker.makeAlert(
             tracks: [.microphone, .system], selections: [:], replacingSeparatedTracks: false
         )
@@ -424,7 +424,7 @@ import Testing
     }
 
     @Test func separationActionPassesSelectedLocalAndRemoteCounts() async throws {
-        _ = NSApplication.shared
+        AppKitTestHost.start()
         let session = try makeHybridSession()
         defer { try? FileManager.default.removeItem(at: session) }
         actor Capture {
@@ -465,7 +465,7 @@ import Testing
     }
 
     @Test func separationActionRemembersSourcesLeftUnchanged() async throws {
-        _ = NSApplication.shared
+        AppKitTestHost.start()
         let session = try makeHybridSession()
         defer { try? FileManager.default.removeItem(at: session) }
         var previousSelections: [[SourceTrack: SpeakerCountSelection]] = []
@@ -497,7 +497,7 @@ import Testing
     }
 
     @Test func cancellingCountSelectionDoesNotRunAnalysis() async throws {
-        _ = NSApplication.shared
+        AppKitTestHost.start()
         let session = try makeHybridSession()
         defer { try? FileManager.default.removeItem(at: session) }
         actor Capture {
@@ -521,7 +521,7 @@ import Testing
     }
 
     @Test func copyMarkdownIncludesActiveNameEditsAndAllSegments() throws {
-        _ = NSApplication.shared
+        AppKitTestHost.start()
         let session = try makeHybridSession()
         defer { try? FileManager.default.removeItem(at: session) }
         let pasteboard = NSPasteboard(name: NSPasteboard.Name("quill-markdown-\(UUID().uuidString)"))
@@ -551,7 +551,7 @@ import Testing
     }
 
     @Test func rememberingIsExplicitAndSuggestionsNeedAcceptance() throws {
-        _ = NSApplication.shared
+        AppKitTestHost.start()
         let session = try makeHybridSession()
         defer { try? FileManager.default.removeItem(at: session) }
         try SessionMetadataStore.writeManifest(
@@ -625,7 +625,7 @@ import Testing
     }
 
     private func checkReadingPosition(action: String, editName: Bool) async throws {
-        _ = NSApplication.shared
+        AppKitTestHost.start()
         let session = try makeHybridSession()
         defer { try? FileManager.default.removeItem(at: session) }
         let store = TranscriptStore(session: session)
@@ -712,7 +712,7 @@ import Testing
     }
 
     @Test func earlierReviewKeepsWorkingAfterAnotherOpens() async throws {
-        _ = NSApplication.shared
+        AppKitTestHost.start()
         let first = try makeHybridSession()
         let second = try makeHybridSession()
         defer {

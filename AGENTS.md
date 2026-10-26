@@ -52,6 +52,10 @@ is not in play.
   CLT framework first failed to import, then loaded but discovered zero tests;
   the source package also needs CLT's nonstandard `_TestingInterop` library
   directory at link and runtime.
+- Start AppKit in tests with `AppKitTestHost.start()`, never a bare
+  `NSApplication.shared`. A WindowServer event stops Swift Testing's main run
+  loop, which exits 0 mid-suite; truncated runs hid a failing test from
+  2026-09-08 until 2026-10-26.
 - Do not run `swift test -c release` in the normal `.build` directory. It adds
   `-enable-testing` to release dependencies, so the next production build
   recompiles FluidAudio; use normal debug tests or a separate scratch path.

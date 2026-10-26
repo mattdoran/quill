@@ -5,7 +5,7 @@ import Testing
 @MainActor
 @Suite(.serialized) struct ApplicationMenuTests {
     @Test func definesStandardEditCommandsAndUsesTheSafeQuitHandler() throws {
-        let app = NSApplication.shared
+        let app = AppKitTestHost.start()
         let previousMenu = app.mainMenu
         defer { app.mainMenu = previousMenu }
         let controller = ApplicationMenuController()

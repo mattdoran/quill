@@ -6,7 +6,7 @@ import Testing
 @MainActor
 @Suite struct MeetingCompanionLayoutTests {
     @Test func everyVisibleControlFitsAtTheSupportedPanelSize() {
-        _ = NSApplication.shared
+        AppKitTestHost.start()
         let application = CallApplication(
             id: "teams",
             name: "Microsoft Teams (Work or School) for Contoso Engineering"
@@ -44,7 +44,7 @@ import Testing
     }
 
     @Test func autoStopCountdownAnimatesOnceAndSurvivesTicks() {
-        _ = NSApplication.shared
+        AppKitTestHost.start()
         let application = CallApplication(id: "zoom", name: "Zoom")
         let view = MeetingCompanionView(
             frame: NSRect(
@@ -75,7 +75,7 @@ import Testing
     }
 
     @Test func autoStopCountdownHidesTheBarUnderReduceMotion() {
-        _ = NSApplication.shared
+        AppKitTestHost.start()
         let application = CallApplication(id: "zoom", name: "Zoom")
         let view = MeetingCompanionView(
             frame: NSRect(
@@ -97,7 +97,7 @@ import Testing
     }
 
     @Test func materialUsesAnExplicitRoundedMask() throws {
-        _ = NSApplication.shared
+        AppKitTestHost.start()
         let view = MeetingCompanionView(
             frame: NSRect(origin: .zero, size: MeetingCompanionController.expandedSize)
         )

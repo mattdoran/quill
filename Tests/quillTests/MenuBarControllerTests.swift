@@ -5,6 +5,7 @@ import Testing
 @MainActor
 @Suite(.serialized) struct MenuBarControllerTests {
     @Test func statusItemTitleStaysConstantAcrossStates() throws {
+        AppKitTestHost.start()
         let controller = MenuBarController()
         defer { NSStatusBar.system.removeStatusItem(controller.statusItem) }
         let button = try #require(controller.statusItem.button)

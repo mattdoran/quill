@@ -8,7 +8,7 @@ import Testing
     private let application = CallApplication(id: "zoom", name: "Zoom")
 
     @Test func reopenedDeadlineSupersedesInitialCollapse() async throws {
-        _ = NSApplication.shared
+        AppKitTestHost.start()
         let controller = MeetingCompanionController(
             initialCollapseDelay: 0.05,
             reopenedCollapseDelay: 0.2
@@ -26,7 +26,7 @@ import Testing
     }
 
     @Test func pointerInteractionExtendsButDoesNotPreventCollapse() async throws {
-        _ = NSApplication.shared
+        AppKitTestHost.start()
         let controller = MeetingCompanionController(
             initialCollapseDelay: 0.05,
             reopenedCollapseDelay: 0.2
@@ -43,7 +43,7 @@ import Testing
     }
 
     @Test func manualRecordingCollapsesWithoutPointerInteraction() async throws {
-        _ = NSApplication.shared
+        AppKitTestHost.start()
         let controller = MeetingCompanionController(initialCollapseDelay: 0.05)
         defer { controller.dismiss() }
 
@@ -55,7 +55,7 @@ import Testing
     }
 
     @Test func possibleEndCannotBeCollapsedByOldDeadline() async throws {
-        _ = NSApplication.shared
+        AppKitTestHost.start()
         let controller = MeetingCompanionController(initialCollapseDelay: 0.05)
         defer { controller.dismiss() }
 
@@ -71,7 +71,7 @@ import Testing
     }
 
     @Test func processingPanelRemainsUntilDismissed() async throws {
-        _ = NSApplication.shared
+        AppKitTestHost.start()
         let controller = MeetingCompanionController()
         defer { controller.dismiss() }
 
@@ -86,7 +86,7 @@ import Testing
     }
 
     @Test func closeDuringRecordingCollapsesWithoutDismissingSession() {
-        _ = NSApplication.shared
+        AppKitTestHost.start()
         let controller = MeetingCompanionController()
         defer { controller.dismiss() }
 
@@ -102,7 +102,7 @@ import Testing
     }
 
     @Test func collapseAndExpansionPreserveTheRightEdge() {
-        _ = NSApplication.shared
+        AppKitTestHost.start()
         let controller = MeetingCompanionController()
         defer { controller.dismiss() }
 
@@ -116,7 +116,7 @@ import Testing
     }
 
     @Test func draggedPositionPersistsForLaterSessionsAndControllers() throws {
-        _ = NSApplication.shared
+        AppKitTestHost.start()
         var savedPlacement: MeetingCompanionPlacement?
         var controller = MeetingCompanionController(
             loadPlacement: { savedPlacement },
@@ -159,7 +159,7 @@ import Testing
     }
 
     @Test func unavailableSavedDisplayFallsBackOnScreen() {
-        _ = NSApplication.shared
+        AppKitTestHost.start()
         let controller = MeetingCompanionController(
             loadPlacement: {
                 MeetingCompanionPlacement(rightEdge: 1_000_000, centerY: 1_000_000)
@@ -175,7 +175,7 @@ import Testing
     }
 
     @Test func closeAtPossibleEndDismissesWithoutCancellingTheStop() {
-        _ = NSApplication.shared
+        AppKitTestHost.start()
         let controller = MeetingCompanionController()
         defer { controller.dismiss() }
 
