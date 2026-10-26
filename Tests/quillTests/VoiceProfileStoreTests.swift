@@ -245,6 +245,27 @@ import Testing
         #expect(try store.load().isEmpty)
     }
 
+    @Test func forgettingOneVoiceKeepsTheRestOfItsProfile() throws {
+        let store = VoiceProfileStore(url: try temporaryURL())
+        let profile = try #require(try store.remember(
+            document: transcript(voice: voice(name: "Will", embedding: [1, 0])),
+            sessionID: "meeting-1",
+            voiceIDs: ["mic:1"]
+        )["mic:1"])
+        var second = transcript(voice: voice(name: "Will", embedding: [0, 1]))
+        second.voices["mic:1"]?.remembered_profile_id = profile.id
+        _ = try store.remember(document: second, sessionID: "meeting-2", voiceIDs: ["mic:1"])
+        #expect(try store.load().first?.contribution_count == 2)
+
+        try store.forgetContribution(sessionID: "meeting-2", voiceID: "mic:1")
+        let remaining = try #require(try store.load().first)
+        #expect(remaining.contribution_count == 1)
+        #expect(abs(remaining.embedding[0] - 1) < 0.001)
+
+        try store.forgetContribution(sessionID: "meeting-1", voiceID: "mic:1")
+        #expect(try store.load().isEmpty)
+    }
+
     private func transcript(voice: TranscriptDocument.Voice) -> TranscriptDocument {
         TranscriptDocument(
             schema_version: TranscriptDocument.currentSchemaVersion,

@@ -392,19 +392,19 @@ import Testing
         AppKitTestHost.start()
         let (alert, picker) = SpeakerCountPicker.makeAlert(
             tracks: [.microphone, .system],
-            selections: [.microphone: .exact(2), .system: .exact(4)],
+            selections: [.microphone: .estimate(2), .system: .estimate(4)],
             replacingSeparatedTracks: true
         )
         #expect(alert.accessoryView === picker)
-        #expect(picker.selections == [.microphone: .exact(2), .system: .exact(4)])
+        #expect(picker.selections == [.microphone: .estimate(2), .system: .estimate(4)])
         let remote = try #require(picker.arrangedSubviews.compactMap { $0 as? NSPopUpButton }
             .first { $0.identifier?.rawValue == "system" })
         remote.selectItem(withTag: 0)
-        #expect(picker.selections == [.microphone: .exact(2), .system: .automatic])
+        #expect(picker.selections == [.microphone: .estimate(2), .system: .automatic])
         remote.selectItem(withTag: 1)
-        #expect(picker.selections[.system] == .exact(1))
+        #expect(picker.selections[.system] == .estimate(1))
         remote.selectItem(withTag: -1)
-        #expect(picker.selections == [.microphone: .exact(2)])
+        #expect(picker.selections == [.microphone: .estimate(2)])
     }
 
     @Test func countPickerStartsUnchangedAndRequiresASelection() throws {
@@ -419,7 +419,7 @@ import Testing
             .first { $0.identifier?.rawValue == "system" })
         remote.selectItem(withTag: 3)
         remote.sendAction(remote.action, to: remote.target)
-        #expect(picker.selections == [.system: .exact(3)])
+        #expect(picker.selections == [.system: .estimate(3)])
         #expect(alert.buttons[0].isEnabled)
     }
 
@@ -442,7 +442,7 @@ import Testing
             },
             chooseSpeakerCounts: { previous in
                 observedPrevious = previous
-                return [.microphone: .exact(2), .system: .exact(4)]
+                return [.microphone: .estimate(2), .system: .estimate(4)]
             }
         )
         let content = try #require(controller.window?.contentView)
@@ -460,8 +460,8 @@ import Testing
         }
         try #require(completed, "Wait for the review to finish refreshing before removing its session")
         let received = await capture.received
-        #expect(observedPrevious == [.microphone: .exact(2)])
-        #expect(received == [.microphone: .exact(2), .system: .exact(4)])
+        #expect(observedPrevious == [.microphone: .estimate(2)])
+        #expect(received == [.microphone: .estimate(2), .system: .estimate(4)])
     }
 
     @Test func separationActionRemembersSourcesLeftUnchanged() async throws {
@@ -474,7 +474,7 @@ import Testing
             separateSpeakers: { _, _ in },
             chooseSpeakerCounts: { previous in
                 previousSelections.append(previous)
-                return previousSelections.count == 1 ? [.system: .exact(4)] : nil
+                return previousSelections.count == 1 ? [.system: .estimate(4)] : nil
             }
         )
         var content = try #require(controller.window?.contentView)
@@ -491,8 +491,8 @@ import Testing
             .performClick(nil)
 
         #expect(previousSelections == [
-            [.microphone: .exact(2)],
-            [.system: .exact(4)],
+            [.microphone: .estimate(2)],
+            [.system: .estimate(4)],
         ])
     }
 
@@ -648,7 +648,7 @@ import Testing
                 progress(.init(stage: .analysing(source: .system, completed: 1, total: 2)))
                 await withCheckedContinuation { finishSeparation = $0 }
             },
-            chooseSpeakerCounts: { _ in [.system: .exact(4)] },
+            chooseSpeakerCounts: { _ in [.system: .estimate(4)] },
             pasteboard: NSPasteboard(name: .init("quill-scroll-\(UUID().uuidString)")),
             profileStore: VoiceProfileStore(url: session.appendingPathComponent("profiles.json"))
         )
@@ -777,6 +777,106 @@ import Testing
         }
         #expect(firstReview == nil)
         #expect(secondReview == nil)
+    }
+
+    @Test func voicesGivenTheSameNameBecomeOnePerson() throws {
+        AppKitTestHost.start()
+        let session = try makeHybridSession()
+        defer { try? FileManager.default.removeItem(at: session) }
+        let store = TranscriptStore(session: session)
+        var document = try store.read()
+        for id in ["mic:1", "mic:2"] {
+            let voice = try #require(document.voices[id])
+            document.voices[id] = .init(
+                source: voice.source, audio_file: voice.audio_file, machine_label: voice.machine_label,
+                name: nil, samples: [.init(start_ms: 0, end_ms: 1_000), .init(start_ms: 2_000, end_ms: 3_000)]
+            )
+        }
+        try store.write(document)
+        let controller = try VoiceReviewWindowController(
+            session: session, isRecording: { false }, separateSpeakers: { _, _ in },
+            profileStore: VoiceProfileStore(url: session.appendingPathComponent("profiles.json"))
+        )
+        var content = try #require(controller.window?.contentView)
+        let fields = textFields(in: content).filter { $0.placeholderString == "Name this voice" }
+        #expect(fields.count == 6)
+        fields[0].stringValue = "Will"
+        fields[1].stringValue = " will "
+        try #require(buttons(in: content).first { $0.title == "Save Names" }).performClick(nil)
+
+        #expect(try store.read().voices["mic:1"]?.name == "Will")
+        #expect(try store.read().voices["mic:2"]?.name == "Will")
+        content = try #require(controller.window?.contentView)
+        #expect(textFields(in: content).filter { $0.placeholderString == "Name this voice" }.count == 5)
+        #expect(textFields(in: content).contains { $0.stringValue == "Voices 1 and 2" })
+        #expect(buttonTitles(in: content).contains("Play Sample 1 of 4"))
+        #expect(buttonTitles(in: content).filter { $0 == "Not the Same Person" }.count == 1)
+
+        let combined = try #require(textFields(in: content).first { $0.stringValue == "Will" })
+        combined.stringValue = "Will Smith"
+        try #require(buttons(in: content).first { $0.title == "Save Names" }).performClick(nil)
+        #expect(try store.read().voices["mic:1"]?.name == "Will Smith")
+        #expect(try store.read().voices["mic:2"]?.name == "Will Smith")
+    }
+
+    @Test func onePersonIsRememberedOnceAndCanBeSeparatedAgain() throws {
+        AppKitTestHost.start()
+        let session = try makeHybridSession()
+        defer { try? FileManager.default.removeItem(at: session) }
+        let store = TranscriptStore(session: session)
+        var document = try store.read()
+        for (id, embedding) in [("mic:1", [Float(1), 0, 0]), ("mic:2", [0.9, 0.1, 0])] {
+            document.voices[id]?.name = "Will"
+            document.voices[id]?.embedding_model = "test-embedding"
+            document.voices[id]?.embedding = embedding
+        }
+        try store.write(document)
+        let memory = VoiceProfileStore(url: session.appendingPathComponent("profiles.json"))
+        let controller = try VoiceReviewWindowController(
+            session: session, isRecording: { false }, separateSpeakers: { _, _ in },
+            profileStore: memory
+        )
+        var content = try #require(controller.window?.contentView)
+        try #require(buttons(in: content).first { $0.title == "Remember Voice" }).performClick(nil)
+
+        let profile = try #require(try memory.load().first)
+        #expect(try memory.load().count == 1)
+        #expect(profile.contribution_count == 2)
+        #expect(try store.read().voices["mic:2"]?.remembered_profile_id == profile.id)
+        content = try #require(controller.window?.contentView)
+        #expect(buttonTitles(in: content).contains("Voice Remembered"))
+
+        try #require(buttons(in: content).first { $0.title == "Not the Same Person" }).performClick(nil)
+        let separated = try store.read()
+        #expect(separated.voices["mic:1"]?.name == "Will")
+        #expect(separated.voices["mic:2"]?.name == nil)
+        #expect(separated.voices["mic:2"]?.remembered_profile_id == nil)
+        #expect(try memory.load().first?.contribution_count == 1)
+        content = try #require(controller.window?.contentView)
+        #expect(!buttonTitles(in: content).contains("Not the Same Person"))
+        #expect(textFields(in: content).filter { $0.placeholderString == "Name this voice" }.count == 6)
+    }
+
+    @Test func separatingAgainEstimatesFromPeopleNotVoices() throws {
+        AppKitTestHost.start()
+        let session = try makeHybridSession()
+        defer { try? FileManager.default.removeItem(at: session) }
+        let store = TranscriptStore(session: session)
+        var document = try store.read()
+        document.voices["mic:1"]?.name = "Will"
+        document.voices["mic:2"]?.name = "Will"
+        try store.write(document)
+        var observedPrevious: [SourceTrack: SpeakerCountSelection]?
+        let controller = try VoiceReviewWindowController(
+            session: session, isRecording: { false }, separateSpeakers: { _, _ in },
+            chooseSpeakerCounts: { previous in
+                observedPrevious = previous
+                return nil
+            }
+        )
+        let content = try #require(controller.window?.contentView)
+        try #require(buttons(in: content).first { $0.title == "Separate Voices Again…" }).performClick(nil)
+        #expect(observedPrevious == [.microphone: .estimate(1)])
     }
 
     private func makeHybridSession() throws -> URL {

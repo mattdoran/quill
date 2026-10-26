@@ -28,6 +28,7 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
     private enum SeparationState { case idle, separating(String), failed(String) }
     private struct Row {
         let voiceID: String
+        let voiceIDs: [String]
         let field: NSTextField
         let playButton: NSButton
         let memoryButtons: [NSButton]
@@ -83,7 +84,8 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
         presence: ApplicationPresenceController = ApplicationPresenceController()
     ) throws {
         self.session = session
-        transcript = try TranscriptStore(session: session).read()
+        let document = try TranscriptStore(session: session).read()
+        transcript = document
         self.isRecording = isRecording
         self.separateSpeakers = separateSpeakers
         self.chooseSpeakerCounts = chooseSpeakerCounts
@@ -91,9 +93,13 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
         self.profileStore = profileStore
         self.presence = presence
         for track in SourceTrack.allCases {
-            let voices = transcript.voices.values.filter { $0.source == track.rawValue }
-            if voices.contains(where: { $0.machine_label.hasPrefix("Voice ") }) {
-                lastSpeakerCounts[track] = .exact(voices.count)
+            let people = document.people.filter {
+                document.voices[$0[0]]?.source == track.rawValue
+            }
+            if people.joined().contains(where: {
+                document.voices[$0]?.machine_label.hasPrefix("Voice ") == true
+            }) {
+                lastSpeakerCounts[track] = .estimate(people.count)
             }
         }
         let window = NSWindow(
@@ -424,7 +430,7 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
                 heading.font = .systemFont(ofSize: 12, weight: .semibold)
                 heading.textColor = .secondaryLabelColor
                 let limitation = NSTextField(
-                    wrappingLabelWithString: "Providing the number of speakers gives the most reliable result."
+                    wrappingLabelWithString: "An estimate of how many people spoke gives the most reliable result."
                 )
                 limitation.font = .systemFont(ofSize: 11)
                 limitation.textColor = .tertiaryLabelColor
@@ -507,9 +513,9 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
         voiceStack.alignment = .leading
         voiceStack.spacing = 10
         voiceStack.translatesAutoresizingMaskIntoConstraints = false
-        for id in transcript.voiceIDs {
-            guard let voice = transcript.voices[id] else { continue }
-            let row = makeRow(id: id, voice: voice, showSource: showSource)
+        for ids in transcript.people {
+            guard let voice = transcript.voices[ids[0]] else { continue }
+            let row = makeRow(ids: ids, voice: voice, showSource: showSource)
             voiceStack.addArrangedSubview(row)
             row.widthAnchor.constraint(equalTo: voiceStack.widthAnchor).isActive = true
         }
@@ -524,17 +530,18 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
     }
 
     private func makeRow(
-        id: String,
+        ids: [String],
         voice: TranscriptDocument.Voice,
         showSource: Bool
     ) -> NSView {
+        let id = ids[0]
         let card = NSBox()
         card.boxType = .custom
         card.cornerRadius = 9
         card.borderWidth = 1
         card.borderColor = .separatorColor
         card.fillColor = .controlBackgroundColor
-        let voiceLabel = NSTextField(labelWithString: voice.machine_label)
+        let voiceLabel = NSTextField(labelWithString: machineLabel(for: ids))
         voiceLabel.font = .systemFont(ofSize: 12, weight: .semibold)
         var headerViews: [NSView] = [voiceLabel]
         if showSource {
@@ -547,7 +554,7 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
         header.orientation = .horizontal
         header.alignment = .firstBaseline
         header.spacing = 7
-        let context = Self.context(for: id, voice: voice, showSource: showSource)
+        let context = context(for: ids, showSource: showSource)
         let field = NSTextField(string: voice.name ?? "")
         field.placeholderString = "Name this voice"
         field.setAccessibilityLabel("Name for \(context)")
@@ -558,15 +565,16 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
         play.image = NSImage(systemSymbolName: "play.fill", accessibilityDescription: nil)
         play.imagePosition = .imageLeading
         play.identifier = NSUserInterfaceItemIdentifier(id)
-        let sampleAvailable = voice.samples.first != nil && sourceURL(for: voice) != nil
+        let sampleCount = samples(for: ids).count
+        let sampleAvailable = sampleCount > 0
         play.isEnabled = sampleAvailable
-        play.title = sampleAvailable ? Self.initialPlayTitle(voice) : "Sample Unavailable"
+        play.title = sampleAvailable ? Self.initialPlayTitle(sampleCount) : "Sample Unavailable"
         play.toolTip = sampleAvailable ? "Play a short sample" : "Source audio is unavailable"
         play.setAccessibilityLabel(
             sampleAvailable ? "Play sample for \(context)" : "Sample unavailable for \(context)"
         )
         var memoryButtons: [NSButton] = []
-        if let suggestion = suggestions[id] {
+        if ids.count == 1, let suggestion = suggestions[id] {
             let use = ReviewButton(title: "Use \(suggestion.name)", target: self,
                                action: #selector(useSuggestionClicked(_:)))
             use.bezelStyle = .rounded
@@ -575,17 +583,30 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
             use.toolTip = "Suggested from a remembered voice. Listen to a sample to check."
             memoryButtons.append(use)
         }
-        if voice.embedding != nil, voice.embedding_model != nil {
+        if ids.contains(where: {
+            transcript.voices[$0]?.embedding != nil && transcript.voices[$0]?.embedding_model != nil
+        }) {
             let remember = ReviewButton(title: "Remember Voice", target: self,
                                     action: #selector(rememberVoiceClicked(_:)))
             remember.bezelStyle = .rounded
             remember.controlSize = .small
             remember.identifier = NSUserInterfaceItemIdentifier(id)
             remember.toolTip = "Save this name and voice on this Mac for suggestions in future meetings."
-            configureRememberButton(remember, voice: voice, name: field.stringValue, voiceID: id)
+            configureRememberButton(remember, voiceIDs: ids, name: field.stringValue)
             memoryButtons.append(remember)
         }
-        rows.append(Row(voiceID: id, field: field, playButton: play, memoryButtons: memoryButtons))
+        if ids.count > 1 {
+            let separate = ReviewButton(title: "Not the Same Person", target: self,
+                                    action: #selector(notSamePersonClicked(_:)))
+            separate.bezelStyle = .rounded
+            separate.controlSize = .small
+            separate.identifier = NSUserInterfaceItemIdentifier(id)
+            separate.toolTip = "Show these voices separately. The voice with the most speech keeps the name."
+            memoryButtons.append(separate)
+        }
+        rows.append(Row(
+            voiceID: id, voiceIDs: ids, field: field, playButton: play, memoryButtons: memoryButtons
+        ))
         let stack = NSStackView(views: [header, field, play] + memoryButtons)
         stack.orientation = .vertical
         stack.alignment = .leading
@@ -827,11 +848,15 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
             _ = presence.runModal(alert)
             return
         }
-        guard let id = sender.identifier?.rawValue, let voice = transcript.voices[id],
-              !voice.samples.isEmpty, let source = sourceURL(for: voice) else { return }
+        guard let id = sender.identifier?.rawValue,
+              let row = rows.first(where: { $0.voiceID == id }) else { return }
+        let samples = samples(for: row.voiceIDs)
+        guard !samples.isEmpty else { return }
         if activePlayButton === sender, player?.isPlaying == true { stopPlayback(); return }
-        let index = nextSampleIndex[id, default: 0] % voice.samples.count
-        let sample = voice.samples[index]
+        let index = nextSampleIndex[id, default: 0] % samples.count
+        let sample = samples[index].sample
+        guard let voice = transcript.voices[samples[index].voiceID],
+              let source = sourceURL(for: voice) else { return }
         nextSampleIndex[id] = index + 1
         do {
             stopPlayback()
@@ -844,7 +869,7 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
             activeVoiceID = id
             sender.title = "Stop"
             sender.image = NSImage(systemSymbolName: "stop.fill", accessibilityDescription: nil)
-            sender.setAccessibilityLabel("Stop sample for \(Self.context(for: id, voice: voice))")
+            sender.setAccessibilityLabel("Stop sample for \(context(for: row.voiceIDs))")
             let duration = max(0.5, min(8, TimeInterval(sample.end_ms - sample.start_ms) / 1000))
             stopTimer = Timer.scheduledTimer(withTimeInterval: duration, repeats: false) {
                 [weak self] _ in MainActor.assumeIsolated { self?.stopPlayback() }
@@ -868,9 +893,15 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
         stopPlayback()
         do {
             var updated = transcript
-            try updated.applyVoiceNames(Dictionary(uniqueKeysWithValues: rows.map {
-                ($0.voiceID, enteredName(in: $0))
+            try updated.applyVoiceNames(Dictionary(uniqueKeysWithValues: rows.flatMap { row in
+                row.voiceIDs.map { ($0, enteredName(in: row)) }
             }))
+            var spelling: [String: String] = [:]
+            for ids in updated.people where ids.count > 1 {
+                guard let name = updated.voices[ids[0]]?.name else { continue }
+                for id in ids.dropFirst() { spelling[id] = name }
+            }
+            try updated.applyVoiceNames(spelling)
             try TranscriptStore(session: session).write(updated)
             transcript = updated
             if refresh { refreshContent() }
@@ -901,15 +932,16 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
         }
     }
 
-    private func configureRememberButton(
-        _ button: NSButton, voice: TranscriptDocument.Voice, name: String, voiceID: String
-    ) {
-        let remembered = profiles.contains { profile in
-            profile.id == voice.remembered_profile_id && profile.name == normalized(name)
-                && profile.contributions.contains {
-                    $0.session_id == memorySessionID && $0.voice_id == voiceID
-                        && $0.embedding.count == voice.embedding?.count
-                }
+    private func configureRememberButton(_ button: NSButton, voiceIDs: [String], name: String) {
+        let remembered = voiceIDs.allSatisfy { voiceID in
+            guard let voice = transcript.voices[voiceID], voice.embedding != nil else { return true }
+            return profiles.contains { profile in
+                profile.id == voice.remembered_profile_id && profile.name == normalized(name)
+                    && profile.contributions.contains {
+                        $0.session_id == memorySessionID && $0.voice_id == voiceID
+                            && $0.embedding.count == voice.embedding?.count
+                    }
+            }
         }
         button.title = remembered ? "Voice Remembered" : "Remember Voice"
         button.isEnabled = normalized(name) != nil && !remembered && profileError == nil
@@ -917,10 +949,9 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
 
     func controlTextDidChange(_ notification: Notification) {
         guard let field = notification.object as? NSTextField,
-              let row = rows.first(where: { $0.field === field }),
-              let voice = transcript.voices[row.voiceID] else { return }
+              let row = rows.first(where: { $0.field === field }) else { return }
         for button in row.memoryButtons where button.action == #selector(rememberVoiceClicked(_:)) {
-            configureRememberButton(button, voice: voice, name: enteredName(in: row), voiceID: row.voiceID)
+            configureRememberButton(button, voiceIDs: row.voiceIDs, name: enteredName(in: row))
         }
     }
 
@@ -933,22 +964,62 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
         row.field.currentEditor()?.string = suggestion.name
         transcript.voices[id]?.remembered_profile_id = suggestion.profileID
         for button in row.memoryButtons where button.action == #selector(rememberVoiceClicked(_:)) {
-            if let voice = transcript.voices[id] {
-                configureRememberButton(button, voice: voice, name: suggestion.name, voiceID: id)
-            }
+            configureRememberButton(button, voiceIDs: row.voiceIDs, name: suggestion.name)
         }
     }
 
     @objc private func rememberVoiceClicked(_ sender: NSButton) {
-        guard let id = sender.identifier?.rawValue, saveNames(refresh: false) else { return }
+        guard
+            let id = sender.identifier?.rawValue,
+            let voiceIDs = rows.first(where: { $0.voiceID == id })?.voiceIDs,
+            saveNames(refresh: false)
+        else { return }
         do {
-            let remembered = try profileStore.remember(
-                document: transcript, sessionID: memorySessionID, voiceIDs: [id]
-            )
-            guard let profile = remembered[id] else { return }
-            transcript.voices[id]?.remembered_profile_id = profile.id
+            // One person is one profile, so later voices join the first one's.
+            var profileID = voiceIDs.lazy.compactMap { self.transcript.voices[$0]?.remembered_profile_id }.first
+            for voiceID in voiceIDs {
+                if let profileID { transcript.voices[voiceID]?.remembered_profile_id = profileID }
+                guard let profile = try profileStore.remember(
+                    document: transcript, sessionID: memorySessionID, voiceIDs: [voiceID]
+                )[voiceID] else { continue }
+                profileID = profile.id
+                transcript.voices[voiceID]?.remembered_profile_id = profile.id
+            }
             try TranscriptStore(session: session).write(transcript)
             refreshContent()
+        } catch {
+            _ = presence.runModal(NSAlert(error: error))
+        }
+    }
+
+    @objc private func notSamePersonClicked(_ sender: NSButton) {
+        guard
+            let id = sender.identifier?.rawValue,
+            let voiceIDs = rows.first(where: { $0.voiceID == id })?.voiceIDs,
+            voiceIDs.count > 1,
+            saveNames(refresh: false)
+        else { return }
+        let speech = transcript.segments.reduce(into: [String: Int]()) { speech, segment in
+            guard let voiceID = segment.voice_id else { return }
+            speech[voiceID, default: 0] += segment.end_ms - segment.start_ms
+        }
+        let kept = voiceIDs.reduce(voiceIDs[0]) {
+            speech[$1, default: 0] > speech[$0, default: 0] ? $1 : $0
+        }
+        let separated = voiceIDs.filter { $0 != kept }
+        do {
+            var updated = transcript
+            for voiceID in separated where updated.voices[voiceID]?.remembered_profile_id != nil {
+                try profileStore.forgetContribution(sessionID: memorySessionID, voiceID: voiceID)
+                updated.voices[voiceID]?.remembered_profile_id = nil
+            }
+            try updated.applyVoiceNames(Dictionary(uniqueKeysWithValues: separated.map { ($0, "") }))
+            try TranscriptStore(session: session).write(updated)
+            transcript = updated
+            refreshContent()
+            if let field = rows.first(where: { $0.voiceID == separated[0] })?.field {
+                window?.makeFirstResponder(field)
+            }
         } catch {
             _ = presence.runModal(NSAlert(error: error))
         }
@@ -1018,28 +1089,46 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
         stopTimer = nil
         player?.stop()
         player = nil
-        if let id = activeVoiceID, let voice = transcript.voices[id], let button = activePlayButton {
-            let next = nextSampleIndex[id, default: 0] % max(voice.samples.count, 1)
-            button.title = voice.samples.count > 1 ? "Next Sample \(next + 1) of \(voice.samples.count)" : "Replay Sample"
+        if let id = activeVoiceID, let button = activePlayButton,
+           let voiceIDs = rows.first(where: { $0.voiceID == id })?.voiceIDs {
+            let count = samples(for: voiceIDs).count
+            let next = nextSampleIndex[id, default: 0] % max(count, 1)
+            button.title = count > 1 ? "Next Sample \(next + 1) of \(count)" : "Replay Sample"
             button.image = NSImage(systemSymbolName: "play.fill", accessibilityDescription: nil)
             button.setAccessibilityLabel(
-                voice.samples.count > 1
-                    ? "Play sample \(next + 1) of \(voice.samples.count) for \(Self.context(for: id, voice: voice))"
-                    : "Replay sample for \(Self.context(for: id, voice: voice))"
+                count > 1
+                    ? "Play sample \(next + 1) of \(count) for \(context(for: voiceIDs))"
+                    : "Replay sample for \(context(for: voiceIDs))"
             )
         }
         activePlayButton = nil
         activeVoiceID = nil
     }
 
-    private static func context(
-        for id: String,
-        voice: TranscriptDocument.Voice,
-        showSource: Bool = true
-    ) -> String {
-        showSource
-            ? "\(voice.machine_label) · \(sourceTag(for: voice))"
-            : voice.machine_label
+    /// Alternates between a person's voices, so the first samples cover each.
+    private func samples(
+        for voiceIDs: [String]
+    ) -> [(voiceID: String, sample: TranscriptDocument.Voice.Sample)] {
+        let lists = voiceIDs.map { id -> [(voiceID: String, sample: TranscriptDocument.Voice.Sample)] in
+            guard let voice = transcript.voices[id], sourceURL(for: voice) != nil else { return [] }
+            return voice.samples.map { (id, $0) }
+        }
+        let longest = lists.map(\.count).max() ?? 0
+        return (0..<longest).flatMap { index in lists.compactMap { index < $0.count ? $0[index] : nil } }
+    }
+
+    private func machineLabel(for voiceIDs: [String]) -> String {
+        let labels = voiceIDs.compactMap { transcript.voices[$0]?.machine_label }
+        guard labels.count > 1 else { return labels.first ?? "" }
+        let numbers = labels.compactMap { $0.hasPrefix("Voice ") ? String($0.dropFirst("Voice ".count)) : nil }
+        guard numbers.count == labels.count else { return ListFormatter.localizedString(byJoining: labels) }
+        return "Voices " + ListFormatter.localizedString(byJoining: numbers)
+    }
+
+    private func context(for voiceIDs: [String], showSource: Bool = true) -> String {
+        let label = machineLabel(for: voiceIDs)
+        guard showSource, let voice = voiceIDs.first.flatMap({ transcript.voices[$0] }) else { return label }
+        return "\(label) · \(Self.sourceTag(for: voice))"
     }
 
     private static func sourceTag(for voice: TranscriptDocument.Voice) -> String {
@@ -1061,8 +1150,8 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
         return trimmed.isEmpty ? nil : trimmed
     }
 
-    private static func initialPlayTitle(_ voice: TranscriptDocument.Voice) -> String {
-        voice.samples.count > 1 ? "Play Sample 1 of \(voice.samples.count)" : "Play Sample"
+    private static func initialPlayTitle(_ sampleCount: Int) -> String {
+        sampleCount > 1 ? "Play Sample 1 of \(sampleCount)" : "Play Sample"
     }
 
     private static func clock(_ ms: Int) -> String {

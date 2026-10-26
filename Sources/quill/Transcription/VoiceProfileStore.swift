@@ -196,6 +196,22 @@ struct VoiceProfileStore {
         try save([])
     }
 
+    /// A profile left without contributions is removed.
+    func forgetContribution(sessionID: String, voiceID: String) throws {
+        var profiles = try load()
+        let now = Self.timestamp()
+        for index in profiles.indices {
+            let count = profiles[index].contributions.count
+            profiles[index].contributions.removeAll { $0.session_id == sessionID && $0.voice_id == voiceID }
+            guard profiles[index].contributions.count != count else { continue }
+            profiles[index].embedding = Self.meanEmbedding(profiles[index].contributions.map(\.embedding))
+            profiles[index].contribution_count = profiles[index].contributions.count
+            profiles[index].updated_at = now
+        }
+        profiles.removeAll { $0.contributions.isEmpty }
+        try save(profiles)
+    }
+
     private func targetProfileIndex(
         voice: TranscriptDocument.Voice,
         voiceID: String,

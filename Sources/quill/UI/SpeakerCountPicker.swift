@@ -33,7 +33,7 @@ final class SpeakerCountPicker: NSStackView {
             picker.addItem(withTitle: "Detect automatically (less reliable)")
             picker.lastItem?.tag = 0
             switch selections[track] {
-            case .exact(let count) where (1...20).contains(count):
+            case .estimate(let count) where (1...20).contains(count):
                 picker.selectItem(withTag: count)
             case .automatic:
                 picker.selectItem(withTag: 0)
@@ -61,8 +61,9 @@ final class SpeakerCountPicker: NSStackView {
         replacingSeparatedTracks: Bool
     ) -> (alert: NSAlert, choices: SpeakerCountPicker) {
         let alert = NSAlert()
-        alert.messageText = "How many people spoke?"
-        alert.informativeText = "Local means people near this Mac. Remote means people on the call."
+        alert.messageText = "About how many people spoke?"
+        alert.informativeText = "Local means people near this Mac. Remote means people on the call. "
+            + "Quill may find an extra voice; give two voices the same name if they're one person."
         if replacingSeparatedTracks {
             alert.informativeText += " Reanalysing a source replaces its current speaker names."
         }
@@ -81,7 +82,7 @@ final class SpeakerCountPicker: NSStackView {
         pickers.reduce(into: [:]) { result, entry in
             let tag = entry.value.selectedTag()
             guard tag != Self.unchangedTag else { return }
-            result[entry.key] = tag == 0 ? .automatic : .exact(tag)
+            result[entry.key] = tag == 0 ? .automatic : .estimate(tag)
         }
     }
 }

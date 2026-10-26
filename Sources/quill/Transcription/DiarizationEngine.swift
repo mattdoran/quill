@@ -2,13 +2,23 @@ import FluidAudio
 import Foundation
 
 enum SpeakerCountSelection: Sendable, Equatable {
-    case exact(Int)
+    case estimate(Int)
     case automatic
 
     var description: String {
         switch self {
-        case .exact(let count): "exactly \(count)"
+        case .estimate(let count): "about \(count)"
         case .automatic: "automatic"
+        }
+    }
+
+    /// The cluster count requested from VBx. One above the estimate, because
+    /// the model can hear one person as two voices, and an exact count then
+    /// merges two different people instead; same-voice splits fold back.
+    var clusterCount: Int? {
+        switch self {
+        case .estimate(let count): count + 1
+        case .automatic: nil
         }
     }
 }
@@ -73,13 +83,9 @@ actor DiarizationEngine {
         progress: (@Sendable (Int, Int) -> Void)? = nil
     ) async throws -> Analysis {
         guard let models else { throw EngineError.notPrepared }
-        let config: OfflineDiarizerConfig
-        switch speakerCount {
-        case .exact(let count):
-            config = OfflineDiarizerConfig.default.withSpeakers(exactly: count)
-        case .automatic:
-            config = .default
-        }
+        let config = speakerCount.clusterCount.map {
+            OfflineDiarizerConfig.default.withSpeakers(exactly: $0)
+        } ?? .default
         let diarizer = OfflineDiarizerManager(config: config)
         diarizer.initialize(models: models)
         let result = try await diarizer.process(audio, progressCallback: progress)

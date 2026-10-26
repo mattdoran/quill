@@ -169,12 +169,17 @@ struct PreviewVoices: ParsableCommand {
             try render("identify-voices")
             try render("identify-voices-minimum", size: NSSize(width: 760, height: 478))
 
+            var onePerson = transcript
+            try onePerson.applyVoiceNames(["system:1": "Will", "system:2": "Will", "system:3": "Jason"])
+            try store.write(onePerson)
+            try render("one-person-two-voices", size: NSSize(width: 840, height: 1180))
+
             for (name, appearance) in [
                 ("light", NSAppearance.Name.aqua), ("dark", .darkAqua),
             ] {
                 let (alert, _) = SpeakerCountPicker.makeAlert(
                     tracks: [.microphone, .system],
-                    selections: [.microphone: .exact(2), .system: .exact(4)],
+                    selections: [.microphone: .estimate(2), .system: .estimate(4)],
                     replacingSeparatedTracks: true
                 )
                 if let icon = Bundle.main.url(forResource: "AppIcon", withExtension: "icns") {

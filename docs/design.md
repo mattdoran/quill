@@ -351,15 +351,22 @@ numbers already used by preserved voices. All requested tracks must succeed
 before the current document is replaced. A failed analysis therefore leaves the
 canonical transcript unchanged.
 
-Long-form separation uses FluidAudio's offline VBx pipeline. The user supplies
-the exact number of speakers on each selected track, or explicitly chooses less
-reliable automatic detection per track. Segmentation and embedding extraction run over
-10-second chunks and expose completed/total chunk progress. Clustering remains
-an indeterminate final stage. Voices whose centroids are at least 0.80 cosine
-similar are then folded into the one with more speech, because an exact count
-above the number of distinguishable voices is met by splitting the dominant
-voice. The diarization model output is then mapped onto the existing ASR
-segments by greatest time overlap.
+Long-form separation uses FluidAudio's offline VBx pipeline. The user estimates
+the number of people on each selected track, or explicitly chooses less
+reliable automatic detection per track. `SpeakerCountSelection.clusterCount`
+asks VBx for one cluster more than the estimate. Segmentation and embedding
+extraction run over 10-second chunks and expose completed/total chunk progress.
+Clustering remains an indeterminate final stage. Voices whose centroids are at
+least 0.80 cosine similar are then folded into the one with more speech,
+because a count above the number of distinguishable voices is met by splitting
+the dominant voice. The diarization model output is then mapped onto the
+existing ASR segments by greatest time overlap.
+
+`TranscriptDocument.people` groups voice IDs by person: voices on one track
+whose names match, ignoring case and spacing. Review, the repeat action's
+proposed count and voice memory all use it, so no grouping is persisted beyond
+the names themselves. Saving gives every voice of a person the first voice's
+spelling.
 
 ### Remembered voices
 
@@ -377,6 +384,9 @@ require compatible model and vector dimensions, a cosine threshold and a margin
 over the runner-up. These are conservative heuristics, not calibrated identity
 confidence. Review offers a suggestion for explicit acceptance; it never writes
 an inferred name by itself. Forgetting memory leaves transcript names intact.
+Remembering a person with several voices adds each voice as a contribution to
+one profile. `Not the Same Person` removes the separated voices' contributions,
+and a profile left with none is deleted.
 
 ## 7. Session artifacts and authority
 

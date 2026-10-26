@@ -35,6 +35,29 @@ import Testing
         #expect(transcript.segments[0].speaker == "them 1")
     }
 
+    @Test func voicesNamedAlikeOnOneTrackAreOnePerson() {
+        func voice(_ source: String, _ label: String, _ name: String?) -> TranscriptDocument.Voice {
+            .init(source: source, audio_file: "", machine_label: label, name: name, samples: [])
+        }
+        let transcript = TranscriptDocument(
+            schema_version: 1, engine: "parakeet", model: "test", diarizer: "test",
+            created_at: "2026-10-26T00:00:00Z",
+            voices: [
+                "mic:1": voice("mic", "Voice 1", "Will"),
+                "system:2": voice("system", "Voice 2", "Will"),
+                "system:3": voice("system", "Voice 3", " will "),
+                "system:4": voice("system", "Voice 4", "Jason"),
+                "system:5": voice("system", "Voice 5", nil),
+                "system:6": voice("system", "Voice 6", nil),
+            ],
+            segments: []
+        )
+
+        #expect(transcript.people == [
+            ["mic:1"], ["system:2", "system:3"], ["system:4"], ["system:5"], ["system:6"],
+        ])
+    }
+
     @Test func separatedSourceContextDoesNotEnterMarkdown() {
         let voice = TranscriptDocument.Voice(
             source: "mic",

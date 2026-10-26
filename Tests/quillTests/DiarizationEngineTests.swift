@@ -2,6 +2,12 @@ import Testing
 @testable import quill
 
 @Suite struct DiarizationEngineTests {
+    @Test func anEstimateAsksForOneMoreVoice() {
+        #expect(SpeakerCountSelection.estimate(2).clusterCount == 3)
+        #expect(SpeakerCountSelection.automatic.clusterCount == nil)
+        #expect(SpeakerCountSelection.estimate(2).description == "about 2")
+    }
+
     @Test func voicesMatchingAnotherFoldIntoTheVoiceWithMoreSpeech() {
         let analysis = DiarizationEngine.Analysis(
             spans: [

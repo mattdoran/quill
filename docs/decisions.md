@@ -2,6 +2,48 @@
 
 Dated product and architecture decisions. Newest first.
 
+## 2026-10-26: Treat the speaker count as an estimate
+
+**Decision:** The count sheet asks `About how many people spoke?` and says Quill
+may find an extra voice. Quill asks VBx for one cluster more than the estimate
+and keeps the 0.80 same-voice fold. This replaces the exact count of 2026-08-27.
+
+**Why:** In a 26 October call with two remote people, the model heard Will's
+short replies as a different voice: his two clusters scored 0.20 against 0.27
+to Jason. VBx found two clusters by itself, so `exactly 2` kept its result and
+mixed both people in both voices (83.5% duration agreement with the names).
+Requesting three found Jason cleanly and split Will. A merge can't be repaired
+by naming, while a split can. Across 18 named meeting tracks, the exact count
+scored 98.2% one voice per person and 98.4% after naming splits alike. One
+extra cluster scored 98.0% and 99.3%, and fixed this call, an eight-person call
+(91.4% to 100%) and a four-person call (97.0% to 100%). Six ways of forcing the
+result down to the estimate scored 76% to 91% overall, and automatic detection
+66.4%. The names came from earlier runs, which biases the comparison in both
+directions.
+
+**Consequence:** Four of the 18 meetings show one voice more than there were
+people. In three it is a small leftover of 0.2 to 1.4 minutes mixing two
+people. Five meetings lose 1.4 to 4.0 points even after naming. The repeat
+action proposes the number of people named, not the number of voices.
+
+## 2026-10-26: Voices with the same name are one person
+
+**Decision:** Voices on one track given the same name, ignoring case and
+spacing, are one person in review: one card, samples alternating between them,
+one remembered profile. `Not the Same Person` separates them again, leaving the
+name on the voice with the most speech. This revises the 2026-08-19 decision
+that review never merges clusters; it still never reassigns sentences.
+
+**Why:** Splits are the expected cost of treating the count as an estimate, and
+naming two voices alike was already the workaround: Karl twice, Matt and Will
+were each named on two voices. That left two cards and two remembered profiles
+for one person. Different people in one meeting are told apart by surname, so
+the same name never means two people.
+
+**Consequence:** Grouping is derived from names, with no new transcript fields,
+so it needs no migration. The same name on Local and Remote stays as two cards,
+keeping microphone and call audio out of one profile.
+
 ## 2026-10-13: Merge voices that are the same person after separation
 
 **Decision:** After VBx separation, voices whose centroids are at least 0.80

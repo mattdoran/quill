@@ -26,7 +26,7 @@ struct Diarize: ParsableCommand {
     @Option(name: .long, help: "Speaker label prefix (default: \"them\").")
     var speaker: String = "them"
 
-    @Option(name: .long, help: "Exact number of speakers (automatic when omitted).")
+    @Option(name: .long, help: "Estimated number of speakers (automatic when omitted).")
     var numSpeakers: Int?
 
     /// The model loading underneath is async, but the daemon depends on
@@ -90,7 +90,7 @@ struct Diarize: ParsableCommand {
         if let numSpeakers, numSpeakers < 1 {
             throw ValidationError("--num-speakers must be at least 1")
         }
-        let selection = numSpeakers.map(SpeakerCountSelection.exact) ?? .automatic
+        let selection = numSpeakers.map(SpeakerCountSelection.estimate) ?? .automatic
         let analysis = try await engine.analyse(
             url,
             speakerCount: selection,

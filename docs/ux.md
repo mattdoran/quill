@@ -512,8 +512,8 @@ always captures both tracks and produces a baseline transcript with coarse
 transcript exists. The transcript is the primary content. Its Speakers sidebar
 lets the user sample and name `Me` and `Them` immediately. `Separate Voices…`
 opens one sheet with independent Local and Remote controls when their respective
-source audio is available. Each control offers `Leave unchanged`, an exact count
-from 1 through 20, or less-reliable automatic detection. Both initially use
+source audio is available. Each control offers `Leave unchanged`, an estimated
+count from 1 through 20, or less-reliable automatic detection. Both initially use
 `Leave unchanged`, and separation cannot start until at least one source has a
 count or automatic detection selected. After separation, the action becomes
 `Separate Voices Again…` and restores the previous selections; either source
@@ -528,10 +528,14 @@ explanation. The existing timed words remain authoritative:
 Quill runs diarisation against retained source audio and reassigns speaker
 metadata without rerunning speech recognition.
 
-Before analysis, Quill asks how many distinct people spoke on that track. The
+Before analysis, Quill asks `About how many people spoke?` on that track. The
 Remote question excludes the user; the Local question includes everyone near
-the Mac. Counts from 1 through 20 select exact-count VBx clustering. `Detect
-automatically (less reliable)` is an explicit fallback rather than the default.
+the Mac. The count is an estimate: the sheet says Quill may find an extra voice
+and that two voices given the same name are one person. Quill looks for one
+voice more than the estimate and folds back any voice that matches another, so
+a person the model hears as two voices appears as two cards rather than being
+merged with someone else. `Detect automatically (less reliable)` is an explicit
+fallback rather than the default.
 
 The operation is serialised with transcript work. It shows model preparation,
 real completed-chunk progress while the selected source is analysed, then an
@@ -548,7 +552,8 @@ their saved names, and removes separated voice names. Sessions processed by an
 older version have no snapshot and cannot offer exact undo without rerunning
 speech recognition. Each source's repeat action reuses its preserved baseline
 with a new speaker count while retaining the current separated result until its
-replacement succeeds. Repeating both sources can use unequal counts.
+replacement succeeds. Repeating both sources can use unequal counts. The repeat
+action proposes the number of people named last time, not the number of voices.
 
 ### Finished session audio
 
@@ -620,7 +625,17 @@ Older separated transcripts acquire embeddings by running separation again.
 
 Assigning `Alice` changes the human label mapped to the stable machine ID and
 updates every segment in that cluster. It does not rewrite diarization output.
-Per-sentence reassignment and cluster merging are outside the first scope.
+Per-sentence reassignment is outside the first scope.
+
+Voices on one track given the same name, ignoring case and spacing, are one
+person. Different people are told apart by surname, never by the same name.
+Saving shows them as one card headed `Voices 3 and 4`, with one name field,
+samples alternating between the voices, and one `Remember Voice` that keeps a
+single profile. `Not the Same Person` shows them separately again: the voice
+with the most speech keeps the name and the others become unnamed. The same
+name on Local and Remote stays as two cards, so voice memory never mixes
+microphone and call audio. Grouping comes from the saved names, so the
+transcript keeps each machine voice ID.
 Markdown remains the editable and export artifact. `Open Transcript File` and
 `Show in Finder` are explicit actions in the review window. `Copy Markdown`
 (⇧⌘C) saves pending speaker-name edits and copies the complete canonical
@@ -660,11 +675,13 @@ and a two-local, four-remote speaker fixture.
 
 ![Transcript review with a remembered-name suggestion and Copy Markdown](images/voice-review.png)
 
+![Two remote voices named Will shown as one person](images/one-person-two-voices.png)
+
 Regenerate them with `preview-voices --out <directory>` using the executable in a
 debug app bundle. Build with `./build.sh debug`, bundle with `./bundle.sh debug`,
 and keep `QUILL_HOME` set to an isolated directory for builds and previews.
-The images above are `light-hybrid-speaker-counts.png` and
-`dark-identify-voices.png` from that command.
+The images above are `light-hybrid-speaker-counts.png`,
+`dark-identify-voices.png` and `light-one-person-two-voices.png` from that command.
 
 ## 8. Deliberately not doing
 

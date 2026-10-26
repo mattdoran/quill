@@ -257,7 +257,7 @@ import Testing
         do {
             try await TranscriptionCoordinator().separateSpeakers(
                 in: session,
-                selections: [.microphone: .exact(2), .system: .exact(4)]
+                selections: [.microphone: .estimate(2), .system: .estimate(4)]
             )
             Issue.record("Expected hybrid separation to reject a missing selected track")
         } catch {}
@@ -285,7 +285,7 @@ import Testing
         let coordinator = TranscriptionCoordinator()
         try await coordinator.separateSpeakers(
             in: session,
-            selections: [.microphone: .exact(2), .system: .exact(4)]
+            selections: [.microphone: .estimate(2), .system: .estimate(4)]
         )
 
         let after = try store.read()

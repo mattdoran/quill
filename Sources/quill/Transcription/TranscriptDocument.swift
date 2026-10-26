@@ -53,6 +53,28 @@ struct TranscriptDocument: Codable, Sendable {
         return voices.keys.sorted(by: Self.voiceOrder)
     }
 
+    /// Voice IDs grouped by person, in voice order. Voices on one track with
+    /// the same name, ignoring case and spacing, are one person.
+    var people: [[String]] {
+        var groups: [[String]] = []
+        var groupIndex: [String: Int] = [:]
+        for id in voiceIDs {
+            guard let voice = voices[id], let name = voice.name?.nilIfBlank else {
+                groups.append([id])
+                continue
+            }
+            let key = voice.source + "\n" + name.lowercased()
+                .split(whereSeparator: \.isWhitespace).joined(separator: " ")
+            if let index = groupIndex[key] {
+                groups[index].append(id)
+            } else {
+                groupIndex[key] = groups.count
+                groups.append([id])
+            }
+        }
+        return groups
+    }
+
     var unidentifiedVoiceIDs: [String] {
         guard canEditVoices else { return [] }
         return voices
