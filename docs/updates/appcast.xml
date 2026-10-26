@@ -39,12 +39,8 @@
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
             <description sparkle:format="markdown"><![CDATA[## Quill 0.7.0
 
-**Works with macOS Golden Gate and Bartender**
-- Quill's menu bar icon no longer disappears when Bartender is running.
-- Keep Quill in /Applications: Golden Gate hides menu bar icons from apps run anywhere else.
-
-**Transcript review**
-- The review window keeps your scroll position and selection when it refreshes.
+- Quill's menu bar icon now stays visible with Bartender on macOS 27, as long as Quill is in your Applications folder. If you installed from the disk image, it already is.
+- The Transcript window keeps your scroll position and any selected text when it refreshes, for example after **Save Names**.
 
 [Full changelog](https://github.com/mattdoran/quill/compare/v0.6.0...v0.7.0)
 
@@ -59,13 +55,19 @@
             <sparkle:shortVersionString>0.6.0</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[## What's Changed
-* Support hybrid speaker separation, remembered voices, and Markdown copy by @eugeneware in https://github.com/mattdoran/quill/pull/1
+            <description sparkle:format="markdown"><![CDATA[## Quill 0.6.0
 
-## New Contributors
-* @eugeneware made their first contribution in https://github.com/mattdoran/quill/pull/1
+**Remember Voice**
+- Click **Remember Voice** to save a speaker's name and voice on this Mac.
+- In later meetings, if an unnamed voice sounds like someone you saved, such as Alice, click **Use Alice** to fill in the name.
+- **Forget Remembered Voices…** removes them all. Names already in transcripts stay.
 
-**Full Changelog**: https://github.com/mattdoran/quill/compare/v0.5.0...v0.6.0
+**Other changes**
+- **Separate Voices…** now separates Local and Remote voices together. Under "How many people spoke?", change either or both.
+- **Copy Markdown** (Shift-Command-C) copies the whole transcript with speaker names and times.
+
+[Full changelog](https://github.com/mattdoran/quill/compare/v0.5.0...v0.6.0)
+
 ]]></description>
             <enclosure url="https://github.com/mattdoran/quill/releases/download/v0.6.0/Quill-0.6.0.zip" length="4904007" type="application/octet-stream" sparkle:edSignature="UkzBl/iJRhar5QqcZdOzOjgtsDGF87QK4BSQ7g09RkNvWLr5Xpg7Lnwgvth12cZ1PP64YsDCFIoFiWjtonYDBg=="/>
         </item>
@@ -77,7 +79,19 @@
             <sparkle:shortVersionString>0.5.0</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[**Full Changelog**: https://github.com/mattdoran/quill/compare/v0.4.0...v0.5.0
+            <description sparkle:format="markdown"><![CDATA[## Quill 0.5.0
+
+**Meeting companion**
+- Recordings started from "Meeting detected" now stop 20 seconds after the meeting ends, unless you click **Keep Recording**.
+- If the companion isn't showing, you'll get a "Meeting ended?" notification.
+- Remembers where you drag it, even after restarting Quill.
+
+**Other changes**
+- While a Quill window is open, Quill shows in the Dock and Command-Tab.
+- To bring it back, choose **Show Quill Window** from the menu bar icon.
+
+[Full changelog](https://github.com/mattdoran/quill/compare/v0.4.0...v0.5.0)
+
 ]]></description>
             <enclosure url="https://github.com/mattdoran/quill/releases/download/v0.5.0/Quill-0.5.0.zip" length="4875525" type="application/octet-stream" sparkle:edSignature="wnG0bR+BiqSLMKxHBrpHF1buwL7wYNvWRfmrpRQinCrbf0N9qI3Q9TM04aDGvnwA2i1txT7XWFgP7HHoqXhlCA=="/>
         </item>
