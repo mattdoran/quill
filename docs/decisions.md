@@ -30,10 +30,12 @@ change.
 **Decision:** The review window, `transcript.md` and Copy Markdown group
 sentence rows into speaker turns at render time; `transcript.json` keeps its
 rows. Consecutive Unassigned rows form one turn too. Short replies inside
-another person's turn show inline as `[Name: yeah]`, fillers are hidden, and a
-paragraph starts only at a sentence end after 1.5 s of silence or once it
-reaches 120 words. The window and the Markdown each show one time per turn. The Markdown opens with the meeting's date and time, then
-one line with the duration and the people.
+another person's turn show inline as `[Name: yeah]`, and so do another
+person's unfinished words of three or fewer; a reply nobody could attribute
+and fillers are hidden. A paragraph starts only at a sentence end after 1.5 s
+of silence or once it reaches 120 words. The window and the Markdown each
+show one time per turn. The Markdown opens with the meeting's date and time,
+then one line with the duration and the people.
 
 **Why:** One row per sentence buried the conversation: 73% of rows are
 followed by the same speaker. The Markdown keeps its times because its main
@@ -41,7 +43,10 @@ readers are agents, such as Matt's PA, which can then say when something was
 said; people mostly read the window. Another person's speech ends a pause, or
 their "yeah" breaks the speaker's paragraph. Splitting Unassigned rows gave
 fragments such as "you." their own heading, 178 times in 6,770 turns, while
-the heading already says the speaker is unknown.
+the heading already says the speaker is unknown. An audit of 51 meetings
+found 168 `[Unassigned: yeah]` asides that said nothing, and 161 false starts
+such as "So" splitting one person's turn in two. Finished short sentences
+stay turns, so a reply is still never decided by word count alone.
 
 **Consequence:** This revises the 2026-08-20 consequence that the Markdown
 holds only its title and transcript. The thresholds were chosen in a

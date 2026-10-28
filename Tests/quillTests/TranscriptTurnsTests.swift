@@ -58,6 +58,51 @@ import Testing
         #expect(turns.map(\.speaker) == ["Alex", "Sam", "Alex"])
     }
 
+    @Test func aLeadingFillerOrACommaListOfRepliesIsStillAReply() {
+        let turns = turns([
+            row("Alex", 0, 1_000, "First point."),
+            row("Sam", 1_050, 1_300, "Uh, yeah."),
+            row("Alex", 1_400, 2_000, "Second point."),
+            row("Sam", 2_050, 2_400, "Okay, good."),
+            row("Alex", 2_500, 3_000, "Third point."),
+        ])
+        #expect(turns.count == 1)
+        #expect(turns[0].paragraphs == [[
+            .speech("First point."), .replies(speaker: "Sam", text: "Uh, yeah"),
+            .speech("Second point."), .replies(speaker: "Sam", text: "Okay, good"),
+            .speech("Third point."),
+        ]])
+    }
+
+    @Test func repliesNobodyCouldAttributeAreHidden() {
+        let turns = turns([
+            row("Alex", 0, 1_000, "First point."),
+            row(nil, 1_050, 1_300, "Yeah."),
+            row("Alex", 1_400, 2_000, "Second point."),
+        ])
+        #expect(turns.map(\.speaker) == ["Alex"])
+        #expect(turns[0].paragraphs == [[.speech("First point."), .speech("Second point.")]])
+    }
+
+    @Test func anUnfinishedFalseStartShowsInlineButAShortSentenceIsATurn() {
+        let falseStart = turns([
+            row("Alex", 0, 1_000, "First point."),
+            row("Sam", 1_050, 1_300, "So"),
+            row("Alex", 1_400, 2_000, "Second point."),
+        ])
+        #expect(falseStart.count == 1)
+        #expect(falseStart[0].paragraphs == [[
+            .speech("First point."), .replies(speaker: "Sam", text: "So"), .speech("Second point."),
+        ]])
+
+        let sentence = turns([
+            row("Alex", 0, 1_000, "First point."),
+            row("Sam", 1_050, 1_300, "Beautiful."),
+            row("Alex", 1_400, 2_000, "Second point."),
+        ])
+        #expect(sentence.map(\.speaker) == ["Alex", "Sam", "Alex"])
+    }
+
     @Test func fillersAreHiddenButNumbersAreSpeech() {
         let turns = turns([
             row("Alex", 0, 1_000, "Hello there."),

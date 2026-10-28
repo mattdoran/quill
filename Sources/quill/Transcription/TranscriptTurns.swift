@@ -40,10 +40,13 @@ struct TranscriptTurns {
     /// turn never ends on a stub.
     static let paragraphTailWords = 40
     static let inlineUnassignedWords = 5
+    /// Another person's unfinished words ("So", "Yeah, but") up to this
+    /// length show inline as a false start, not as a turn of their own.
+    static let falseStartWords = 3
 
-    /// A row is a reply only when its whole text, ignoring case and
-    /// punctuation, is one of these: "Yeah." is a reply, "Yeah, that's fine."
-    /// is speech.
+    /// A row is a reply only when its whole text, ignoring case, punctuation
+    /// and a leading filler, is one of these, or every comma-separated piece
+    /// is: "Okay, good." is a reply, "Yeah, that's fine." is speech.
     static let replies: Set<String> = [
         "yeah", "yep", "yes", "yup", "mm", "mmm", "mm-hmm", "mhm", "hmm", "uh-huh",
         "right", "okay", "ok", "sure", "cool", "nice", "great", "true", "exactly",
@@ -117,6 +120,11 @@ struct TranscriptTurns {
                     let next = nextSpeech(after: index),
                     segments[next].speaker == turns[current].speaker
                 {
+                    if kinds[index] == .reply, isUnassigned(index) {
+                        // A reply nobody could attribute says nothing; it still
+                        // ends the silence before the speaker resumes.
+                        continue
+                    }
                     if isFragment(index) {
                         turns[current].items.append(.guess(index))
                         turns[current].last = index
@@ -227,7 +235,7 @@ struct TranscriptTurns {
 
     private func nextSpeech(after index: Int) -> Int? {
         segments.indices.dropFirst(index + 1).first {
-            kinds[$0] == .speech && !isFragment($0)
+            kinds[$0] == .speech && !isFragment($0) && !isFalseStart($0)
         }
     }
 
@@ -238,22 +246,34 @@ struct TranscriptTurns {
             && Self.words(segments[index].text) <= Self.inlineUnassignedWords
     }
 
+    private func isFalseStart(_ index: Int) -> Bool {
+        kinds[index] == .speech && !isUnassigned(index)
+            && Self.words(segments[index].text) <= Self.falseStartWords
+            && !Self.endsSentence(segments[index].text)
+    }
+
     private func embeddable(_ index: Int) -> Bool {
-        kinds[index] == .reply || isFragment(index)
+        kinds[index] == .reply || isFragment(index) || isFalseStart(index)
     }
 
     private static let replyCharacters = Set("abcdefghijklmnopqrstuvwxyz'-")
 
     private static func kind(_ text: String) -> Kind {
-        let normalized = text.lowercased()
-            .split { !replyCharacters.contains($0) }
-            .joined(separator: " ")
+        let normalized = phrase(text)
         if normalized.isEmpty {
             // "2006." has no letters but is still speech.
             return text.contains(where: { $0.isLetter || $0.isNumber }) ? .speech : .filler
         }
         if fillers.contains(normalized) { return .filler }
-        return replies.contains(normalized) ? .reply : .speech
+        let pieces = text.split(separator: ",").map { phrase(String($0)) }.filter { !$0.isEmpty }
+        return replies.contains(normalized) || pieces.allSatisfy(replies.contains) ? .reply : .speech
+    }
+
+    /// Lowercase words without punctuation or a leading filler.
+    private static func phrase(_ text: String) -> String {
+        var words = text.lowercased().split { !replyCharacters.contains($0) }.map(String.init)
+        while words.count > 1, fillers.contains(words[0]) { words.removeFirst() }
+        return words.joined(separator: " ")
     }
 
     private static func trimmed(_ text: String) -> String {

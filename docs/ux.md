@@ -670,14 +670,18 @@ the human-facing Markdown.
 
 The review window and `transcript.md` show speaker turns, not one row per
 sentence. Consecutive rows by one person form a turn, headed by the name and
-one time, and so do consecutive Unassigned rows. A row whose whole text is a short reply on a fixed list ("Yeah.",
-"Mm-hmm.", "Fair enough.") said inside another person's turn shows inline as
-`[Sam: Yeah]` after the sentence it interrupts; a reply to a question ending
-in "?" keeps its own turn. Um, uh and er rows are hidden. An Unassigned row of
-five words or fewer inside one person's turn joins their words, with a dotted
-underline in the window. A paragraph starts at a sentence end after 1.5 s in
-which nobody speaks, or once it reaches 120 words with at least 40 words of
-the turn left, and never before a row that starts lowercase.
+one time, and so do consecutive Unassigned rows. Inside another person's turn,
+a short reply shows inline as `[Sam: Yeah]` after the sentence it interrupts.
+A reply is a row whose whole text is on a fixed list ("Yeah.", "Mm-hmm.",
+"Fair enough."), even after a leading um or uh, or a comma list of them
+("Okay, good."). Another person's unfinished words of three or fewer ("So",
+"Yeah, but") show inline the same way, while a finished short sentence
+("Beautiful.") keeps its own turn, as does a reply to a question ending in
+"?". A reply nobody could attribute is hidden, and so are um, uh and er rows.
+An Unassigned row of five words or fewer inside one person's turn joins their
+words, with a dotted underline in the window. A paragraph starts at a sentence
+end after 1.5 s in which nobody speaks, or once it reaches 120 words with at
+least 40 words of the turn left, and never before a row that starts lowercase.
 
 Clicking a turn's time plays `Meeting Audio.m4a` from that moment; the time is
 highlighted while it plays and a second click stops it. Like samples, it is
