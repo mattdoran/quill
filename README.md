@@ -63,8 +63,8 @@ General → Login Items. Startup is tied to where the app lives, so move it befo
 the first launch rather than afterwards.
 
 **Requires:** macOS 15+ (Core Audio process taps for system audio — no
-virtual device, no kernel extension). Apple Silicon recommended for
-transcription speed.
+virtual device, no kernel extension) on an Apple silicon Mac. The app is built
+for Apple silicon only and does not run on Intel Macs.
 
 ### Updates
 
