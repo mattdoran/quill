@@ -74,10 +74,9 @@ final class MeetingsWindowController: NSWindowController, NSTableViewDataSource,
         guard let id = tableColumn?.identifier, let column = Column(rawValue: id.rawValue) else {
             return nil
         }
-        let field = tableView.makeView(withIdentifier: id, owner: self) as? NSTextField
-            ?? NSTextField(labelWithString: "")
-        field.identifier = id
-        field.lineBreakMode = .byTruncatingTail
+        let cell = tableView.makeView(withIdentifier: id, owner: self) as? NSTableCellView
+            ?? Self.cell(id)
+        guard let field = cell.textField else { return cell }
         let meeting = meetings[row]
         switch column {
         case .meeting: field.stringValue = meeting.title
@@ -86,7 +85,24 @@ final class MeetingsWindowController: NSWindowController, NSTableViewDataSource,
         case .status: field.stringValue = Self.status(meeting.state)
         }
         field.textColor = column == .status ? .secondaryLabelColor : .labelColor
-        return field
+        return cell
+    }
+
+    /// A bare label sits at the top of a taller row; a cell view centres it.
+    private static func cell(_ id: NSUserInterfaceItemIdentifier) -> NSTableCellView {
+        let cell = NSTableCellView()
+        cell.identifier = id
+        let field = NSTextField(labelWithString: "")
+        field.lineBreakMode = .byTruncatingTail
+        field.translatesAutoresizingMaskIntoConstraints = false
+        cell.addSubview(field)
+        cell.textField = field
+        NSLayoutConstraint.activate([
+            field.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2),
+            field.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -2),
+            field.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+        ])
+        return cell
     }
 
     func tableViewSelectionDidChange(_ notification: Notification) {
