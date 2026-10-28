@@ -313,6 +313,59 @@ import Testing
         #expect(gaps.value == 1)
     }
 
+    @Test func aLateCallbackPadsOnlyTheGapItsAudioHad() throws {
+        let (written, gaps) = try writeTwoBuffers(gapSeconds: 0.3, callbackLateSeconds: 0.8)
+        #expect(written == 9_600)
+        #expect(gaps == 0)
+    }
+
+    @Test func aRealGapIsStillPadded() throws {
+        let (written, gaps) = try writeTwoBuffers(gapSeconds: 1.2, callbackLateSeconds: 0)
+        // Padding measures from the first buffer's end, so a gap is filled
+        // short by that buffer's length.
+        #expect(abs(Int(written) - 9_600 - 57_600 + 4_800) <= 48)
+        #expect(gaps == 1)
+    }
+
+    /// Two 0.1 s buffers at 48 kHz whose audio is `gapSeconds` apart, the
+    /// second delivered `callbackLateSeconds` after it was captured.
+    private func writeTwoBuffers(
+        gapSeconds: Double, callbackLateSeconds: Double
+    ) throws -> (frames: AVAudioFramePosition, gaps: Int) {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let format = try #require(AVAudioFormat(
+            commonFormat: .pcmFormatFloat32, sampleRate: 48_000, channels: 1, interleaved: false
+        ))
+        let url = directory.appendingPathComponent("mic.caf")
+        let writer = try TrackWriter(
+            url: url, format: format, track: .microphone,
+            log: SessionLog(dir: directory), watchSilence: false
+        )
+        let gaps = LockedCounter()
+        writer.onCaptureGap = { _ in _ = gaps.increment() }
+        let buffer = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 4_800))
+        buffer.frameLength = 4_800
+
+        let origin = Date()
+        let host = AVAudioTime.hostTime(forSeconds: 1_000)
+        func stamp(capturedAt start: Double, late: Double) -> CaptureClockStamp {
+            let delivered = start + 0.1 + late
+            return CaptureClockStamp(
+                hostTime: host + AVAudioTime.hostTime(forSeconds: start),
+                sampleTime: nil, sampleRate: 48_000, routeEpoch: 0,
+                observedAt: origin.addingTimeInterval(delivered),
+                observedHostTime: host + AVAudioTime.hostTime(forSeconds: delivered)
+            )
+        }
+        writer.write(buffer, clock: stamp(capturedAt: 0, late: 0))
+        writer.write(buffer, clock: stamp(capturedAt: 0.1 + gapSeconds, late: callbackLateSeconds))
+        writer.close(paddingTo: origin.addingTimeInterval(0.2 + gapSeconds))
+        return (try AVAudioFile(forReading: url).length, gaps.value)
+    }
+
     @Test @MainActor func asynchronousCloseSuspendsInsteadOfBlockingMainActor() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

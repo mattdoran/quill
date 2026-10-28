@@ -151,7 +151,8 @@ input side and AAC in a CAF container on disk. It:
   private serial queue;
 - explicitly averages multichannel input before conversion;
 - keeps an `AVAudioConverter` until the source format changes;
-- records the wall-clock arrival of the first and latest buffers;
+- records when the first and latest buffers were captured, on the wall clock:
+  the callback's arrival less how far it ran behind the buffer's host time;
 - pads observed capture gaps and an early-ending track with silence; and
 - offers only successfully written normalized buffers to accepted-frame consumers.
 
@@ -188,9 +189,13 @@ resolution is 48 frames. Accepted frames retain their track-local frame
 position and identify whether their samples were captured or inserted as
 silence.
 
-The active alignment model is based on buffer arrival `Date` values and
-accumulated frame counts. It does not yet use the audio devices' timestamps to
-alter captured audio. For diagnosis, both recorders retain the callback's
+The active alignment model is based on each buffer's capture time on the wall
+clock and accumulated frame counts. Capture time is the callback's arrival
+`Date` less how long after the buffer's Core Audio host time the callback ran,
+so a callback delayed after a device rebuild does not pad the track late.
+Padding measures from the first buffer's end, which fills each gap short by
+that buffer's length, about 85 ms on the microphone. Device timestamps are not
+used to correct drift between the two clocks. For diagnosis, both recorders retain the callback's
 device sample position and Core Audio host time once per minute and at the first
 buffer of every route epoch. `TrackWriter` adds the corresponding normalized
 48 kHz frame position after the source write succeeds.
@@ -556,8 +561,8 @@ describe current tradeoffs, not established defects or settled changes.
    with media processing or persistence. Accepted-frame delivery and persisted
    session state now have explicit owners, but the remaining lifecycle and
    publication boundaries are still broad.
-2. **Clock quality.** Alignment uses non-monotonic wall-clock buffer arrival and
-   one-sided silence correction. Quill now measures Core Audio host timestamps
+2. **Clock quality.** Alignment uses wall-clock capture times and one-sided
+   silence correction, which never trims an over-pad. Quill now measures Core Audio host timestamps
    and long-term rate error, but does not use those observations to correct
    overlap or drift between independent device clocks. All consumers share one
    rounded-millisecond offset, which does not improve the underlying clock

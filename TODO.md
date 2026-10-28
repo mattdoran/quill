@@ -23,27 +23,17 @@ Work that remains. Product and architecture decisions live in
       transcription and hidden when rendered, and `transcribe.log` records the
       echo delay for the raw and cleaned microphone. Existing transcripts do
       not have the flag yet.
-- [ ] **Next: pad capture gaps from the buffer's host time.** Echo
-      cancellation failed on 26 October because the microphone sat 0.76 s late
-      on the session timeline, not because of the room. After a microphone
-      rebuild 5.6 s in, the first callback arrived about 0.77 s late, and
-      `TrackWriter.padToWallClockLocked` pads from that callback's `Date`, so
-      it inserted 1.23 s of silence for a 0.46 s gap and never trims an
-      over-pad. Echo then trailed the call by 0.79 to 0.83 s, outside AEC3's
-      0 to 512 ms delay search (`bridge.cpp` passes a delay of 0). Clock
-      observations predict the audio lag to within 35 ms, the real acoustic
-      latency; 1 October, on the same quiet built-in microphone, cancelled
-      14 dB of echo. Replaying 26 October with the offset corrected raised
-      live echo reduction from 5.5 to 12.1 dB. 2026.08.26-0932 has the same
-      fault: a stall over-padded the microphone by 0.52 s for 26 minutes.
-      Fix: measure the deficit from `CaptureClockStamp.hostTime` against the
-      first buffer's host time, keeping `Date` only where host time is
-      missing; leave `SessionTimeline` offsets on the persisted path. Host
-      time stops during sleep (09.30 sessions jump 107 s and 6049 s), so fall
-      back to `Date` when wall time runs seconds ahead of host time. This
-      revises the 2026-08-25 decision to measure drift before correcting it:
-      the fault is gap repair, not drift. Evidence is in the 2026-10-28
-      session's `aec-investigation` scratch scripts, not kept.
+- [x] **Pad capture gaps from the buffer's capture time.** A callback running
+      late after a device rebuild no longer pads the track late; this put
+      26 October's microphone 0.76 s behind the call, beyond echo
+      cancellation's 0 to 512 ms search. See the 2026-10-28 decision.
+- [ ] **Anchor padding and start offsets at the first buffer's start.** Both
+      measure from the first buffer's arrival, which is its end, so every
+      session's microphone sits about 85 ms late (one 4,096-frame buffer)
+      against the system track's 10 ms, and every gap is filled short by that
+      length. Measured on 1 and 5 October and 26 October (+0.085 s placement
+      error). Changing it moves the persisted `start_offset_ms`, so check
+      live AEC, the meeting mix and recovery against it.
 - [ ] **Add a per-meeting "needs review" check.** After every recording: echo
       rate from the text (flag above 10%) and echo delay (flag outside 0 to
       0.3 s). After separation: per-row margin from FluidAudio's chunk

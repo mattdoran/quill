@@ -251,6 +251,7 @@ final class TrackWriter: @unchecked Sendable {
         at now: Date,
         clock: CaptureClockStamp?
     ) {
+        let now = clock?.capturedEnd(frames: buffer.frameLength) ?? now
         lock.lock()
         guard file != nil else { lock.unlock(); return }
 

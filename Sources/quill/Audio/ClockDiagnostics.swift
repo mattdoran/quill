@@ -8,19 +8,36 @@ struct CaptureClockStamp: Sendable {
     let sampleRate: Double
     let routeEpoch: Int
     let observedAt: Date
+    /// Host time taken with `observedAt`, so the callback's lateness against
+    /// the buffer's own `hostTime` is known.
+    let observedHostTime: UInt64?
 
     init(
         hostTime: UInt64?,
         sampleTime: Double?,
         sampleRate: Double,
         routeEpoch: Int,
-        observedAt: Date = Date()
+        observedAt: Date = Date(),
+        observedHostTime: UInt64? = AudioGetCurrentHostTime()
     ) {
         self.hostTime = hostTime
         self.sampleTime = sampleTime
         self.sampleRate = sampleRate
         self.routeEpoch = routeEpoch
         self.observedAt = observedAt
+        self.observedHostTime = observedHostTime
+    }
+
+    /// When the buffer's last sample was captured, on the wall clock. After a
+    /// device rebuild the first callback can run most of a second late; padding
+    /// from its arrival shifts the whole track that far, beyond what echo
+    /// cancellation searches.
+    func capturedEnd(frames: AVAudioFrameCount) -> Date {
+        guard let hostTime, let observedHostTime, observedHostTime >= hostTime, sampleRate > 0 else {
+            return observedAt
+        }
+        let sinceStart = AVAudioTime.seconds(forHostTime: observedHostTime - hostTime)
+        return observedAt.addingTimeInterval(Double(frames) / sampleRate - sinceStart)
     }
 
     init(time: AVAudioTime, routeEpoch: Int, observedAt: Date = Date()) {

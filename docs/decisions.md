@@ -2,6 +2,28 @@
 
 Dated product and architecture decisions. Newest first.
 
+## 2026-10-28: Pad capture gaps from each buffer's capture time
+
+**Decision:** `TrackWriter` measures a capture gap from when each buffer was
+captured: the callback's arrival `Date` less how far the callback ran behind
+the buffer's Core Audio host time, taken with that arrival. Without a host
+time it falls back to the arrival. Start offsets and the persisted timeline
+are unchanged.
+
+**Why:** On 26 October 2026 the first microphone callback after a route
+rebuild ran 0.77 s late, so 1.23 s of silence filled a 0.46 s gap and the
+microphone sat 0.76 s behind the call for the rest of the meeting, beyond
+AEC3's 0 to 512 ms delay search. The clock observations predicted the audio
+lag to within 35 ms, and replaying the meeting with the offset removed raised
+live echo reduction from 5.5 to 12.1 dB. 26 August had the same fault for
+26 minutes. Correcting with host time per buffer, rather than padding from
+host time alone, keeps wall-clock padding across sleep and at close.
+
+**Consequence:** This is the clock correction the 2026-08-25 decision asked to
+justify with observations: the fault was gap repair, not drift, and the
+10 ppm drift remains uncorrected. Padding still fills each gap short by the
+first buffer's length.
+
 ## 2026-10-28: Hide echo rows rather than delete them
 
 **Decision:** A local row that repeats what the call said moments before is
