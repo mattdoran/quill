@@ -89,7 +89,7 @@ struct VoiceProfileStore {
                 VoiceEmbedding.isUsable(embedding)
             else { continue }
 
-            let candidates = profiles
+            let sortedCandidates = profiles
                 .filter {
                     $0.embedding_model == model
                         && $0.embedding.count == embedding.count
@@ -106,6 +106,10 @@ struct VoiceProfileStore {
                     if $0.score != $1.score { return $0.score > $1.score }
                     return $0.profile.id < $1.profile.id
                 }
+            // Two profiles of one name suggest the same thing, so the runner-up
+            // that has to trail by the margin is the best other name.
+            var names = Set<String>()
+            let candidates = sortedCandidates.filter { names.insert(Self.nameKey($0.profile.name)).inserted }
 
             guard
                 let best = candidates.first,
@@ -196,18 +200,39 @@ struct VoiceProfileStore {
         try save([])
     }
 
-    /// A profile left without contributions is removed.
-    func forgetContribution(sessionID: String, voiceID: String) throws {
+    /// A profile left without contributions is removed. With a profile ID,
+    /// only that profile loses the contribution.
+    func forgetContribution(sessionID: String, voiceID: String, profileID: String? = nil) throws {
+        try forgetContributions(in: profileID) { $0.session_id == sessionID && $0.voice_id == voiceID }
+    }
+
+    /// Separating a track again renumbers its voices, so every contribution
+    /// keyed by that track's old voice IDs would name someone else.
+    func forgetContributions(sessionID: String, tracks: Set<SourceTrack>) throws {
+        let prefixes = tracks.map { "\($0.rawValue):" }
+        try forgetContributions { contribution in
+            contribution.session_id == sessionID
+                && prefixes.contains { contribution.voice_id.hasPrefix($0) }
+        }
+    }
+
+    private func forgetContributions(
+        in profileID: String? = nil,
+        where matches: (VoiceProfile.Contribution) -> Bool
+    ) throws {
         var profiles = try load()
         let now = Self.timestamp()
-        for index in profiles.indices {
+        var changed = false
+        for index in profiles.indices where profileID == nil || profiles[index].id == profileID {
             let count = profiles[index].contributions.count
-            profiles[index].contributions.removeAll { $0.session_id == sessionID && $0.voice_id == voiceID }
+            profiles[index].contributions.removeAll(where: matches)
             guard profiles[index].contributions.count != count else { continue }
+            changed = true
             profiles[index].embedding = Self.meanEmbedding(profiles[index].contributions.map(\.embedding))
             profiles[index].contribution_count = profiles[index].contributions.count
             profiles[index].updated_at = now
         }
+        guard changed else { return }
         profiles.removeAll { $0.contributions.isEmpty }
         try save(profiles)
     }
@@ -239,6 +264,10 @@ struct VoiceProfileStore {
                 $0.session_id == sessionID && $0.voice_id == voiceID
             }
         }
+    }
+
+    private static func nameKey(_ name: String) -> String {
+        name.lowercased().split(whereSeparator: \.isWhitespace).joined(separator: " ")
     }
 
     private func save(_ profiles: [VoiceProfile]) throws {

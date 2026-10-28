@@ -266,6 +266,66 @@ import Testing
         #expect(try store.load().isEmpty)
     }
 
+    @Test func separatingATrackAgainForgetsOnlyThatTracksContributions() throws {
+        let store = VoiceProfileStore(url: try temporaryURL())
+        var meeting = transcript(voice: voice(name: "Ann", embedding: [1, 0]))
+        var remote = voice(name: "Bea", embedding: [0, 1])
+        remote = .init(
+            source: "system", audio_file: "Source Audio/Remote.m4a", machine_label: "Voice 3",
+            name: "Bea", samples: remote.samples, embedding_model: remote.embedding_model,
+            embedding: remote.embedding
+        )
+        meeting.voices["system:3"] = remote
+        _ = try store.remember(document: meeting, sessionID: "meeting-1", voiceIDs: ["mic:1", "system:3"])
+        _ = try store.remember(
+            document: transcript(voice: voice(name: "Ann", embedding: [1, 0])),
+            sessionID: "meeting-2", voiceIDs: ["mic:1"]
+        )
+
+        try store.forgetContributions(sessionID: "meeting-1", tracks: [.system])
+        let profiles = try store.load()
+        #expect(profiles.map(\.name).sorted() == ["Ann", "Ann"])
+
+        try store.forgetContributions(sessionID: "meeting-1", tracks: [.microphone])
+        #expect(try store.load().flatMap(\.contributions).map(\.session_id) == ["meeting-2"])
+    }
+
+    @Test func forgettingFromOneProfileLeavesTheSameKeyInAnother() throws {
+        let store = VoiceProfileStore(url: try temporaryURL())
+        let charlie = try #require(try store.remember(
+            document: transcript(voice: voice(name: "Charlie", embedding: [1, 0])),
+            sessionID: "meeting-1", voiceIDs: ["mic:1"]
+        )["mic:1"])
+        _ = try store.remember(
+            document: transcript(voice: voice(name: "Lara", embedding: [0, 1])),
+            sessionID: "meeting-1", voiceIDs: ["mic:1"]
+        )
+        #expect(try store.load().count == 2)
+
+        try store.forgetContribution(sessionID: "meeting-1", voiceID: "mic:1", profileID: charlie.id)
+        #expect(try store.load().map(\.name) == ["Lara"])
+    }
+
+    @Test func twoProfilesWithOneNameStillLeadAnotherName() throws {
+        let store = VoiceProfileStore(url: try temporaryURL(), matching: .init(threshold: 0.8, margin: 0.1))
+        _ = try store.remember(
+            document: transcript(voice: voice(name: "Alice", embedding: [1, 0])),
+            sessionID: "meeting-1", voiceIDs: ["mic:1"]
+        )
+        _ = try store.remember(
+            document: transcript(voice: voice(name: " alice", embedding: [0.99, 0.01])),
+            sessionID: "meeting-2", voiceIDs: ["mic:1"]
+        )
+        _ = try store.remember(
+            document: transcript(voice: voice(name: "Bob", embedding: [0.6, 0.8])),
+            sessionID: "meeting-3", voiceIDs: ["mic:1"]
+        )
+        #expect(try store.load().count == 3)
+
+        let suggestion = try store.suggestions(for: transcript(voice: voice(name: nil, embedding: [1, 0])))
+        #expect(suggestion["mic:1"]?.name == "Alice")
+    }
+
     private func transcript(voice: TranscriptDocument.Voice) -> TranscriptDocument {
         TranscriptDocument(
             schema_version: TranscriptDocument.currentSchemaVersion,

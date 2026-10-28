@@ -464,6 +464,48 @@ import Testing
         #expect(received == [.microphone: .estimate(2), .system: .estimate(4)])
     }
 
+    @Test func separatingATrackAgainForgetsItsRememberedVoices() async throws {
+        AppKitTestHost.start()
+        let session = try makeHybridSession()
+        defer { try? FileManager.default.removeItem(at: session) }
+        let profiles = VoiceProfileStore(url: session.appendingPathComponent("voice-profiles.json"))
+        var remembered = try TranscriptStore(session: session).read()
+        for (id, name, embedding) in [("mic:1", "Ann", [Float(1), 0]), ("system:3", "Bea", [0, 1])] {
+            remembered.voices[id]?.name = name
+            remembered.voices[id]?.embedding_model = "test-model"
+            remembered.voices[id]?.embedding = embedding
+        }
+        let sessionID = (try? SessionMetadataStore.readManifest(session).started) ?? remembered.created_at
+        _ = try profiles.remember(document: remembered, sessionID: sessionID, voiceIDs: ["mic:1", "system:3"])
+
+        let controller = try VoiceReviewWindowController(
+            session: session, isRecording: { false },
+            separateSpeakers: { _, _ in },
+            chooseSpeakerCounts: { _ in [.system: .estimate(2)] },
+            profileStore: profiles
+        )
+        let content = try #require(controller.window?.contentView)
+        try #require(buttons(in: content).first { $0.title == "Separate Voices Again…" })
+            .performClick(nil)
+        var completed = false
+        for _ in 0..<100 {
+            if try profiles.load().count == 1 {
+                completed = true
+                break
+            }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        try #require(completed, "Separation should forget the remote track's remembered voice")
+        #expect(try profiles.load().first?.name == "Ann")
+        for _ in 0..<100 {
+            if let current = controller.window?.contentView,
+               buttons(in: current).contains(where: { $0.title == "Save Names" && $0.isEnabled }) {
+                break
+            }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+    }
+
     @Test func separationActionRemembersSourcesLeftUnchanged() async throws {
         AppKitTestHost.start()
         let session = try makeHybridSession()

@@ -813,6 +813,13 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
                 }
                 transcript = try TranscriptStore(session: session).read()
                 separationState = .idle
+                do {
+                    try profileStore.forgetContributions(
+                        sessionID: memorySessionID, tracks: Set(selections.keys)
+                    )
+                } catch {
+                    _ = presence.runModal(NSAlert(error: error))
+                }
                 refreshContent()
             } catch {
                 separationState = .failed(error.localizedDescription)
@@ -1103,8 +1110,11 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
         let separated = voiceIDs.filter { $0 != kept }
         do {
             var updated = transcript
-            for voiceID in separated where updated.voices[voiceID]?.remembered_profile_id != nil {
-                try profileStore.forgetContribution(sessionID: memorySessionID, voiceID: voiceID)
+            for voiceID in separated {
+                guard let profileID = updated.voices[voiceID]?.remembered_profile_id else { continue }
+                try profileStore.forgetContribution(
+                    sessionID: memorySessionID, voiceID: voiceID, profileID: profileID
+                )
                 updated.voices[voiceID]?.remembered_profile_id = nil
             }
             try updated.applyVoiceNames(Dictionary(uniqueKeysWithValues: separated.map { ($0, "") }))

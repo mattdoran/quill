@@ -399,12 +399,15 @@ of rendered Markdown.
 Profiles have independent IDs; identical names do not identify the same person.
 Confirmed meeting/voice contributions produce a normalized mean. Suggestions
 require compatible model and vector dimensions, a cosine threshold and a margin
-over the runner-up. These are conservative heuristics, not calibrated identity
+over the runner-up with a different name, since two profiles of one name
+suggest the same thing. These are conservative heuristics, not calibrated identity
 confidence. Review offers a suggestion for explicit acceptance; it never writes
 an inferred name by itself. Forgetting memory leaves transcript names intact.
 Remembering a person with several voices adds each voice as a contribution to
-one profile. `Not the Same Person` removes the separated voices' contributions,
-and a profile left with none is deleted.
+one profile. `Not the Same Person` removes the separated voices' contributions
+from their remembered profile, and a profile left with none is deleted.
+Contributions are keyed by voice ID, which a new separation renumbers, so
+separating a track again forgets that track's contributions for the meeting.
 
 ## 7. Session artifacts and authority
 

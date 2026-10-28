@@ -13,14 +13,12 @@ Work that remains. Product and architecture decisions live in
 
 ## Transcription
 
-- [ ] **Next: clear stale voice-memory keys on re-separation.** Contributions
-      are keyed by cluster number, which changes when a track is separated
-      again. In 2026.10.13-1231 one profile holds `system:3`, now another
-      person's voice, and an orphaned duplicate profile holds `system:4`, so
-      `Not the Same Person` there would remove the wrong voice. Clear a track's
-      contributions and `remembered_profile_id` when it is separated again, and
-      treat same-name profiles as one candidate in the 0.05 lead test: two
-      identical profiles can never lead each other.
+- [x] **Clear stale voice-memory keys on re-separation.** Separating a track
+      again forgets that track's contributions for the meeting, `Not the Same
+      Person` removes only from the voice's own profile, and two profiles of
+      one name no longer block each other's suggestion. The two stale
+      contributions from 2026.10.13-1231 were removed by hand on 2026-10-28,
+      backed up beside `voice-profiles.json`.
 - [ ] **Next: guard against echo, then find why echo cancellation failed on 26
       October.** On built-in speakers and microphone, 22% of local segments
       repeated remote speech (49.5% of local words), against 1% or less in every
