@@ -6,6 +6,31 @@
         <description>Signed updates for Quill.</description>
         <language>en</language>
         <item>
+            <title>0.9.0</title>
+            <pubDate>Wed, 28 Oct 2026 20:01:50 +1100</pubDate>
+            <link>https://github.com/mattdoran/quill</link>
+            <sparkle:version>148</sparkle:version>
+            <sparkle:shortVersionString>0.9.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description sparkle:format="markdown"><![CDATA[## Quill 0.9.0
+
+**Transcripts**
+- Each person's turn now sits under one name and time; short replies show within it as "[Matt: yeah]".
+- In the transcript window, click a time to play from there. Click again to stop.
+- When a call plays through your Mac's speakers, fewer of its words reappear as yours.
+- Transcript files now start with the meeting's date, time, length and people. Existing files are updated, except any you've edited.
+
+**Other changes**
+- "Meetings…" lists every meeting, replacing "Open Last Transcript", "Review Earlier Transcript…" and "Open Recordings Folder".
+- Let AI assistants on this Mac, such as Claude Code, read your meetings: in Settings, under "Other apps", click **Install**.
+
+[Full changelog](https://github.com/mattdoran/quill/compare/v0.8.0...v0.9.0)
+
+]]></description>
+            <enclosure url="https://github.com/mattdoran/quill/releases/download/v0.9.0/Quill-0.9.0.zip" length="5049679" type="application/octet-stream" sparkle:edSignature="74UurxI91xTTIhkOdHmP4LpIaVGir+rgQZYHSuyRvZmgvU9hWgForvVtRsG7mVGhwaZkgxg4OLSh5d0xBiHMCA=="/>
+        </item>
+        <item>
             <title>0.8.0</title>
             <pubDate>Mon, 26 Oct 2026 20:25:45 +1100</pubDate>
             <link>https://github.com/mattdoran/quill</link>
