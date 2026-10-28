@@ -100,7 +100,8 @@ companion and the `Transcript ready` notification; this item is the way back
 once those are dismissed.
 `Meetings…` is disabled when no session has a `transcript.md`. It opens a
 chooser listing every meeting, newest first and selected, with its date and
-time, length, people by speaking time and any unfinished state (`Needs names`,
+time, length, people by speaking time and any unfinished state (`Needs names`
+when someone who speaks has no name,
 `Transcribing`, `Finishing audio`, `Recording`, `No audio`). **Review**
 (Return, or a double-click) opens the review window and is disabled during
 recording for the same sample-playback reason. **Open Transcript** opens

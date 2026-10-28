@@ -53,8 +53,8 @@ struct ListMeetings: ParsableCommand {
         commandName: "list",
         abstract: "List meetings, newest first.",
         discussion: """
-        States: recording, finishing, transcribing, needs-names (a voice has no \
-        name yet), ready, empty.
+        States: recording, finishing, transcribing, needs-names (someone who \
+        speaks has no name yet), ready, empty.
         """
     )
 

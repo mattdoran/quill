@@ -462,7 +462,8 @@ speaker samples.
 reads a session's state from its files alone, so they work whether or not the
 app is running: a capture journal means recording, a manifest whose audio is
 not finalized means finishing, finalized audio without `transcript.json` means
-transcribing, and a transcript with an unnamed voice means `needs-names`.
+transcribing, and a transcript in which an unnamed voice speaks means
+`needs-names`.
 Their `--json` output is the contract; the folder layout stays internal.
 
 `quill skill install` links `~/.agents/skills/quill` to the skill inside

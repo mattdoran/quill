@@ -20,6 +20,14 @@ import Testing
             let unnamed = try session(root, "2026.10.28-1400")
             try manifest(unnamed, state: .finalized)
             try TranscriptStore(session: unnamed).write(document(name: nil))
+            let silentCall = try session(root, "2026.10.28-1500")
+            try manifest(silentCall, state: .finalized)
+            var unusedVoice = document(name: "Will")
+            unusedVoice.voices["system:2"] = .init(
+                source: "system", audio_file: "Source Audio/Remote.m4a", machine_label: "Them",
+                name: nil, samples: []
+            )
+            try TranscriptStore(session: silentCall).write(unusedVoice)
             let older = try session(root, "2026.08.10-0959")
             try Data("# 2026.08.10-0959\n".utf8).write(to: older.appendingPathComponent("transcript.md"))
             _ = try session(root, "not-a-meeting")
@@ -32,9 +40,10 @@ import Testing
                 "2026.10.28-1200": .empty,
                 "2026.10.28-1300": .ready,
                 "2026.10.28-1400": .needsNames,
+                "2026.10.28-1500": .ready,
                 "2026.08.10-0959": .ready,
             ])
-            #expect(Meeting.all(in: root).first?.id == "2026.10.28-1400")
+            #expect(Meeting.all(in: root).first?.id == "2026.10.28-1500")
         }
     }
 

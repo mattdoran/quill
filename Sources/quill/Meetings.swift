@@ -43,7 +43,10 @@ struct Meeting {
         if fm.fileExists(atPath: SessionFiles.captureJournal(folder).path) {
             state = .recording
         } else if let document {
-            state = document.unidentifiedVoiceIDs.isEmpty ? .ready : .needsNames
+            // A voice with no rows, such as an unused call track's "Them", has
+            // nothing to name.
+            let speaking = Set(document.segments.filter { $0.echo != true }.compactMap(\.voice_id))
+            state = document.unidentifiedVoiceIDs.contains(where: speaking.contains) ? .needsNames : .ready
         } else if let manifest {
             if manifest.audioState == .empty || !manifest.files.hasSourceAudio {
                 state = .empty
