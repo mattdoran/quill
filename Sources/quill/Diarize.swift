@@ -135,10 +135,25 @@ struct Diarize: ParsableCommand {
         let labels = DiarizationEngine.labels(
             for: segments, spans: spans, solo: speaker, shared: speaker
         )
-        for (segment, label) in zip(segments, labels) {
-            print("**[\(Self.clock(segment.start))] \(label):** \(segment.text)")
-            print("")
-        }
+        // The bare prefix marks a row no speaker span covered, which a
+        // transcript shows as Unassigned.
+        let separated = labels.contains { $0 != speaker }
+        let document = TranscriptDocument(
+            schema_version: TranscriptDocument.currentSchemaVersion,
+            engine: asr.name, model: asr.model, diarizer: nil, created_at: "",
+            voices: [:],
+            segments: zip(segments, labels).map { segment, label in
+                let unmatched = separated && label == speaker
+                return .init(
+                    speaker: unmatched ? TranscriptDocument.Segment.unassigned : label,
+                    voice_id: unmatched ? nil : label,
+                    start_ms: Int(segment.start * 1000),
+                    end_ms: Int(segment.end * 1000),
+                    text: segment.text
+                )
+            }
+        )
+        for line in document.renderedTurns(longForm: duration >= 3_600) { print(line) }
 
         // Distinct labels, not raw span count: this is what a transcript would
         // actually show after single-speaker collapse and unmatched fallback.

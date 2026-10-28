@@ -82,7 +82,7 @@ import Testing
         )
 
         let markdown = transcript.rendered(title: "Test")
-        #expect(markdown.contains("**[0:00] Voice 1:** Hello"))
+        #expect(markdown.contains("**Voice 1** (0:00): Hello"))
         #expect(!markdown.localizedCaseInsensitiveContains("in room"))
         #expect(!markdown.localizedCaseInsensitiveContains("remote"))
     }

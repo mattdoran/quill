@@ -2,6 +2,28 @@
 
 Dated product and architecture decisions. Newest first.
 
+## 2026-10-28: Render transcripts as speaker turns, with times in both views
+
+**Decision:** The review window, `transcript.md` and Copy Markdown group
+sentence rows into speaker turns at render time; `transcript.json` keeps its
+rows. Consecutive Unassigned rows form one turn too. Short replies inside
+another person's turn show inline as `[Name: yeah]`, fillers are hidden, and a
+paragraph starts only at a sentence end after 1.5 s of silence or once it
+reaches 120 words. The window and the Markdown each show one time per turn. The Markdown opens with the meeting's date and time, then
+one line with the duration and the people.
+
+**Why:** One row per sentence buried the conversation: 73% of rows are
+followed by the same speaker. The Markdown keeps its times because its main
+readers are agents, such as Matt's PA, which can then say when something was
+said; people mostly read the window. Another person's speech ends a pause, or
+their "yeah" breaks the speaker's paragraph. Splitting Unassigned rows gave
+fragments such as "you." their own heading, 178 times in 6,770 turns, while
+the heading already says the speaker is unknown.
+
+**Consequence:** This revises the 2026-08-20 consequence that the Markdown
+holds only its title and transcript. The thresholds were chosen in a
+playground over real meetings and may move once the format is in daily use.
+
 ## 2026-10-26: Treat the speaker count as an estimate
 
 **Decision:** The count sheet asks `About how many people spoke?` and says Quill

@@ -666,6 +666,39 @@ voice review without affecting Quill or the readable Markdown.
 Model and diarizer provenance stays in the internal JSON. It does not appear in
 the human-facing Markdown.
 
+### Transcript turns
+
+The review window and `transcript.md` show speaker turns, not one row per
+sentence. Consecutive rows by one person form a turn, headed by the name and
+one time, and so do consecutive Unassigned rows. A row whose whole text is a short reply on a fixed list ("Yeah.",
+"Mm-hmm.", "Fair enough.") said inside another person's turn shows inline as
+`[Sam: Yeah]` after the sentence it interrupts; a reply to a question ending
+in "?" keeps its own turn. Um, uh and er rows are hidden. An Unassigned row of
+five words or fewer inside one person's turn joins their words, with a dotted
+underline in the window. A paragraph starts at a sentence end after 1.5 s in
+which nobody speaks, or once it reaches 120 words with at least 40 words of
+the turn left, and never before a row that starts lowercase.
+
+Clicking a turn's time plays `Meeting Audio.m4a` from that moment; the time is
+highlighted while it plays and a second click stops it. Like samples, it is
+refused during a recording.
+
+The Markdown opens with the recording's date and time, then one line with its
+length and the people by speaking time. Each turn keeps its one time, because
+agents read the file more than people do; a meeting of an hour or more uses
+`h:mm:ss` throughout.
+
+```markdown
+# 26 Oct 2026 at 2:00 pm
+
+43 min · Matt, Will, Jason
+
+**Will** (1:08): Afternoon, Matt. How are you? [Matt: Good]
+```
+
+An older `transcript.md` takes this shape only while it is exactly what Quill
+wrote; an edited file is left as it is.
+
 ### Review screenshots
 
 These previews render the actual AppKit controls with synthetic transcript text

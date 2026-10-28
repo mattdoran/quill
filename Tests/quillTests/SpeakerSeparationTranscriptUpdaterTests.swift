@@ -44,8 +44,8 @@ import Testing
             "Voice 1", "Voice 3", "Voice 2", "Voice 4", "Voice 5", "Voice 6",
         ])
         let markdown = separated.rendered(title: "Hybrid")
-        #expect(markdown.contains("**[0:00] Voice 1:** local one"))
-        #expect(markdown.contains("**[0:05] Voice 6:** remote four"))
+        #expect(markdown.contains("**Voice 1** (0:00): local one"))
+        #expect(markdown.contains("**Voice 6** (0:05): remote four"))
     }
 
     @Test func sequentialSeparationPreservesEarlierTrackNames() throws {

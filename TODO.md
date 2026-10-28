@@ -13,6 +13,36 @@ Work that remains. Product and architecture decisions live in
 
 ## Transcription
 
+- [x] **Group transcript rows into speaker turns at render time.** One derived
+      turn model on `TranscriptDocument`, used by the review window,
+      `transcript.md` and Copy Markdown; `transcript.json` keeps its sentence
+      rows, which separation, repeat and undo depend on. 73% of rows are
+      followed by the same speaker, and grouping leaves 73% fewer blocks across
+      31 meetings. Short replies ("yeah", "mm-hmm") said inside another
+      person's turn show inline as `[Matt: yeah]`, in the window and the
+      Markdown. A short reply is a segment whose whole text, ignoring case and
+      punctuation, is on a fixed list of 64 phrases ("no" included), never a
+      word count; fillers (um, uh, er) are hidden on the same whole-segment
+      rule. The list is `TranscriptTurns.replies`. Unassigned
+      bits of 5 words or fewer inside one person's turn join that person's
+      words, marked in the window as a guess. A reply to a question stays its
+      own turn when the asker's row ends with "?". The Markdown's title becomes
+      the meeting's date and time (`SessionName.dated`), not the folder id,
+      followed by one line with the duration and the people by speaking time;
+      this revises the 2026-08-20 consequence that the Markdown holds only
+      title and transcript. The window and the Markdown each show one time per
+      turn. A new paragraph starts at a sentence end after 1.5 s of
+      silence, or once a paragraph reaches 120 words with at least 40 words of
+      the turn left. It never breaks before a row that starts lowercase, so
+      interjections can't split a sentence. The silence is anyone's: speech
+      by anyone, including a reply shown inline or hidden, ends it, so another
+      person's "yeah" can't break the speaker's paragraph. The playground
+      (https://uncle-emit-57.artefacts.page/, expires 2026-11-25) runs these
+      rules on real meetings. Build Play from Here with it: clicking a turn's
+      time plays `Meeting Audio.m4a` from that point, which survives
+      retention. Rewrite existing `transcript.md` files only where they still
+      exactly match the old renderer's output, so hand-edited files are left
+      alone.
 - [ ] **Add WhisperKit large-v3-turbo as a fallback and re-transcription
       option.** Parakeet remains the fast English default. Re-transcription is
       one reason source audio is retained by default.

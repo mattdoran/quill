@@ -368,6 +368,24 @@ proposed count and voice memory all use it, so no grouping is persisted beyond
 the names themselves. Saving gives every voice of a person the first voice's
 spelling.
 
+### Rendered turns
+
+`TranscriptTurns` derives speaker turns from the canonical sentence rows each
+time the review window, `transcript.md` or Copy Markdown renders them; nothing
+about turns is persisted, so separation, repeat and undo keep working row by
+row. Its silence test walks every row between two sentences, including hidden
+replies and fillers, so another person's speech always ends a pause.
+`TranscriptStore.markdown(for:)` titles the file with `SessionName.dated` and
+takes the length from `.quill/meta.json`, falling back to the last row's end.
+`quill diarize` prints its transcript through the same `renderedTurns`, with
+rows no speaker span covered as `Unassigned`.
+
+At launch, after audio recovery and before pending transcription resumes,
+`TranscriptStore.upgradeUneditedMarkdown` rewrites each `transcript.md` that
+still equals `legacyMarkdown`, the previous one-row-per-sentence output under
+the folder-name title. A file that differs in any byte was edited and is left
+alone.
+
 ### Remembered voices
 
 `DiarizationEngine.Analysis` carries FluidAudio's speaker-database centroids,

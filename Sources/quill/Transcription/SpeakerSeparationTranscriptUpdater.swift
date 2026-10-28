@@ -139,7 +139,7 @@ enum SpeakerSeparationTranscriptUpdater {
                     let speaker = assignments[position],
                     let ordinal = ordinals[speaker]
                 else {
-                    segments[index].speaker = "Unassigned"
+                    segments[index].speaker = TranscriptDocument.Segment.unassigned
                     segments[index].voice_id = nil
                     continue
                 }

@@ -13,11 +13,15 @@ struct TranscriptDocument: Codable, Sendable {
     static let currentSchemaVersion = 1
 
     struct Segment: Codable, Sendable {
+        static let unassigned = "Unassigned"
+
         var speaker: String
         var voice_id: String?
         let start_ms: Int
         let end_ms: Int
         let text: String
+
+        var isUnassigned: Bool { voice_id == nil && speaker == Self.unassigned }
     }
 
     struct Voice: Codable, Sendable {
@@ -106,13 +110,57 @@ struct TranscriptDocument: Codable, Sendable {
         }
     }
 
-    func rendered(title: String) -> String {
+    func rendered(title: String, durationMilliseconds: Int? = nil) -> String {
+        let duration = durationMilliseconds ?? segments.map(\.end_ms).max() ?? 0
+        let minutes = "\(max(1, Int((Double(duration) / 60_000).rounded()))) min"
+        let speakers = speakersBySpeakingTime.joined(separator: ", ")
+        return (["# \(title)", "", speakers.isEmpty ? minutes : "\(minutes) · \(speakers)", ""]
+            + renderedTurns(longForm: duration >= 3_600_000)).joined(separator: "\n")
+    }
+
+    func renderedTurns(longForm: Bool) -> [String] {
+        var lines: [String] = []
+        for turn in turns {
+            for (index, paragraph) in turn.paragraphs.enumerated() {
+                let text = paragraph.map { part in
+                    switch part {
+                    case .speech(let text), .guess(let text): text
+                    case .replies(let speaker, let text): "[\(speaker): \(text)]"
+                    }
+                }.joined(separator: " ")
+                lines.append(index == 0
+                    ? "**\(turn.speaker)** (\(Self.clock(turn.startMilliseconds, longForm: longForm))): \(text)"
+                    : text)
+                lines.append("")
+            }
+        }
+        return lines
+    }
+
+    /// Exactly what Quill wrote before speaker turns. A `transcript.md` that
+    /// still matches it was never edited, so it is safe to rewrite.
+    func legacyMarkdown(title: String) -> String {
         var lines = ["# \(title)", ""]
         for segment in segments {
             lines.append("**[\(Self.clock(segment.start_ms))] \(segment.speaker):** \(segment.text)")
             lines.append("")
         }
         return lines.joined(separator: "\n")
+    }
+
+    private var speakersBySpeakingTime: [String] {
+        var speech: [String: Int] = [:]
+        var order: [String] = []
+        for segment in segments where !segment.isUnassigned {
+            if speech[segment.speaker] == nil { order.append(segment.speaker) }
+            speech[segment.speaker, default: 0] += segment.end_ms - segment.start_ms
+        }
+        return order.enumerated()
+            .sorted {
+                (speech[$0.element, default: 0], -$0.offset)
+                    > (speech[$1.element, default: 0], -$1.offset)
+            }
+            .map(\.element)
     }
 
     private static func voiceOrder(_ lhs: String, _ rhs: String) -> Bool {
@@ -125,10 +173,10 @@ struct TranscriptDocument: Codable, Sendable {
         return lhs.localizedStandardCompare(rhs) == .orderedAscending
     }
 
-    private static func clock(_ ms: Int) -> String {
+    static func clock(_ ms: Int, longForm: Bool = false) -> String {
         let total = ms / 1000
         let h = total / 3600, m = (total % 3600) / 60, s = total % 60
-        return h > 0
+        return h > 0 || longForm
             ? String(format: "%d:%02d:%02d", h, m, s)
             : String(format: "%d:%02d", m, s)
     }
@@ -185,8 +233,7 @@ struct TranscriptStore {
         let oldMarkdown = try? Data(contentsOf: markdownURL)
         do {
             try encoder.encode(document).write(to: jsonURL, options: .atomic)
-            try Data(document.rendered(title: session.lastPathComponent).utf8)
-                .write(to: markdownURL, options: .atomic)
+            try Data(markdown(for: document).utf8).write(to: markdownURL, options: .atomic)
         } catch {
             if let oldJSON {
                 try? oldJSON.write(to: jsonURL, options: .atomic)
@@ -200,6 +247,37 @@ struct TranscriptStore {
             }
             throw error
         }
+    }
+
+    var recordedMilliseconds: Int? {
+        let seconds = (try? SessionMetadataStore.readManifest(session))?.durationSeconds
+        return seconds.flatMap { $0 > 0 ? $0 * 1000 : nil }
+    }
+
+    func markdown(for document: TranscriptDocument) -> String {
+        document.rendered(
+            title: SessionName.dated(session),
+            durationMilliseconds: recordedMilliseconds
+        )
+    }
+
+    static func upgradeUneditedMarkdown(in root: URL) {
+        guard let sessions = try? FileManager.default.contentsOfDirectory(
+            at: root,
+            includingPropertiesForKeys: nil
+        ) else { return }
+        for session in sessions { TranscriptStore(session: session).upgradeUneditedMarkdown() }
+    }
+
+    func upgradeUneditedMarkdown() {
+        guard
+            let markdown = try? String(contentsOf: markdownURL, encoding: .utf8),
+            markdown.hasPrefix("# \(session.lastPathComponent)\n"),
+            let document = try? read(),
+            document.schema_version == TranscriptDocument.currentSchemaVersion,
+            markdown == document.legacyMarkdown(title: session.lastPathComponent)
+        else { return }
+        try? Data(self.markdown(for: document).utf8).write(to: markdownURL, options: .atomic)
     }
 
     func preserveBeforeSpeakerSeparation(_ document: TranscriptDocument) throws {

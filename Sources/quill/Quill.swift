@@ -244,6 +244,9 @@ final class AppController {
                 Task { @MainActor [weak self] in self?.transcriptFinished(dir) }
             }
             await AudioFinalizer.shared.recoverPending(in: root)
+            await Task.detached(priority: .utility) {
+                TranscriptStore.upgradeUneditedMarkdown(in: root)
+            }.value
             await transcription.resumePending(root: root)
         }
 

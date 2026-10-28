@@ -23,7 +23,7 @@ private final class ReviewButton: NSButton {
 
 @MainActor
 final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
-    NSTextFieldDelegate
+    NSTextFieldDelegate, NSTextViewDelegate, AVAudioPlayerDelegate
 {
     private enum SeparationState { case idle, separating(String), failed(String) }
     private struct Row {
@@ -67,6 +67,7 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
     private var nextSampleIndex: [String: Int] = [:]
     private weak var activePlayButton: NSButton?
     private var activeVoiceID: String?
+    private var playingFrom: Int?
 
     var onClose: (() -> Void)?
 
@@ -296,6 +297,9 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
             width: 0,
             height: CGFloat.greatestFiniteMagnitude
         )
+        textView.delegate = self
+        // The default link look turns every turn's time blue and underlined.
+        textView.linkTextAttributes = [.cursor: NSCursor.pointingHand]
         textView.textStorage?.setAttributedString(transcriptText())
         textView.setAccessibilityLabel("Transcript text")
         transcriptTextView = textView
@@ -310,10 +314,12 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
         let result = NSMutableAttributedString()
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineSpacing = 3
-        paragraph.paragraphSpacing = 15
+        paragraph.paragraphSpacing = 8
+        let lastParagraph = NSMutableParagraphStyle()
+        lastParagraph.setParagraphStyle(paragraph)
+        lastParagraph.paragraphSpacing = 15
         let body: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 14), .foregroundColor: NSColor.labelColor,
-            .paragraphStyle: paragraph,
         ]
         let speaker: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
@@ -323,12 +329,29 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
             .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular),
             .foregroundColor: NSColor.secondaryLabelColor,
         ]
-        for segment in transcript.segments {
-            result.append(NSAttributedString(string: "\(Self.clock(segment.start_ms))  ", attributes: time))
-            result.append(NSAttributedString(string: segment.speaker, attributes: speaker))
+        let meetingAudio = meetingAudioURL
+        let recorded = TranscriptStore(session: session).recordedMilliseconds
+            ?? transcript.segments.map(\.end_ms).max() ?? 0
+        for turn in transcript.turns {
+            result.append(NSAttributedString(string: turn.speaker, attributes: speaker))
+            var clock = time
+            if meetingAudio != nil {
+                clock[.link] = Self.playLink(turn.startMilliseconds)
+                clock[.toolTip] = "Play the meeting from here"
+                if turn.startMilliseconds == playingFrom {
+                    clock[.backgroundColor] = Self.playingHighlight
+                }
+            }
+            result.append(NSAttributedString(string: "  ", attributes: time))
+            result.append(NSAttributedString(
+                string: TranscriptDocument.clock(
+                    turn.startMilliseconds, longForm: recorded >= 3_600_000
+                ),
+                attributes: clock
+            ))
             if
                 transcript.diarizer != nil,
-                let voiceID = segment.voice_id,
+                let voiceID = turn.voiceID,
                 let voice = transcript.voices[voiceID]
             {
                 result.append(NSAttributedString(
@@ -336,7 +359,29 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
                     attributes: time
                 ))
             }
-            result.append(NSAttributedString(string: "\n\(segment.text)\n", attributes: body))
+            result.append(NSAttributedString(string: "\n", attributes: time))
+            for (index, parts) in turn.paragraphs.enumerated() {
+                let style = index == turn.paragraphs.count - 1 ? lastParagraph : paragraph
+                let line = body.merging([.paragraphStyle: style]) { $1 }
+                for (position, part) in parts.enumerated() {
+                    if position > 0 { result.append(NSAttributedString(string: " ", attributes: line)) }
+                    switch part {
+                    case .speech(let text):
+                        result.append(NSAttributedString(string: text, attributes: line))
+                    case .guess(let text):
+                        result.append(NSAttributedString(string: text, attributes: line.merging([
+                            .underlineStyle: NSUnderlineStyle([.single, .patternDot]).rawValue,
+                            .underlineColor: NSColor.tertiaryLabelColor,
+                            .toolTip: "Unassigned: Quill joined this to \(turn.speaker)",
+                        ]) { $1 }))
+                    case .replies(let who, let text):
+                        result.append(NSAttributedString(string: "[\(who): \(text)]", attributes: line.merging([
+                            .foregroundColor: NSColor.secondaryLabelColor,
+                        ]) { $1 }))
+                    }
+                }
+                result.append(NSAttributedString(string: "\n", attributes: line))
+            }
         }
         if result.length == 0 {
             result.append(NSAttributedString(
@@ -840,14 +885,63 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
         }
     }
 
-    @objc private func playClicked(_ sender: NSButton) {
-        guard !isRecording() else {
-            let alert = NSAlert()
-            alert.messageText = "Finish the recording first"
-            alert.informativeText = "Playing a sample now would become part of the recording."
-            _ = presence.runModal(alert)
-            return
+    func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
+        guard
+            let url = link as? URL, url.scheme == Self.playScheme,
+            let start = Int(url.absoluteString.dropFirst(Self.playScheme.count + 1))
+        else { return false }
+        playMeeting(from: start)
+        return true
+    }
+
+    nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        let finished = ObjectIdentifier(player)
+        Task { @MainActor [weak self] in
+            guard let self, let current = self.player, ObjectIdentifier(current) == finished else { return }
+            self.stopPlayback()
         }
+    }
+
+    private func playMeeting(from start: Int) {
+        guard allowPlayback(what: "Playing the meeting") else { return }
+        if playingFrom == start, player?.isPlaying == true { stopPlayback(); return }
+        guard let audio = meetingAudioURL else { return }
+        do {
+            stopPlayback()
+            let player = try AVAudioPlayer(contentsOf: audio)
+            player.delegate = self
+            player.currentTime = TimeInterval(start) / 1000
+            player.prepareToPlay()
+            player.play()
+            self.player = player
+            playingFrom = start
+            if let storage = transcriptTextView?.textStorage {
+                storage.enumerateAttribute(
+                    .link, in: NSRange(location: 0, length: storage.length)
+                ) { value, range, stop in
+                    guard (value as? URL) == Self.playLink(start) else { return }
+                    storage.addAttribute(.backgroundColor, value: Self.playingHighlight, range: range)
+                    stop.pointee = true
+                }
+            }
+        } catch {
+            let alert = NSAlert(error: error)
+            alert.messageText = "Meeting audio could not be played"
+            _ = presence.runModal(alert)
+        }
+    }
+
+    private func allowPlayback(what: String) -> Bool {
+        guard isRecording() else { return true }
+        let alert = NSAlert()
+        alert.messageText = "Finish the recording first"
+        alert.informativeText = "\(what) now would become part of the recording."
+        _ = presence.runModal(alert)
+        return false
+    }
+
+    @objc private func playClicked(_ sender: NSButton) {
+        guard allowPlayback(what: "Playing a sample") else { return }
         guard let id = sender.identifier?.rawValue,
               let row = rows.first(where: { $0.voiceID == id }) else { return }
         let samples = samples(for: row.voiceIDs)
@@ -1045,7 +1139,7 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
 
     @objc private func copyMarkdownClicked(_ sender: NSButton) {
         if hasUnsavedNames, !saveNames(refresh: false) { return }
-        let markdown = transcript.rendered(title: session.lastPathComponent)
+        let markdown = TranscriptStore(session: session).markdown(for: transcript)
         pasteboard.clearContents()
         let item = NSPasteboardItem()
         item.setString(markdown, forType: .string)
@@ -1079,6 +1173,21 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
         NSWorkspace.shared.activateFileViewerSelecting([SessionFiles.transcriptMarkdown(session)])
     }
 
+    private var meetingAudioURL: URL? {
+        guard let path = (try? SessionMetadataStore.readManifest(session))?.files.meeting else {
+            return nil
+        }
+        let url = session.appendingPathComponent(path)
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+
+    private static let playScheme = "quill-play"
+    private static let playingHighlight = NSColor.controlAccentColor.withAlphaComponent(0.25)
+
+    private static func playLink(_ start: Int) -> URL {
+        URL(string: "\(playScheme):\(start)")!
+    }
+
     private func sourceURL(for voice: TranscriptDocument.Voice) -> URL? {
         let url = session.appendingPathComponent(voice.audio_file)
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
@@ -1089,6 +1198,10 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
         stopTimer = nil
         player?.stop()
         player = nil
+        if playingFrom != nil, let storage = transcriptTextView?.textStorage {
+            storage.removeAttribute(.backgroundColor, range: NSRange(location: 0, length: storage.length))
+        }
+        playingFrom = nil
         if let id = activeVoiceID, let button = activePlayButton,
            let voiceIDs = rows.first(where: { $0.voiceID == id })?.voiceIDs {
             let count = samples(for: voiceIDs).count
@@ -1152,11 +1265,5 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
 
     private static func initialPlayTitle(_ sampleCount: Int) -> String {
         sampleCount > 1 ? "Play Sample 1 of \(sampleCount)" : "Play Sample"
-    }
-
-    private static func clock(_ ms: Int) -> String {
-        let total = ms / 1000
-        let h = total / 3600, m = (total % 3600) / 60, s = total % 60
-        return h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%d:%02d", m, s)
     }
 }
