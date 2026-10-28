@@ -2,6 +2,29 @@
 
 Dated product and architecture decisions. Newest first.
 
+## 2026-10-28: Let assistants act on meetings through the command line
+
+**Decision:** Assistants use `quill` subcommands with `--json` output. Reading
+commands (`status`, `list`, `show`) read the files. Commands that change a
+meeting (`name`, `separate`, `import`, `record`) ask the running app over a
+local channel and launch Quill when it is not running. Developer tools move
+under `quill dev`. The order is reading commands, then `name`, then `import`.
+
+**Why:** Reading `~/Music/Quill` made the internal layout, `.quill/transcript.json`
+included, the contract for assistants such as Matt's PA, and let them read
+but never act. Any assistant with a shell can run a command, and an MCP server
+could wrap the same set later. The app owns the transcription queue,
+retention and review: a command writing `transcript.json` itself is
+overwritten when an open review window saves names, and an import would load
+a second copy of the speech models outside the queue. Recording control needs
+the app regardless. Reading commands need no channel, so they come first;
+`name` saves the most hand work, since the PA knows from the calendar who
+attended.
+
+**Consequence:** `quill diarize` becomes `quill dev diarize`. The `--json`
+output is what assistants may rely on, so the folder layout stays free to
+change.
+
 ## 2026-10-28: Render transcripts as speaker turns, with times in both views
 
 **Decision:** The review window, `transcript.md` and Copy Markdown group

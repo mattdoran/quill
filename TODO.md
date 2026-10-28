@@ -64,6 +64,26 @@ Work that remains. Product and architecture decisions live in
 - [ ] **Add a real global recording hotkey.** Menu key equivalents fire only
       while the menu is open and must not be presented as global controls.
 
+## Command line for assistants
+
+Settled 2026-10-28 in `docs/decisions.md`.
+
+- [ ] **Add reading commands.** `quill status` (what is recording,
+      transcribing or waiting for names), `quill list [--since 7d]` (id, date,
+      length, people and state per meeting) and `quill show <meeting> [--md]`
+      (turns, voices and files), each with `--json`. They read the files and
+      need no running app. Move `diarize`, `watch-calls`, `check-live-aec` and
+      the previews under `quill dev` in the same change, so `--help` lists only
+      meeting commands. Settle the meeting id and the JSON shape here: they are
+      the contract assistants rely on.
+- [ ] **Add a channel to the running app, then `quill name`.**
+      `quill name <meeting> "Voice 2=Will"` asks the app, launching it when
+      needed, so an open review window shows the names and voice memory
+      applies. A socket under `QUILL_HOME` is the candidate channel; `separate`,
+      `import` and `record` reuse it.
+- [ ] **Add `quill separate <meeting> [--local N] [--remote N]` and
+      `quill record start|stop`** over the same channel.
+
 ## End-to-end meeting workflow
 
 - [x] **Build the meeting companion as one stateful surface.** Prove detected,
@@ -84,6 +104,34 @@ Work that remains. Product and architecture decisions live in
 - [x] **Unify transcript completion and review.** Keep processing visible until
       dismissal or completion, then route both companion and native notification
       actions into one read-only transcript and speaker review window.
+- [ ] **Import recordings as meetings (deferred, raised 2026-10-28).** For
+      in-person meetings Matt often records in Voice Memos on his phone
+      instead of starting Quill, so those meetings get no transcript, names or
+      folder for the admin hub's harvest of `~/Music/Quill`. An import of a
+      memo or any other audio file should end as a normal session, as if Quill
+      had recorded it: a folder named from when the audio was recorded,
+      `transcript.md` in the usual format, and the same speaker naming and
+      voice memory. `quill import <audio>... [--at <time>]` does the same
+      ingest through the running app, so an agent can import a file without
+      the UI; it follows `quill name`. Voice Memos keeps
+      synced recordings in
+      `~/Library/Group Containers/group.com.apple.VoiceMemos.shared/Recordings`,
+      with titles and dates in `CloudRecordings.db`; treat it as read-only. A
+      memo is one mixed track, not separate mic and system tracks. Design
+      questions first, with a proposal before building:
+      - How it is triggered in the app: Quill noticing new memos and offering
+        them, a menu item, or drag and drop. Least fiddly wins. The CLI
+        command is wanted either way.
+      - Where an arbitrary file's recording time comes from when it has no
+        Voice Memos entry.
+      - How memos are chosen, and whether several from one visit become one
+        meeting (the 2026-10-28 E&S Trading visit was three: 10:55, 11:10 and
+        11:16).
+      - How a single mixed track maps onto the session layout and
+        separation, which assume Local and Remote sources.
+      That visit was done by hand with `quill diarize --num-speakers 2` on each
+      memo and a stitched Markdown file, in
+      `~/projects/claude-scratch/20261028-124939-screenshot-2026-10-28-12-49-14-2x/transcript.md`.
 
 ## Permissions
 
