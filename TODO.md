@@ -68,14 +68,12 @@ Work that remains. Product and architecture decisions live in
 
 Settled 2026-10-28 in `docs/decisions.md`.
 
-- [ ] **Add reading commands.** `quill status` (what is recording,
-      transcribing or waiting for names), `quill list [--since 7d]` (id, date,
-      length, people and state per meeting) and `quill show <meeting> [--md]`
-      (turns, voices and files), each with `--json`. They read the files and
-      need no running app. Move `diarize`, `watch-calls`, `check-live-aec` and
-      the previews under `quill dev` in the same change, so `--help` lists only
-      meeting commands. Settle the meeting id and the JSON shape here: they are
-      the contract assistants rely on.
+- [x] **Add reading commands and the assistant skill.** `quill status`,
+      `quill list [--since 7d]` and `quill show <meeting>`, each with
+      `--json`, read the files and need no running app. A meeting id is its
+      folder name, or `latest`. Developer tools moved under `quill dev`.
+      `quill skill install` links the skill bundled in Quill.app for
+      assistants.
 - [ ] **Add a channel to the running app, then `quill name`.**
       `quill name <meeting> "Voice 2=Will"` asks the app, launching it when
       needed, so an open review window shows the names and voice memory

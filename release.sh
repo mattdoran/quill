@@ -205,13 +205,13 @@ check_release() {
 
 run_audio_checks() {
     binary="$root/.build/release/quill"
-    "$binary" check-live-aec --out /private/tmp/quill-release-aec-zero
-    "$binary" check-live-aec --skew-ms 250 \
+    "$binary" dev check-live-aec --out /private/tmp/quill-release-aec-zero
+    "$binary" dev check-live-aec --skew-ms 250 \
         --out /private/tmp/quill-release-aec-system-late
-    "$binary" check-live-aec --skew-ms=-250 \
+    "$binary" dev check-live-aec --skew-ms=-250 \
         --out /private/tmp/quill-release-aec-system-early
     control=/private/tmp/quill-release-aec-control.log
-    if "$binary" check-live-aec --skew-ms 250 --misalign-ms 200 \
+    if "$binary" dev check-live-aec --skew-ms 250 --misalign-ms 200 \
         --out /private/tmp/quill-release-aec-control >"$control" 2>&1
     then
         die "deliberately misaligned AEC control unexpectedly passed"

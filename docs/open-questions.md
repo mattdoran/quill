@@ -109,7 +109,7 @@ Manual recordings remain unbound. Unknown processes are diagnostic evidence
 only and cannot prompt.
 
 The menu app appends changed raw snapshots to the disposable
-`cache/call-detection.log`. `quill watch-calls` runs the same scanner and reducer
+`cache/call-detection.log`. `quill dev watch-calls` runs the same scanner and reducer
 as an observation-only test harness; it prints diagnostics and owns no product
 notifications or recording actions.
 
@@ -126,7 +126,7 @@ Questions:
   reports input IO, not membership in a meeting.
 - Should the existing ten-minute silence nudge remain as the final fallback?
 
-The observation-only diagnostic is `quill watch-calls`. It prints changed input
+The observation-only diagnostic is `quill dev watch-calls`. It prints changed input
 snapshots and stable transitions from the same code path as the menu app. It
 does not show notifications or affect recording.
 

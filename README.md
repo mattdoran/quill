@@ -286,14 +286,25 @@ application home for isolated development and tests.
 ```sh
 quill                        # run the menu-bar daemon (^C to quit)
 quill run --out <dir>        # custom recordings root (default ~/Music/Quill)
+quill status                 # where meetings are saved; what is recording or transcribing
+quill list --since 7d        # meetings, newest first
+quill show latest            # a meeting's transcript; --json adds voices and turns
+quill skill install          # teach AI assistants on this Mac to use these commands
 quill doctor                 # check permissions, recordings folder, models
-quill watch-calls            # print recognized call-input transitions
-quill watch-calls --all      # also print unknown microphone users
 quill install --launch-at-login   # same as Settings → Open at login
 quill install --uninstall
+quill dev watch-calls        # print recognized call-input transitions
+quill dev watch-calls --all  # also print unknown microphone users
 ```
 
-`watch-calls` is an observation-only test harness over the same Core Audio
+`status`, `list` and `show` take `--json`, which is what assistants should
+read; the recordings folder's layout is internal. `quill skill install` links
+the skill bundled in Quill.app into `~/.agents/skills/quill`, and into
+`~/.claude/skills/quill` when Claude Code is installed, so assistants know the
+commands exist. The link follows the app through updates; `quill skill remove`
+takes it away. Developer tools live under `quill dev`.
+
+`dev watch-calls` is an observation-only test harness over the same Core Audio
 scanner and stable-transition reducer used by the menu app. It prints snapshots
 and possible call transitions, but never shows notifications or affects a
 recording. The menu app writes its own snapshots to

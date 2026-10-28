@@ -16,6 +16,17 @@ struct TranscriptTurn: Equatable, Sendable {
     let voiceID: String?
     let startMilliseconds: Int
     let paragraphs: [[Part]]
+
+    var paragraphTexts: [String] {
+        paragraphs.map { paragraph in
+            paragraph.map { part in
+                switch part {
+                case .speech(let text), .guess(let text): text
+                case .replies(let speaker, let text): "[\(speaker): \(text)]"
+                }
+            }.joined(separator: " ")
+        }
+    }
 }
 
 extension TranscriptDocument {

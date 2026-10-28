@@ -20,7 +20,7 @@ enum SessionName {
 
     /// A second recording in the same minute gets a numeric suffix (`-2`). Any
     /// other suffix was added by hand, so that folder keeps its name.
-    private static func recorded(_ dir: URL) -> Date? {
+    static func recorded(_ dir: URL) -> Date? {
         let name = dir.lastPathComponent
         let stamp = name.prefix(15)
         let suffix = name.dropFirst(15)

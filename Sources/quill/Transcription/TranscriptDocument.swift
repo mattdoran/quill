@@ -111,8 +111,8 @@ struct TranscriptDocument: Codable, Sendable {
     }
 
     func rendered(title: String, durationMilliseconds: Int? = nil) -> String {
-        let duration = durationMilliseconds ?? segments.map(\.end_ms).max() ?? 0
-        let minutes = "\(max(1, Int((Double(duration) / 60_000).rounded()))) min"
+        let duration = durationMilliseconds ?? spokenMilliseconds
+        let minutes = Self.minutes(duration)
         let speakers = speakersBySpeakingTime.joined(separator: ", ")
         return (["# \(title)", "", speakers.isEmpty ? minutes : "\(minutes) · \(speakers)", ""]
             + renderedTurns(longForm: duration >= 3_600_000)).joined(separator: "\n")
@@ -121,13 +121,7 @@ struct TranscriptDocument: Codable, Sendable {
     func renderedTurns(longForm: Bool) -> [String] {
         var lines: [String] = []
         for turn in turns {
-            for (index, paragraph) in turn.paragraphs.enumerated() {
-                let text = paragraph.map { part in
-                    switch part {
-                    case .speech(let text), .guess(let text): text
-                    case .replies(let speaker, let text): "[\(speaker): \(text)]"
-                    }
-                }.joined(separator: " ")
+            for (index, text) in turn.paragraphTexts.enumerated() {
                 lines.append(index == 0
                     ? "**\(turn.speaker)** (\(Self.clock(turn.startMilliseconds, longForm: longForm))): \(text)"
                     : text)
@@ -148,7 +142,13 @@ struct TranscriptDocument: Codable, Sendable {
         return lines.joined(separator: "\n")
     }
 
-    private var speakersBySpeakingTime: [String] {
+    var spokenMilliseconds: Int { segments.map(\.end_ms).max() ?? 0 }
+
+    static func minutes(_ milliseconds: Int) -> String {
+        "\(max(1, Int((Double(milliseconds) / 60_000).rounded()))) min"
+    }
+
+    var speakersBySpeakingTime: [String] {
         var speech: [String: Int] = [:]
         var order: [String] = []
         for segment in segments where !segment.isUnassigned {

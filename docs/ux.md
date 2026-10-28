@@ -710,7 +710,7 @@ and a two-local, four-remote speaker fixture.
 
 ![Two remote voices named Will shown as one person](images/one-person-two-voices.png)
 
-Regenerate them with `preview-voices --out <directory>` using the executable in a
+Regenerate them with `dev preview-voices --out <directory>` using the executable in a
 debug app bundle. Build with `./build.sh debug`, bundle with `./bundle.sh debug`,
 and keep `QUILL_HOME` set to an isolated directory for builds and previews.
 The images above are `light-hybrid-speaker-counts.png`,

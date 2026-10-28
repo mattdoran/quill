@@ -377,7 +377,7 @@ row. Its silence test walks every row between two sentences, including hidden
 replies and fillers, so another person's speech always ends a pause.
 `TranscriptStore.markdown(for:)` titles the file with `SessionName.dated` and
 takes the length from `.quill/meta.json`, falling back to the last row's end.
-`quill diarize` prints its transcript through the same `renderedTurns`, with
+`quill dev diarize` prints its transcript through the same `renderedTurns`, with
 rows no speaker span covered as `Unassigned`.
 
 At launch, after audio recovery and before pending transcription resumes,
@@ -428,6 +428,22 @@ and after `on_stop` terminates. It retains the meeting mix, metadata, logs and
 transcripts, but removes the material needed for later AEC, re-transcription or
 speaker samples.
 
+### Command line
+
+`quill status`, `list` and `show` are the interface for assistants. `Meeting`
+reads a session's state from its files alone, so they work whether or not the
+app is running: a capture journal means recording, a manifest whose audio is
+not finalized means finishing, finalized audio without `transcript.json` means
+transcribing, and a transcript with an unnamed voice means `needs-names`.
+Their `--json` output is the contract; the folder layout stays internal.
+
+`quill skill install` links `~/.agents/skills/quill` to the skill inside
+`Quill.app/Contents/Resources/skills`, and `~/.claude/skills/quill` to that
+link when `~/.claude` exists, matching how this Mac's other skills are laid
+out. A link rather than a copy keeps the skill in step with the installed
+app's commands through updates. It never replaces a folder or link that is
+not Quill's.
+
 ## 8. Invariants
 
 The implementation relies on these cross-layer invariants:
@@ -452,7 +468,7 @@ from a stalled live consumer, finalizer retry and single-flight behavior,
 rejection of truncated cleaned audio, finished layout, mono meeting output, and
 the choice between live and offline meeting artifacts.
 
-The hidden `check-live-aec` command adds an integration path. Synthetic mode
+The hidden `dev check-live-aec` command adds an integration path. Synthetic mode
 feeds controlled near and far signals through the real `TrackWriter`,
 accepted-frame mailbox and `LiveEchoCanceller`; replay mode streams retained
 real-session audio through the same path and compares its AEC result with a

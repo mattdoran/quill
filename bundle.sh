@@ -83,11 +83,12 @@ mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" "$app/Contents/Framewor
 cp "$binary" "$app/Contents/MacOS/quill"
 cp "$root/Sources/quill/Info.plist" "$app/Contents/Info.plist"
 cp "$root/Sources/quill/AppIcon.icns" "$app/Contents/Resources/AppIcon.icns"
+/usr/bin/ditto "$root/skills" "$app/Contents/Resources/skills"
 /usr/bin/ditto "$sparkle" "$app/Contents/Frameworks/Sparkle.framework"
 
 build_hash=$(git -C "$root" rev-parse --short=8 HEAD 2>/dev/null || echo dev)
 build_commit=$build_hash
-if [ -n "$(git -C "$root" status --porcelain -- Sources Package.swift Package.resolved bundle.sh release-versioning.sh 2>/dev/null)" ]; then
+if [ -n "$(git -C "$root" status --porcelain -- Sources skills Package.swift Package.resolved bundle.sh release-versioning.sh 2>/dev/null)" ]; then
     build_commit="$build_commit-dirty"
 fi
 build_date=$(LC_ALL=C date '+%e %b %Y' | sed 's/^ //')
