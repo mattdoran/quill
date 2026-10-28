@@ -348,13 +348,15 @@ import Testing
         ))
         buffer.frameLength = 4_800
         writer.write(buffer)
+        // Dated at the write: a later close pads, and the second fileWrite never returns.
+        let writtenAt = Date()
         let didStart = await Task.detached {
             waitForSemaphore(writeStarted, timeout: .now() + 1)
         }.value
         #expect(didStart == .success)
 
         let close = Task { @MainActor in
-            await writer.closeAsync(paddingTo: Date())
+            await writer.closeAsync(paddingTo: writtenAt)
         }
         let fallback = DispatchWorkItem {
             _ = fallbackUsed.increment()
