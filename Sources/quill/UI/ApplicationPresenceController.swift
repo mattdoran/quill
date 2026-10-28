@@ -16,6 +16,7 @@ final class ApplicationPresenceController {
     private let activateApplication: () -> Void
     private var entries: [ObjectIdentifier: Entry] = [:]
     private var closeObservers: [ObjectIdentifier: NSObjectProtocol] = [:]
+    private var aboutPanel: NSWindow?
 
     var onStateChanged: ((State) -> Void)? {
         didSet { onStateChanged?(state) }
@@ -106,18 +107,17 @@ final class ApplicationPresenceController {
         return alert.runModal()
     }
 
+    /// AppKit makes the panel and reuses it, so it is found rather than
+    /// created. Waiting for it to become key fails when activation lags, and
+    /// leaves it behind other apps' windows with Quill in the background.
     func showAbout(options: [NSApplication.AboutPanelOptionKey: Any]) {
-        setActivationPolicy(.regular)
-        activateApplication()
+        let existing = Set(NSApp.windows.map(ObjectIdentifier.init))
         NSApp.orderFrontStandardAboutPanel(options: options)
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            if let window = NSApp.keyWindow {
-                self.track(window, blocking: false)
-                self.raise(window)
-            } else {
-                self.updateActivationPolicy()
-            }
+        if let panel = NSApp.windows.first(where: { !existing.contains(ObjectIdentifier($0)) }) {
+            aboutPanel = panel
+        }
+        if let aboutPanel {
+            present(aboutPanel)
         }
     }
 

@@ -27,6 +27,25 @@ import Testing
         #expect(activations == 2)
     }
 
+    @Test func aboutPanelKeepsQuillForegroundUntilItCloses() throws {
+        AppKitTestHost.start()
+        var policies: [NSApplication.ActivationPolicy] = []
+        let presence = ApplicationPresenceController(
+            setActivationPolicy: { policies.append($0) },
+            activateApplication: {}
+        )
+        let before = Set(NSApp.windows.map(ObjectIdentifier.init))
+        presence.showAbout(options: [.applicationVersion: "test"])
+        presence.showAbout(options: [.applicationVersion: "test"])
+        let panel = try #require(NSApp.windows.first { !before.contains(ObjectIdentifier($0)) })
+
+        #expect(presence.state.hasUserInterface)
+        #expect(policies.last == .regular)
+        panel.close()
+        #expect(!presence.state.hasUserInterface)
+        #expect(policies.last == .accessory)
+    }
+
     @Test func presentingTheSameOwnerAgainDoesNotStackPresence() {
         var policies: [NSApplication.ActivationPolicy] = []
         let presence = ApplicationPresenceController(

@@ -148,6 +148,7 @@ final class AppController {
         self.root = root
         updater = UpdaterController(presence: presence)
         applicationMenu.onQuit = { [weak self] in self?.shutdown() }
+        applicationMenu.onAbout = { [weak self] in self?.showAbout() }
         applicationMenu.install()
         menuBar.onToggle = { [weak self] in self?.toggle() }
         menuBar.onShowRecordingControls = { [weak self] in

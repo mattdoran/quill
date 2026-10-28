@@ -3,6 +3,7 @@ import AppKit
 @MainActor
 final class ApplicationMenuController: NSObject {
     var onQuit: (() -> Void)?
+    var onAbout: (() -> Void)?
 
     func install() {
         let main = NSMenu()
@@ -15,12 +16,8 @@ final class ApplicationMenuController: NSObject {
 
     private func applicationMenu() -> NSMenu {
         let menu = NSMenu(title: "Quill")
-        let about = NSMenuItem(
-            title: "About Quill",
-            action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
-            keyEquivalent: ""
-        )
-        about.target = NSApp
+        let about = NSMenuItem(title: "About Quill", action: #selector(aboutClicked), keyEquivalent: "")
+        about.target = self
         menu.addItem(about)
         menu.addItem(.separator())
         menu.addItem(applicationItem("Hide Quill", #selector(NSApplication.hide(_:)), "h"))
@@ -96,5 +93,9 @@ final class ApplicationMenuController: NSObject {
 
     @objc private func quitClicked() {
         onQuit?()
+    }
+
+    @objc private func aboutClicked() {
+        onAbout?()
     }
 }
