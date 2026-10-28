@@ -20,6 +20,14 @@ import Testing
         #expect(model.accessibilityLabel()?.contains("transcription models") == true)
         #expect(change.nextKeyView === retention)
         #expect(retention.nextKeyView === model)
+
+        let skill = try #require(buttons.first { $0.title == "Install" || $0.title == "Remove" })
+        #expect(skill.accessibilityLabel()?.contains("AI assistant skill") == true)
+        #expect(model.nextKeyView === skill)
+        content.layoutSubtreeIfNeeded()
+        for control in buttons + [retention] {
+            #expect(content.bounds.contains(control.convert(control.bounds, to: content)))
+        }
     }
 
     private func buttons(in view: NSView) -> [NSButton] {

@@ -201,9 +201,9 @@ names. Quill asks for the number of people who actually spoke, then shows real
 analysis progress. The resulting
 voices can be sampled, named, undone or separated again with a corrected count.
 **Copy Markdown** (⇧⌘C) saves current name edits and copies the whole transcript.
-**Open Transcript File** opens the editable Markdown copy. **Review Earlier Transcript…** opens
-the same review workflow for any past session selected from the recordings
-folder. This optional work happens after transcription and never complicates
+**Open Transcript File** opens the editable Markdown copy. **Meetings…** lists
+every meeting by date, length and people, and opens the same review workflow
+for any of them. This optional work happens after transcription and never complicates
 recording.
 
 After separation, name a speaker and click **Remember Voice** to keep their mean

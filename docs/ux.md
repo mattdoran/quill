@@ -26,7 +26,8 @@ everything else is what ships today.
    contextual recovery command for a Settings-owned value, but never a second
    copy of the setting itself.
 7. **One persistent utility window.** Settings is the only persistent window.
-   A focused, task-scoped transcript review window is allowed; wizards,
+   A focused, task-scoped transcript review window and the meetings chooser,
+   which closes once used, are allowed; wizards,
    general editors and persistent recording windows are not.
 8. **A visible window is recoverable.** While Quill owns a window, chooser,
    alert or update prompt, it appears in the Dock and Command-Tab switcher.
@@ -83,10 +84,8 @@ than fought with a custom view.
 Quill is idle                                       ⟨disabled⟩
 ────────────────────────────────────────────
 Start Recording
-Open Last Transcript
 Review Last Transcript…
-Review Earlier Transcript…
-Open Recordings Folder
+Meetings…
 ────────────────────────────────────────────
 Settings…
 Check for Updates…
@@ -94,16 +93,22 @@ About Quill
 Quit Quill                                      ⌘Q
 ```
 
-`Open Last Transcript` is disabled when no session has a `transcript.md`.
 `Review Last Transcript…` is hidden until the newest compatible
 transcript exists. It is disabled during recording so sample playback cannot
-enter the capture.
-`Review Earlier Transcript…` opens a folder picker at the recordings root and
-accepts any past Quill session with a compatible completed transcript. It is
-disabled during recording for the same sample-playback reason.
+enter the capture. The end of a recording offers the same review from the
+companion and the `Transcript ready` notification; this item is the way back
+once those are dismissed.
+`Meetings…` is disabled when no session has a `transcript.md`. It opens a
+chooser listing every meeting, newest first and selected, with its date and
+time, length, people by speaking time and any unfinished state (`Needs names`,
+`Transcribing`, `Finishing audio`, `Recording`, `No audio`). **Review**
+(Return, or a double-click) opens the review window and is disabled during
+recording for the same sample-playback reason. **Open Transcript** opens
+`transcript.md`, and **Show in Finder** reveals the meeting's folder. Each
+action closes the chooser.
 `Retry Transcription` and `Download Transcription Models` are hidden unless they
 apply, and appear in the status block at the top. `Change Recordings Folder…`
-appears below `Open Recordings Folder` only when Quill cannot read that folder.
+appears below `Meetings…` only when Quill cannot read that folder.
 
 `Show Quill Window` appears in the status block whenever Quill owns a window,
 chooser, alert or update prompt. It raises the existing surface. A blocking
@@ -118,10 +123,8 @@ chooser instead of creating another.
 Recording — 12:03                                   ⟨disabled⟩
 ────────────────────────────────────────────
 Stop Recording
-Open Last Transcript
 Review Last Transcript…                                ⟨disabled⟩
-Review Earlier Transcript…                            ⟨disabled⟩
-Open Recordings Folder
+Meetings…
 ────────────────────────────────────────────
 Settings…
 Check for Updates…                                  ⟨disabled⟩
@@ -145,7 +148,7 @@ Recording — 12:03                                   ⟨disabled⟩
 Mic capture lost 4s at 2:35 PM                      ⟨disabled, orange⟩
 ────────────────────────────────────────────
 Stop Recording
-Open Last Transcript
+Review Last Transcript…                                ⟨disabled⟩
 …
 ```
 
@@ -159,7 +162,7 @@ Quill is idle                                       ⟨disabled⟩
 Transcribing 2:14 PM recording — 1 queued           ⟨disabled⟩
 ────────────────────────────────────────────
 Start Recording
-Open Last Transcript
+Review Last Transcript…
 …
 Check for Updates…
 Quit Quill                                      ⌘Q
@@ -177,7 +180,7 @@ Transcription failed — 2:14 PM recording            ⟨enabled, opens transcri
 Retry Transcription
 ────────────────────────────────────────────
 Start Recording
-Open Last Transcript
+Review Last Transcript…
 …
 ```
 
@@ -191,7 +194,7 @@ Menu tooltips explain controls without opening Settings. Verbatim:
 
 | Item | `toolTip` |
 |---|---|
-| Open Recordings Folder | *(the resolved path, e.g.)* `/Users/matt/Recordings` |
+| Meetings… | `Meetings are saved in` *(the resolved path, e.g.)* `/Users/matt/Music/Quill.` |
 | Change Recordings Folder… | `Pick where recordings are saved. Choosing a folder here is also how macOS grants access to protected places like Documents.` |
 | Stop Recording and Quit | `Ends the current recording. Transcription resumes the next time Quill starts.` |
 | Quit Quill *(while transcribing)* | `Transcription resumes the next time Quill starts.` |
@@ -366,15 +369,24 @@ which subsystem reads the value.
 | Audio retention | Settings | The choice can irreversibly delete source audio and needs explanatory copy plus confirmation. |
 | `transcription.engine` | Static Settings text + JSON | One engine ships. Settings reports Parakeet as information; it does not present a disabled fake choice. |
 | Transcription models | Settings + conditional menu recovery | Settings reports the engine, expected or installed size, and Download / Remove. A download command appears in the menu only when automatic download is blocked or fails. |
+| Assistant skill | Settings + `quill skill` | Installing it writes outside Quill's own files, into the folders assistants read, so it is an explicit choice with a matching command for people who set up assistants from a terminal. |
 | `on_stop` | JSON, permanently | It is a shell command. A shell command never gets a GUI field. |
 
-The Settings window is three administrative groups:
+The Settings window is four administrative groups:
 
-1. **General:** Open at login; recordings folder path and Change…
-2. **Storage:** source-audio retention (keep indefinitely / keep 30 days /
-   delete after transcription)
-3. **Transcription:** static engine identity; model status and expected or
-   installed size; Download / Remove
+1. **General:** Open at login
+2. **Recordings:** folder path and Change…; source-audio retention (keep
+   indefinitely / keep 30 days / delete after transcription)
+3. **Transcription:** one `Model` row naming the engine with its status and
+   expected or installed size; Download / Remove
+4. **Other apps:** `AI assistants`, whether the skill is installed, and
+   Install / Remove. Install links the skill bundled in Quill.app into
+   `~/.agents/skills` and, when Claude Code is present, `~/.claude/skills`,
+   so assistants on this Mac learn Quill's commands.
+
+A new control joins an existing group, and a new group needs at least two
+rows. The Send to Shortcut picker belongs in Other apps, and the permission
+controls planned in TODO form a Permissions group.
 
 Recording always produces a transcript. Speaker separation has no persistent
 setting in this slice and stores its result in the transcript document.
@@ -403,7 +415,7 @@ must terminate before cleanup touches that session's audio.
 
 | Kind | Case | Examples |
 |---|---|---|
-| Menu commands and checkboxes | Title case | `Start Recording`, `Open Last Transcript`, `Review Last Transcript…`, `Quit Quill` |
+| Menu commands and checkboxes | Title case | `Start Recording`, `Review Last Transcript…`, `Meetings…`, `Quit Quill` |
 | Settings labels and checkboxes | Sentence case | `Open at login`, `Source audio` |
 | Status lines | Sentence case | `Quill is idle`, `Recording — 12:03`, `Mic capture lost 4s at 2:35 PM` |
 | Notification titles | Sentence case | `Transcript ready`, `Microphone stopped` |

@@ -122,7 +122,7 @@ final class AppController {
     private let models = ModelDownload()
     private var settings: SettingsWindowController?
     private let reviews = TranscriptReviewWindows()
-    private var reviewPanel: NSOpenPanel?
+    private var meetings: MeetingsWindowController?
     private var recordingsFolderPanel: NSOpenPanel?
     private var session: RecordingSession?
     private var stoppingTask: Task<Void, Never>?
@@ -153,14 +153,12 @@ final class AppController {
         menuBar.onShowRecordingControls = { [weak self] in
             self?.companion.showRecordingControls()
         }
-        menuBar.onOpenFolder = { [weak self] in self?.openFolder() }
         menuBar.onQuit = { [weak self] in self?.shutdown() }
-        menuBar.onOpenLastTranscript = { [weak self] in self?.openLastTranscript() }
         menuBar.onIdentifyVoices = { [weak self] in
             guard let session = self?.voiceReviewSession() else { return }
             self?.reviewTranscript(at: session)
         }
-        menuBar.onReviewRecording = { [weak self] in self?.chooseRecordingToReview() }
+        menuBar.onMeetings = { [weak self] in self?.showMeetings() }
         menuBar.hasVoiceReview = { [weak self] in self?.voiceReviewSession() != nil }
         menuBar.hasTranscript = { [weak self] in
             guard let self else { return false }
@@ -684,13 +682,11 @@ final class AppController {
             .first { FileManager.default.fileExists(atPath: $0.path) }
     }
 
-    private func openLastTranscript() {
-        guard let transcript = lastTranscript() else { return }
-        let session = transcript.deletingLastPathComponent()
+    private func openTranscript(in session: URL) {
         Task {
             try? await AudioFinalizer.shared.finalize(session: session)
         }
-        NSWorkspace.shared.open(transcript)
+        NSWorkspace.shared.open(SessionFiles.transcriptMarkdown(session))
     }
 
     private func voiceReviewSession() -> URL? {
@@ -699,36 +695,18 @@ final class AppController {
         return TranscriptStore(session: session).isReviewable ? session : nil
     }
 
-    private func chooseRecordingToReview() {
-        guard session == nil else { return }
-        if let reviewPanel {
-            presence.raise(reviewPanel)
-            return
+    private func showMeetings() {
+        if meetings == nil {
+            let controller = MeetingsWindowController(
+                root: { [weak self] in self?.root ?? Config.defaultRoot },
+                presence: presence
+            )
+            controller.isRecording = { [weak self] in self?.session != nil }
+            controller.onReview = { [weak self] session in self?.reviewTranscript(at: session) }
+            controller.onOpenTranscript = { [weak self] session in self?.openTranscript(in: session) }
+            meetings = controller
         }
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.canCreateDirectories = false
-        panel.allowsMultipleSelection = false
-        panel.directoryURL = root
-        panel.prompt = "Review"
-        panel.message = "Choose a recording to review its transcript."
-        reviewPanel = panel
-        presence.prepare(panel, blocking: true)
-        panel.begin { [weak self, weak panel] response in
-            guard let self, let panel else { return }
-            reviewPanel = nil
-            presence.end(panel)
-            guard response == .OK, let chosen = panel.url else { return }
-            guard TranscriptStore(session: chosen).isReviewable else {
-                let alert = NSAlert()
-                alert.messageText = "This recording can’t be reviewed"
-                alert.informativeText = "Choose a Quill recording folder that contains a compatible completed transcript."
-                _ = presence.runModal(alert)
-                return
-            }
-            reviewTranscript(at: chosen)
-        }
+        meetings?.show()
     }
 
     func reviewTranscript(at session: URL) {
@@ -794,10 +772,6 @@ final class AppController {
         )) != nil
     }
 
-    private func openFolder() {
-        try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        NSWorkspace.shared.open(root)
-    }
 
     private static func format(_ interval: TimeInterval) -> String {
         let total = Int(interval)

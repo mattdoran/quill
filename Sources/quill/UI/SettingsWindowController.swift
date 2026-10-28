@@ -18,12 +18,15 @@ final class SettingsWindowController: NSWindowController {
     private let changeFolderButton = NSButton(title: "Change…", target: nil, action: nil)
     private let modelStatus = NSTextField(labelWithString: "")
     private let modelButton = NSButton(title: "", target: nil, action: nil)
+    private let skillStatus = NSTextField(labelWithString: "")
+    private let skillButton = NSButton(title: "", target: nil, action: nil)
     private let presence: ApplicationPresenceController
+    private static let engine = "Parakeet TDT 0.6B v2"
 
     init(presence: ApplicationPresenceController = ApplicationPresenceController()) {
         self.presence = presence
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 560, height: 300),
+            contentRect: NSRect(x: 0, y: 0, width: 560, height: 350),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -57,6 +60,7 @@ final class SettingsWindowController: NSWindowController {
         openAtLogin.state = LoginItem.isEnabled ? .on : .off
         openAtLogin.isEnabled = LoginItem.isAvailable
         refreshModel()
+        refreshSkill()
     }
 
     func updateModelDownload(_ status: ModelDownload.Status) {
@@ -64,12 +68,12 @@ final class SettingsWindowController: NSWindowController {
         case .idle:
             refreshModel()
         case .downloading(let fraction):
-            modelStatus.stringValue = "Downloading - \(Int(fraction * 100))%"
+            modelStatus.stringValue = "\(Self.engine), downloading - \(Int(fraction * 100))%"
             modelButton.isEnabled = false
         case .waitingForNetwork:
             refreshModel()
         case .failed:
-            modelStatus.stringValue = "Download failed"
+            modelStatus.stringValue = "\(Self.engine), download failed"
             modelButton.title = "Download"
             modelButton.isEnabled = true
         }
@@ -99,10 +103,10 @@ final class SettingsWindowController: NSWindowController {
         openAtLogin.target = self
         openAtLogin.action = #selector(loginChanged)
         stack.addArrangedSubview(row(label: "", controls: [openAtLogin]))
-        stack.addArrangedSubview(row(label: "Folder", controls: [pathLabel, changeFolderButton]))
 
         stack.addArrangedSubview(separator())
-        stack.addArrangedSubview(section("Storage"))
+        stack.addArrangedSubview(section("Recordings"))
+        stack.addArrangedSubview(row(label: "Folder", controls: [pathLabel, changeFolderButton]))
         retention.addItems(withTitles: Config.AudioRetention.allCases.map(\.title))
         retention.target = self
         retention.action = #selector(retentionChanged)
@@ -111,18 +115,26 @@ final class SettingsWindowController: NSWindowController {
 
         stack.addArrangedSubview(separator())
         stack.addArrangedSubview(section("Transcription"))
-        let engine = NSTextField(labelWithString: "Parakeet TDT 0.6B v2")
-        stack.addArrangedSubview(row(label: "Engine", controls: [engine]))
-
         modelButton.target = self
         modelButton.action = #selector(modelClicked)
+        modelStatus.lineBreakMode = .byTruncatingTail
+        modelStatus.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         modelStatus.setAccessibilityLabel("Transcription models status")
-        stack.addArrangedSubview(row(label: "Models", controls: [modelStatus, modelButton]))
+        stack.addArrangedSubview(row(label: "Model", controls: [modelStatus, modelButton]))
+
+        stack.addArrangedSubview(separator())
+        stack.addArrangedSubview(section("Other apps"))
+        skillButton.target = self
+        skillButton.action = #selector(skillClicked)
+        skillButton.toolTip = "Lets AI assistants on this Mac, such as Claude Code, use Quill's commands to find and read your meetings."
+        skillStatus.setAccessibilityLabel("AI assistant skill status")
+        stack.addArrangedSubview(row(label: "AI assistants", controls: [skillStatus, skillButton]))
 
         openAtLogin.nextKeyView = changeFolderButton
         changeFolderButton.nextKeyView = retention
         retention.nextKeyView = modelButton
-        modelButton.nextKeyView = openAtLogin
+        modelButton.nextKeyView = skillButton
+        skillButton.nextKeyView = openAtLogin
     }
 
     private func section(_ title: String) -> NSTextField {
@@ -154,15 +166,42 @@ final class SettingsWindowController: NSWindowController {
         if ModelDownload.isCached {
             let formatter = ByteCountFormatter()
             formatter.countStyle = .file
-            modelStatus.stringValue = "Downloaded (\(formatter.string(fromByteCount: ModelDownload.cachedBytes)))"
+            modelStatus.stringValue = "\(Self.engine), \(formatter.string(fromByteCount: ModelDownload.cachedBytes))"
             modelButton.title = "Remove…"
             modelButton.setAccessibilityLabel("Remove transcription models")
         } else {
-            modelStatus.stringValue = "Not downloaded (about 600 MB)"
+            modelStatus.stringValue = "\(Self.engine), not downloaded (about 600 MB)"
             modelButton.title = "Download"
             modelButton.setAccessibilityLabel("Download transcription models")
         }
         modelButton.isEnabled = true
+    }
+
+    private func refreshSkill() {
+        let installed = AssistantSkill.isInstalled(home: AssistantSkill.home)
+        skillStatus.stringValue = installed ? "Skill installed" : "Skill not installed"
+        skillButton.title = installed ? "Remove" : "Install"
+        skillButton.setAccessibilityLabel(installed ? "Remove AI assistant skill" : "Install AI assistant skill")
+        skillButton.isEnabled = installed || AssistantSkill.bundled != nil
+    }
+
+    @objc private func skillClicked() {
+        let home = AssistantSkill.home
+        do {
+            if AssistantSkill.isInstalled(home: home) {
+                _ = try AssistantSkill.remove(home: home)
+            } else if let source = AssistantSkill.bundled {
+                _ = try AssistantSkill.install(from: source, home: home)
+            }
+        } catch let error as AssistantSkill.Occupied {
+            let alert = NSAlert()
+            alert.messageText = "Another skill named quill is installed"
+            alert.informativeText = "\(error.url.path) is not Quill's. Remove it, then install again."
+            _ = presence.runModal(alert)
+        } catch {
+            _ = presence.runModal(NSAlert(error: error))
+        }
+        refreshSkill()
     }
 
     @objc private func changeFolderClicked() {
@@ -212,11 +251,11 @@ final class SettingsWindowController: NSWindowController {
             alert.addButton(withTitle: "Remove")
             alert.addButton(withTitle: "Cancel")
             guard presence.runModal(alert) == .alertFirstButtonReturn else { return }
-            modelStatus.stringValue = "Removing…"
+            modelStatus.stringValue = "\(Self.engine), removing…"
             modelButton.isEnabled = false
             onRemoveModels?()
         } else {
-            modelStatus.stringValue = "Downloading - 0%"
+            modelStatus.stringValue = "\(Self.engine), downloading - 0%"
             modelButton.isEnabled = false
             onDownloadModels?()
         }

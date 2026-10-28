@@ -2,6 +2,26 @@
 
 Dated product and architecture decisions. Newest first.
 
+## 2026-10-28: Reach earlier meetings through one chooser, and keep Settings to four groups
+
+**Decision:** The menu keeps `Review Last Transcript…` and replaces `Open Last
+Transcript`, `Review Earlier Transcript…` and `Open Recordings Folder` with
+`Meetings…`, a chooser listing every meeting by date, length, people and
+state, with Review, Open Transcript and Show in Finder. Settings has four
+groups: General, Recordings (folder and source audio), Transcription (one
+`Model` row naming the engine) and Other apps (the assistant skill). A new
+control joins an existing group; a new group needs at least two rows.
+
+**Why:** Four of nine idle commands reached past meetings, and the earlier one
+was a folder picker of timestamped folders. Reviewing the last meeting is the
+common case and keeps its own item; the end-of-recording review offers vanish
+once dismissed. Matt wants the menu and Settings to stop growing an item per
+feature.
+
+**Consequence:** Opening the last Markdown file takes one more click, through
+review or the chooser. The chooser closes once used, so Settings remains the
+only persistent window.
+
 ## 2026-10-28: Let assistants act on meetings through the command line
 
 **Decision:** Assistants use `quill` subcommands with `--json` output. Reading

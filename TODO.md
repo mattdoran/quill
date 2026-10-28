@@ -149,6 +149,9 @@ Settled 2026-10-28 in `docs/decisions.md`.
       .audio)` reads the state without prompting.
 
       The tap side has no public equivalent. It is gated by
+- [x] **Choose earlier meetings from a list, not a folder.** `Meetings…`
+      replaces three menu items with a chooser listing meetings by date,
+      length, people and state; `Review Last Transcript…` stays.
       `kTCCServiceAudioCapture`, confirmed in the TCC database, and no framework
       exposes a prompt-free check for it. Granola reads it through the private
       `TCCAccessPreflight` in TCC.framework. The alternative is to build a tap

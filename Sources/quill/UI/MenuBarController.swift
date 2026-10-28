@@ -15,12 +15,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private let showWindowItem: NSMenuItem
     private let toggleItem: NSMenuItem
     private let showControlsItem: NSMenuItem
-    private let lastTranscriptItem: NSMenuItem
     private let identifyVoicesItem: NSMenuItem
-    private let reviewRecordingItem: NSMenuItem
+    private let meetingsItem: NSMenuItem
     private let retryItem: NSMenuItem
     private let downloadModelsItem: NSMenuItem
-    private let openFolderItem: NSMenuItem
     private let changeFolderItem: NSMenuItem
     private let settingsItem: NSMenuItem
     private let checkForUpdatesItem: NSMenuItem
@@ -33,11 +31,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     var onToggle: (() -> Void)?
     var onShowRecordingControls: (() -> Void)?
-    var onOpenFolder: (() -> Void)?
     var onChangeFolder: (() -> Void)?
-    var onOpenLastTranscript: (() -> Void)?
     var onIdentifyVoices: (() -> Void)?
-    var onReviewRecording: (() -> Void)?
+    var onMeetings: (() -> Void)?
     var onOpenFailureLog: (() -> Void)?
     var onRetryTranscription: (() -> Void)?
     var onDownloadModels: (() -> Void)?
@@ -131,13 +127,6 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         showControlsItem.isHidden = true
         menu.addItem(showControlsItem)
 
-        lastTranscriptItem = NSMenuItem(
-            title: "Open Last Transcript",
-            action: #selector(openLastTranscriptClicked),
-            keyEquivalent: ""
-        )
-        menu.addItem(lastTranscriptItem)
-
         identifyVoicesItem = NSMenuItem(
             title: "Review Last Transcript…",
             action: #selector(identifyVoicesClicked),
@@ -145,19 +134,12 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         )
         menu.addItem(identifyVoicesItem)
 
-        reviewRecordingItem = NSMenuItem(
-            title: "Review Earlier Transcript…",
-            action: #selector(reviewRecordingClicked),
+        meetingsItem = NSMenuItem(
+            title: "Meetings…",
+            action: #selector(meetingsClicked),
             keyEquivalent: ""
         )
-        menu.addItem(reviewRecordingItem)
-
-        openFolderItem = NSMenuItem(
-            title: "Open Recordings Folder",
-            action: #selector(openFolderClicked),
-            keyEquivalent: ""
-        )
-        menu.addItem(openFolderItem)
+        menu.addItem(meetingsItem)
 
         // Choosing a folder through the open panel is also what grants access
         // to a protected location, so this appears beside the visible folder
@@ -207,9 +189,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         super.init()
 
         for item in [
-            toggleItem, showControlsItem, openFolderItem, changeFolderItem, quitItem,
-            lastTranscriptItem, identifyVoicesItem, aboutItem, retryItem,
-            reviewRecordingItem,
+            toggleItem, showControlsItem, changeFolderItem, quitItem,
+            identifyVoicesItem, aboutItem, retryItem,
+            meetingsItem,
             downloadModelsItem,
             transcriptionLabel,
             showWindowItem,
@@ -352,14 +334,12 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
         refreshSettings()
         let hasTranscript = hasTranscript?() ?? false
-        lastTranscriptItem.isEnabled = hasTranscript
         let hasVoiceReview = hasVoiceReview?() ?? false
         identifyVoicesItem.isHidden = !hasVoiceReview
         identifyVoicesItem.isEnabled = hasVoiceReview && !isRecording && !isStarting
             && !blockingWindowVisible
         identifyVoicesItem.title = "Review Last Transcript…"
-        reviewRecordingItem.isEnabled = hasTranscript && !isRecording && !isStarting
-            && !blockingWindowVisible
+        meetingsItem.isEnabled = hasTranscript && !blockingWindowVisible
         changeFolderItem.isEnabled = !blockingWindowVisible
         settingsItem.isEnabled = !blockingWindowVisible
         checkForUpdatesItem.isEnabled = !isRecording && !isStarting && !blockingWindowVisible
@@ -367,7 +347,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         if !isRecording && !isStarting {
             toggleItem.isEnabled = !blockingWindowVisible
         }
-        openFolderItem.toolTip = recordingsPath?()
+        let path = recordingsPath?()
+        meetingsItem.toolTip = path.map { "Meetings are saved in \($0)." }
     }
 
     // MARK: -
@@ -446,10 +427,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     @objc private func downloadModelsClicked() { onDownloadModels?() }
     @objc private func toggleClicked() { onToggle?() }
     @objc private func showRecordingControlsClicked() { onShowRecordingControls?() }
-    @objc private func openFolderClicked() { onOpenFolder?() }
     @objc private func changeFolderClicked() { onChangeFolder?() }
-    @objc private func openLastTranscriptClicked() { onOpenLastTranscript?() }
     @objc private func identifyVoicesClicked() { onIdentifyVoices?() }
-    @objc private func reviewRecordingClicked() { onReviewRecording?() }
+    @objc private func meetingsClicked() { onMeetings?() }
     @objc private func quitClicked() { onQuit?() }
 }
