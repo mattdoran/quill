@@ -295,6 +295,7 @@ quill install --launch-at-login   # same as Settings → Open at login
 quill install --uninstall
 quill dev watch-calls        # print recognized call-input transitions
 quill dev watch-calls --all  # also print unknown microphone users
+quill dev echo-delay <dir>   # how far a session's microphone trails its call
 ```
 
 `status`, `list` and `show` take `--json`, which is what assistants should

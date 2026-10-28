@@ -689,7 +689,9 @@ A reply is a row whose whole text is on a fixed list ("Yeah.", "Mm-hmm.",
 ("Okay, good."). Another person's unfinished words of three or fewer ("So",
 "Yeah, but") show inline the same way, while a finished short sentence
 ("Beautiful.") keeps its own turn, as does a reply to a question ending in
-"?". A reply nobody could attribute is hidden, and so are um, uh and er rows.
+"?". A reply nobody could attribute is hidden, and so are um, uh and er rows,
+and a local row that repeats what the call said moments before, which is the
+call's audio leaking from the speakers into the microphone.
 An Unassigned row of five words or fewer inside one person's turn joins their
 words, with a dotted underline in the window. A paragraph starts at a sentence
 end after 1.5 s in which nobody speaks, or once it reaches 120 words with at

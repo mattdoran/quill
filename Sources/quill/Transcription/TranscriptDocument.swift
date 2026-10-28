@@ -20,6 +20,8 @@ struct TranscriptDocument: Codable, Sendable {
         let start_ms: Int
         let end_ms: Int
         let text: String
+        /// A local row repeating the call, set by `EchoRows` at transcription.
+        var echo: Bool? = nil
 
         var isUnassigned: Bool { voice_id == nil && speaker == Self.unassigned }
     }
@@ -151,7 +153,7 @@ struct TranscriptDocument: Codable, Sendable {
     var speakersBySpeakingTime: [String] {
         var speech: [String: Int] = [:]
         var order: [String] = []
-        for segment in segments where !segment.isUnassigned {
+        for segment in segments where !segment.isUnassigned && segment.echo != true {
             if speech[segment.speaker] == nil { order.append(segment.speaker) }
             speech[segment.speaker, default: 0] += segment.end_ms - segment.start_ms
         }

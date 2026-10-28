@@ -19,16 +19,31 @@ Work that remains. Product and architecture decisions live in
       one name no longer block each other's suggestion. The two stale
       contributions from 2026.10.13-1231 were removed by hand on 2026-10-28,
       backed up beside `voice-profiles.json`.
-- [ ] **Next: guard against echo, then find why echo cancellation failed on 26
-      October.** On built-in speakers and microphone, 22% of local segments
-      repeated remote speech (49.5% of local words), against 1% or less in every
-      other meeting. The microphone sat near -60 dBFS, against -18 to -32
-      usually, it changed format twice in the first six seconds, and live AEC
-      attenuated only 1 to 4 dB. Echo lagged the call by 0.85 s there, against
-      0.10 to 0.15 s elsewhere, and it is the only session with recorded
-      microphone gaps, which suggests a misaligned timeline (unverified). Flag
-      local rows that repeat a remote row within 3 s, and log the echo delay
-      from the two tracks' loudness.
+- [x] **Guard against echo.** Local rows that repeat the call are flagged at
+      transcription and hidden when rendered, and `transcribe.log` records the
+      echo delay for the raw and cleaned microphone. Existing transcripts do
+      not have the flag yet.
+- [ ] **Next: pad capture gaps from the buffer's host time.** Echo
+      cancellation failed on 26 October because the microphone sat 0.76 s late
+      on the session timeline, not because of the room. After a microphone
+      rebuild 5.6 s in, the first callback arrived about 0.77 s late, and
+      `TrackWriter.padToWallClockLocked` pads from that callback's `Date`, so
+      it inserted 1.23 s of silence for a 0.46 s gap and never trims an
+      over-pad. Echo then trailed the call by 0.79 to 0.83 s, outside AEC3's
+      0 to 512 ms delay search (`bridge.cpp` passes a delay of 0). Clock
+      observations predict the audio lag to within 35 ms, the real acoustic
+      latency; 1 October, on the same quiet built-in microphone, cancelled
+      14 dB of echo. Replaying 26 October with the offset corrected raised
+      live echo reduction from 5.5 to 12.1 dB. 2026.08.26-0932 has the same
+      fault: a stall over-padded the microphone by 0.52 s for 26 minutes.
+      Fix: measure the deficit from `CaptureClockStamp.hostTime` against the
+      first buffer's host time, keeping `Date` only where host time is
+      missing; leave `SessionTimeline` offsets on the persisted path. Host
+      time stops during sleep (09.30 sessions jump 107 s and 6049 s), so fall
+      back to `Date` when wall time runs seconds ahead of host time. This
+      revises the 2026-08-25 decision to measure drift before correcting it:
+      the fault is gap repair, not drift. Evidence is in the 2026-10-28
+      session's `aec-investigation` scratch scripts, not kept.
 - [ ] **Add a per-meeting "needs review" check.** After every recording: echo
       rate from the text (flag above 10%) and echo delay (flag outside 0 to
       0.3 s). After separation: per-row margin from FluidAudio's chunk

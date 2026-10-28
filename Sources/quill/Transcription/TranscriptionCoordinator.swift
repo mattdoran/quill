@@ -192,8 +192,10 @@ actor TranscriptionCoordinator {
             log: { log(dir, $0) }
         )
 
-        var merged: [TranscriptDocument.Segment] = []
-        var voices: [String: TranscriptDocument.Voice] = [:]
+        var transcribed: [(
+            track: SourceTrack, audioFile: String,
+            segments: [TranscriptSegment], rows: [TranscriptDocument.Segment]
+        )] = []
         for track in meta.sourceAudio {
             guard let audio = prepared.transcriptionSource(for: track.track) else {
                 log(dir, "skipping missing track \(track.file)")
@@ -216,42 +218,55 @@ actor TranscriptionCoordinator {
                 Date().timeIntervalSince(trackStarted)
             ))
             let speaker = track.track == .microphone ? "Me" : "Them"
-            let speakers = segments.map { _ in speaker }
             let offset = TimeInterval(track.offsetMilliseconds) / 1000
-            let voiceIDs = [speaker: "\(track.track.rawValue):1"]
-            let audioFile = audio.path.replacingOccurrences(of: dir.path + "/", with: "")
-            for (speaker, id) in voiceIDs {
-                var candidates: [(sample: TranscriptDocument.Voice.Sample, score: Int)] = []
-                for index in segments.indices where speakers[index] == speaker {
-                    let sample = TranscriptDocument.Voice.Sample(
-                        start_ms: Int(segments[index].start * 1000),
-                        end_ms: Int(segments[index].end * 1000)
-                    )
-                    candidates.append((
-                        sample,
-                        Self.sampleScore(sample, text: segments[index].text)
-                    ))
-                }
-                candidates.sort { $0.score > $1.score }
-                voices[id] = TranscriptDocument.Voice(
-                    source: track.track.rawValue,
-                    audio_file: audioFile,
-                    machine_label: speaker,
-                    name: nil,
-                    samples: candidates.prefix(3).map(\.sample)
-                )
-            }
-            merged += zip(segments, speakers).map { segment, speaker in
+            let rows = segments.map { segment in
                 TranscriptDocument.Segment(
                     speaker: speaker,
-                    voice_id: voiceIDs[speaker],
+                    voice_id: "\(track.track.rawValue):1",
                     start_ms: Int((segment.start + offset) * 1000),
                     end_ms: Int((segment.end + offset) * 1000),
                     text: segment.text
                 )
             }
+            let audioFile = audio.path.replacingOccurrences(of: dir.path + "/", with: "")
+            transcribed.append((track.track, audioFile, segments, rows))
+        }
+
+        // Echo is judged across both tracks, and an echo row must not become a
+        // sample of the local voice, where it would play the remote person.
+        var echo = EchoRows.flags(for: transcribed.flatMap(\.rows))[...]
+        var merged: [TranscriptDocument.Segment] = []
+        var voices: [String: TranscriptDocument.Voice] = [:]
+        for item in transcribed {
+            let flags = Array(echo.prefix(item.rows.count))
+            echo = echo.dropFirst(item.rows.count)
+            var candidates = item.segments.indices.filter { !flags[$0] }.map { index in
+                let sample = TranscriptDocument.Voice.Sample(
+                    start_ms: Int(item.segments[index].start * 1000),
+                    end_ms: Int(item.segments[index].end * 1000)
+                )
+                return (sample: sample, score: Self.sampleScore(sample, text: item.segments[index].text))
+            }
+            candidates.sort { $0.score > $1.score }
+            voices["\(item.track.rawValue):1"] = TranscriptDocument.Voice(
+                source: item.track.rawValue,
+                audio_file: item.audioFile,
+                machine_label: item.track == .microphone ? "Me" : "Them",
+                name: nil,
+                samples: candidates.prefix(3).map(\.sample)
+            )
+            merged += zip(item.rows, flags).map { row, isEcho in
+                var row = row
+                row.echo = isEcho ? true : nil
+                return row
+            }
         }
         merged.sort { $0.start_ms < $1.start_ms }
+        let echoRows = merged.filter { $0.echo == true }.count
+        if echoRows > 0 {
+            let localRows = merged.filter { $0.voice_id?.hasPrefix("mic:") == true }.count
+            log(dir, "echo: \(echoRows) of \(localRows) microphone rows repeat the call and are hidden")
+        }
 
         let transcript = TranscriptDocument(
             schema_version: TranscriptDocument.currentSchemaVersion,
@@ -268,6 +283,29 @@ actor TranscriptionCoordinator {
             merged.count,
             Date().timeIntervalSince(transcriptionStarted)
         ))
+        logEchoDelay(dir, manifest: meta)
+    }
+
+    /// Off the transcription path, so the transcript is never later for it.
+    /// Echo left in the cleaned microphone means cancellation failed.
+    private func logEchoDelay(_ dir: URL, manifest: SessionManifest) {
+        guard let call = manifest.files.system else { return }
+        let microphones = [
+            ("microphone", manifest.files.microphone),
+            ("cleaned microphone", manifest.files.cleanedMicrophone),
+        ].compactMap { label, file in file.map { (label, $0) } }
+        let offsets = manifest.startOffsets
+        Task.detached(priority: .utility) { [self] in
+            for (label, microphone) in microphones {
+                guard let estimate = try? EchoDelay.estimate(
+                    microphone: dir.appendingPathComponent(microphone),
+                    microphoneOffsetMilliseconds: offsets[.microphone],
+                    call: dir.appendingPathComponent(call),
+                    callOffsetMilliseconds: offsets[.system]
+                ) else { continue }
+                await log(dir, "echo in \(label): \(estimate.description)")
+            }
+        }
     }
 
     private func applySpeakerSeparation(

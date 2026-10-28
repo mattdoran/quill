@@ -102,7 +102,7 @@ struct TranscriptTurns {
 
         for index in segments.indices {
             let segment = segments[index]
-            if kinds[index] == .filler, !turns.isEmpty { continue }
+            if segment.echo == true || (kinds[index] == .filler && !turns.isEmpty) { continue }
             if let current = turns.indices.last {
                 if
                     segment.speaker == turns[current].speaker,
@@ -235,7 +235,7 @@ struct TranscriptTurns {
 
     private func nextSpeech(after index: Int) -> Int? {
         segments.indices.dropFirst(index + 1).first {
-            kinds[$0] == .speech && !isFragment($0) && !isFalseStart($0)
+            kinds[$0] == .speech && segments[$0].echo != true && !isFragment($0) && !isFalseStart($0)
         }
     }
 

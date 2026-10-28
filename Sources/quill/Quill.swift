@@ -20,7 +20,7 @@ struct Dev: ParsableCommand {
         abstract: "Tools for developing and checking Quill.",
         subcommands: [
             Diarize.self, WatchCalls.self, PreviewCompanion.self, PreviewVoices.self,
-            CheckLiveAEC.self,
+            CheckLiveAEC.self, CheckEchoDelay.self,
         ]
     )
 }

@@ -409,6 +409,26 @@ from their remembered profile, and a profile left with none is deleted.
 Contributions are keyed by voice ID, which a new separation renumbers, so
 separating a track again forgets that track's contributions for the meeting.
 
+### Echo
+
+When echo cancellation fails, the call reaches the microphone through the
+speakers and is transcribed again as local speech. `EchoRows` flags a local row
+of five or more words when a remote row that started first, and ended no more
+than 3 s before it, holds at least 60% of its words in order. The flag is set
+at transcription, while each row's track is known, and stored as the optional
+`echo` field on the row, which separation preserves. Rendering hides echo rows,
+speaking time ignores them, and the local voice never takes a sample from one;
+the remote row already holds the words. Across 51 meetings the rule flagged
+131 of 553 local rows on 26 October 2026 and 6 rows elsewhere.
+
+After a transcript is written, a background task logs the echo delay to
+`transcribe.log` for the microphone and the cleaned microphone: the lag, within
+-0.5 to 2 s, at which the microphone's loudness best follows the call's.
+Without echo, turn-taking leaves every lag uncorrelated or negative, so below
+0.2 the log says no echo was found. Echo left in the cleaned microphone means
+cancellation failed. `quill dev echo-delay <session>` prints the same
+measurement.
+
 ## 7. Session artifacts and authority
 
 | Artifact | Role | Authoritative? | Recovery treatment |

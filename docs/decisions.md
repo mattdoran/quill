@@ -2,6 +2,25 @@
 
 Dated product and architecture decisions. Newest first.
 
+## 2026-10-28: Hide echo rows rather than delete them
+
+**Decision:** A local row that repeats what the call said moments before is
+flagged `echo` in `transcript.json` at transcription and hidden when rendered.
+It needs five or more words, 60% of them in order in a remote row that started
+first and ended within 3 s. The echo delay is logged after every transcript.
+
+**Why:** On 26 October 2026 the speakers' sound reached the microphone and was
+transcribed again as Matt, doubling much of the call. The remote row already
+holds the words, so hiding the copy loses nothing, while keeping the row
+leaves the evidence and lets a better rule change the decision later.
+Shorter rows and looser windows hid real local speech elsewhere: counting
+remote rows that start during the local row caught 48% of 26 October's local
+words instead of 36%, but hid 13 rows in other meetings instead of 6.
+
+**Consequence:** Some echo stays visible where speech recognition merged two
+remote sentences into one local row. Existing transcripts need the flag added
+before it takes effect.
+
 ## 2026-10-28: Reach earlier meetings through one chooser, and keep Settings to four groups
 
 **Decision:** The menu keeps `Review Last Transcript…` and replaces `Open Last
