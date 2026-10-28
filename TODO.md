@@ -13,6 +13,43 @@ Work that remains. Product and architecture decisions live in
 
 ## Transcription
 
+- [ ] **Next: clear stale voice-memory keys on re-separation.** Contributions
+      are keyed by cluster number, which changes when a track is separated
+      again. In 2026.10.13-1231 one profile holds `system:3`, now another
+      person's voice, and an orphaned duplicate profile holds `system:4`, so
+      `Not the Same Person` there would remove the wrong voice. Clear a track's
+      contributions and `remembered_profile_id` when it is separated again, and
+      treat same-name profiles as one candidate in the 0.05 lead test: two
+      identical profiles can never lead each other.
+- [ ] **Next: guard against echo, then find why echo cancellation failed on 26
+      October.** On built-in speakers and microphone, 22% of local segments
+      repeated remote speech (49.5% of local words), against 1% or less in every
+      other meeting. The microphone sat near -60 dBFS, against -18 to -32
+      usually, it changed format twice in the first six seconds, and live AEC
+      attenuated only 1 to 4 dB. Echo lagged the call by 0.85 s there, against
+      0.10 to 0.15 s elsewhere, and it is the only session with recorded
+      microphone gaps, which suggests a misaligned timeline (unverified). Flag
+      local rows that repeat a remote row within 3 s, and log the echo delay
+      from the two tracks' loudness.
+- [ ] **Add a per-meeting "needs review" check.** After every recording: echo
+      rate from the text (flag above 10%) and echo delay (flag outside 0 to
+      0.3 s). After separation: per-row margin from FluidAudio's chunk
+      embeddings (`exposeChunkEmbeddings`), flagging a track with over 5% of
+      rows under 0.2; a leftover voice under 5% of the track and 0.6 similar to
+      two others; the `Unassigned` word share. Optional fields in
+      `transcript.json`. Echo checks first. Margin under 0.2 flagged 6.6% of
+      rows and caught 42% of disagreements across 18 tracks.
+- [ ] **Log name edits and keep diarization evidence.** Record each naming
+      action (voice, old name, new name, suggestion shown or accepted), and
+      keep the diarizer spans and per-row margins. Names are overwritten today,
+      so there is no labelled data beyond the one hand-labelled 27 August call.
+- [ ] **Keep Parakeet word timings in `transcript.json`.** They are discarded
+      after rows are formed, so no later stage can split a row at a speaker
+      change. Size growth is not yet measured.
+- [ ] **Lower the voice-memory suggestion threshold to about 0.72.** The same
+      person on microphone and on a call scored 0.763 to 0.786, under 0.82;
+      different people never exceeded 0.627 across 448 pairs. Only 34 voices
+      back this, so check it against the name-edit log once it exists.
 - [x] **Group transcript rows into speaker turns at render time.** One derived
       turn model on `TranscriptDocument`, used by the review window,
       `transcript.md` and Copy Markdown; `transcript.json` keeps its sentence
@@ -43,6 +80,21 @@ Work that remains. Product and architecture decisions live in
       retention. Rewrite existing `transcript.md` files only where they still
       exactly match the old renderer's output, so hand-edited files are left
       alone.
+- [ ] **Add a meeting name to transcript review.** A `Meeting name` field at
+      the top of review, saved in `meta.json`. The Markdown title uses it when
+      set, otherwise the date and time; the date stays in the header line. The
+      folder name stays a timestamp. Calendar prefill waits on the calendar
+      question in `docs/open-questions.md`.
+- [ ] **Add Send to Shortcut to transcript review.** A Settings picker chooses
+      one Apple Shortcut (None, or the list from `shortcuts list`); when set,
+      the review footer shows `Send to <name>` beside Copy Markdown. It saves
+      pending names, then runs `shortcuts run <name> --input-path
+      transcript.md`; a failure shows an alert with the Shortcuts error. It is
+      disabled during separation, like Copy Markdown. The shortcut decides
+      what happens next: an AI service, a web address, a folder, a note or
+      mail. Build after turn grouping, since it hands over the new Markdown.
+- [ ] **Mark doubtful rows in review**, after transcript turns are grouped,
+      using the per-row margin from the review check.
 - [ ] **Add WhisperKit large-v3-turbo as a fallback and re-transcription
       option.** Parakeet remains the fast English default. Re-transcription is
       one reason source audio is retained by default.
@@ -53,11 +105,6 @@ Work that remains. Product and architecture decisions live in
       from 1.9% to 0.7% but lowered accuracy on short named lines from 96.7% to
       94.8%; 0.5 seconds is untested. The nearest span's voice was right only
       39 to 51% of the time, so it is not a fallback.
-- [ ] **Find why echo cancellation failed on 26 October.** On built-in speakers
-      and microphone, 22% of local segments repeated remote speech, against 1%
-      or less in every other meeting. The microphone sat near -60 dBFS, against
-      -18 to -32 usually, it changed format twice in the first six seconds, and
-      live AEC attenuated only 1 to 4 dB.
 
 ## Controls
 
@@ -102,6 +149,9 @@ Settled 2026-10-28 in `docs/decisions.md`.
 - [x] **Unify transcript completion and review.** Keep processing visible until
       dismissal or completion, then route both companion and native notification
       actions into one read-only transcript and speaker review window.
+- [x] **Choose earlier meetings from a list, not a folder.** `Meetings…`
+      replaces three menu items with a chooser listing meetings by date,
+      length, people and state; `Review Last Transcript…` stays.
 - [ ] **Import recordings as meetings (deferred, raised 2026-10-28).** For
       in-person meetings Matt often records in Voice Memos on his phone
       instead of starting Quill, so those meetings get no transcript, names or
@@ -149,9 +199,6 @@ Settled 2026-10-28 in `docs/decisions.md`.
       .audio)` reads the state without prompting.
 
       The tap side has no public equivalent. It is gated by
-- [x] **Choose earlier meetings from a list, not a folder.** `Meetings…`
-      replaces three menu items with a chooser listing meetings by date,
-      length, people and state; `Review Last Transcript…` stays.
       `kTCCServiceAudioCapture`, confirmed in the TCC database, and no framework
       exposes a prompt-free check for it. Granola reads it through the private
       `TCCAccessPreflight` in TCC.framework. The alternative is to build a tap

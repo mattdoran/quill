@@ -72,6 +72,29 @@ stay turns, so a reply is still never decided by word count alone.
 holds only its title and transcript. The thresholds were chosen in a
 playground over real meetings and may move once the format is in daily use.
 
+## 2026-10-26: Hand transcripts off through a Shortcut, after naming
+
+**Decision:** Quill hands a finished transcript to other tools through one
+manual action in transcript review: `Send to <name>` runs an Apple Shortcut
+the person picked in Settings, with `transcript.md` as its input, after saving
+pending names. There is no automatic hand-off, and Quill holds no prompt, model
+choice or API key and shows no summary. `on_stop` stays as it is.
+
+**Why:** Eugene wants transcripts summarised by an LLM, and every setup
+differs. A shortcut can post to a web address, save to a folder, add to a note,
+mail, or call an AI service, so one primitive covers them without code. A
+summary is only worth having once speakers are named, which happens in review,
+and Quill has no moment that means naming is finished: a person pressing Send
+is the only reliable signal, so automatic sending was dropped. Summarising
+inside Quill would break "nothing leaves the machine" and turn read-only review
+into a chat client. On this Mac, Claude and ChatGPT offer neither a Share-sheet
+entry nor Shortcuts actions, so the Share sheet would reach them only through a
+shortcut anyway.
+
+**Consequence:** Whatever leaves the Mac is the shortcut's doing, not
+Quill's. Copy Markdown remains the no-setup route. `on_stop` still fires
+before review with `Me` and `Them` labels; hardening it waits for a user.
+
 ## 2026-10-26: Treat the speaker count as an estimate
 
 **Decision:** The count sheet asks `About how many people spoke?` and says Quill
@@ -94,7 +117,10 @@ directions.
 **Consequence:** Four of the 18 meetings show one voice more than there were
 people. In three it is a small leftover of 0.2 to 1.4 minutes mixing two
 people. Five meetings lose 1.4 to 4.0 points even after naming. The repeat
-action proposes the number of people named, not the number of voices.
+action proposes the number of people named, not the number of voices. On the
+one hand-labelled call (27 August), one extra cluster scored 95.7% of speech
+time against 97.3% for the exact count; that is one call, so the setting stays
+until name edits are logged and can be measured.
 
 ## 2026-10-26: Voices with the same name are one person
 

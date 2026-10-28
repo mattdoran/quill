@@ -120,6 +120,8 @@ PID replacement, loopback exclusion and monitor restart.
 Questions:
 
 - Is calendar access worth the permission and product scope it introduces?
+  Besides the call-lifecycle signal, it could prefill a meeting's name from
+  the calendar event (raised 2026-10-26), as Granola does.
 - After per-application measurement, which call families are reliable enough
   to stop automatically rather than ask?
 - Should muting for longer than two seconds count as leaving a call? Core Audio
