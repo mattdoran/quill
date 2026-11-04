@@ -203,6 +203,49 @@ import Testing
         )
     }
 
+    @Test func killedCaptureKeepsItsAudioAndIsPublished() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "quill-recovery-tests-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        let session = root.appendingPathComponent("2026-11-04 103137", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: session, withIntermediateDirectories: true)
+        _ = try SessionFiles.prepare(session)
+
+        let microphone = SessionFiles.internalFile("mic.caf", in: session)
+        let call = SessionFiles.internalFile("system.caf", in: session)
+        try writeAAC(to: microphone, channels: 1, seconds: 2, frequency: 330)
+        try writeAAC(to: call, channels: 1, seconds: 2, frequency: 660)
+        try stripPacketTable(microphone)
+        try stripPacketTable(call)
+        try writeJSON(
+            [
+                "started": "2026-11-03T23:31:37Z",
+                "files": [
+                    "mic": SessionFiles.internalPath("mic.caf"),
+                    "system": SessionFiles.internalPath("system.caf"),
+                ],
+                "start_offset_ms": ["mic": 250, "system": 0],
+            ],
+            to: SessionFiles.captureJournal(session)
+        )
+
+        await AudioFinalizer.shared.recoverPending(in: root)
+
+        let published = try readJSON(SessionFiles.metadata(session))
+        #expect(published["recovered_after_interruption"] as? Bool == true)
+        #expect(published["audio_state"] as? String == "finalized")
+        #expect((published["duration_seconds"] as? Int ?? 0) >= 2)
+        #expect(SessionFiles.hasProcessableAudio(session))
+        let local = session.appendingPathComponent(AudioFinalizer.localPath)
+        let seconds = try { () throws -> Double in
+            let file = try AVAudioFile(forReading: local)
+            return Double(file.length) / file.fileFormat.sampleRate
+        }()
+        #expect(abs(seconds - 2) < 0.1)
+    }
+
     @Test func interruptedCaptureWithNoFramesBecomesTerminal() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(
             "quill-recovery-tests-\(UUID().uuidString)",

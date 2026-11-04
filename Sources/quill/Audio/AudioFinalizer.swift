@@ -66,7 +66,7 @@ actor AudioFinalizer {
 
     private func performFinalization(session: URL) async throws {
         let finalizationStarted = Date()
-        var metadata = try recoverMetadataIfNeeded(session: session)
+        var metadata = try await recoverMetadataIfNeeded(session: session)
         if metadata.audioState == .empty {
             removeStaleJournal(session)
             return
@@ -192,7 +192,7 @@ actor AudioFinalizer {
 
     // MARK: - Recovery and metadata
 
-    private func recoverMetadataIfNeeded(session: URL) throws -> SessionManifest {
+    private func recoverMetadataIfNeeded(session: URL) async throws -> SessionManifest {
         let meta = SessionFiles.metadata(session)
         if FileManager.default.fileExists(atPath: meta.path) {
             return try SessionMetadataStore.readManifest(session)
@@ -203,6 +203,11 @@ actor AudioFinalizer {
             throw FinalizationError.missingMetadata(meta)
         }
         let journal = try SessionMetadataStore.readJournal(session)
+        // Detached: a rebuild takes minutes, and a meeting ending meanwhile
+        // must still be able to finalize on this actor.
+        try await Task.detached(priority: .utility) { [self] in
+            try repairUnindexedAudio(in: session, journal: journal)
+        }.value
         var files = journal.files
         let microphone = try sourceURL(for: files.microphone, in: session)
         let call = try sourceURL(for: files.system, in: session)
@@ -255,6 +260,59 @@ actor AudioFinalizer {
         return manifest
     }
 
+    /// A source that can't be rebuilt throws, leaving the journal in place to
+    /// retry at the next launch. Falling through would record it as empty.
+    private nonisolated func repairUnindexedAudio(
+        in session: URL,
+        journal: CaptureJournal
+    ) throws {
+        for path in [journal.files.microphone, journal.files.system] {
+            guard let source = try sourceURL(for: path, in: session) else { continue }
+            try repairUnindexedFile(source, to: source, in: session)
+        }
+
+        // Derived while recording, so losing one only costs a rebuild from the sources.
+        for name in [EchoCancellation.outputName, LiveEchoCanceller.meetingOutputName] {
+            let published = SessionFiles.internalFile(name, in: session)
+            let live = SessionFiles.internalFile("\(name).live", in: session)
+            guard
+                FileManager.default.fileExists(atPath: live.path),
+                !FileManager.default.fileExists(atPath: published.path)
+            else { continue }
+            do {
+                try repairUnindexedFile(live, to: published, in: session)
+                try? FileManager.default.removeItem(at: live)
+            } catch {
+                appendLog(session, "couldn't rebuild \(live.lastPathComponent): \(error)")
+            }
+        }
+    }
+
+    private nonisolated func repairUnindexedFile(
+        _ input: URL,
+        to output: URL,
+        in session: URL
+    ) throws {
+        guard UnindexedCAF.needsRepair(input) else { return }
+        let started = Date()
+        let keep = input.appendingPathExtension("unindexed")
+        let target = output == input ? output.appendingPathExtension("rebuilt") : output
+        let repair = try UnindexedCAF.repair(input, to: target)
+        if repair.unrecoveredBytes > UnindexedCAF.ignorableTailBytes {
+            try FileManager.default.copyItem(at: input, to: keep)
+            appendLog(session, "WARN \(input.lastPathComponent): "
+                + "\(repair.unrecoveredBytes) bytes undecodable, original kept as "
+                + keep.lastPathComponent)
+        }
+        if target != output {
+            _ = try FileManager.default.replaceItemAt(output, withItemAt: target)
+        }
+        appendLog(session, String(
+            format: "%@: rebuilt packet table after interruption: %d packets in %.1fs",
+            input.lastPathComponent, repair.packets, Date().timeIntervalSince(started)
+        ))
+    }
+
     private func recoveredTrack(file: String, duration: TimeInterval) -> SessionTrackMetadata {
         SessionTrackMetadata(
             file: file,
@@ -264,7 +322,7 @@ actor AudioFinalizer {
         )
     }
 
-    private func sourceURL(for path: String?, in session: URL) throws -> URL? {
+    private nonisolated func sourceURL(for path: String?, in session: URL) throws -> URL? {
         try AudioPreparation.url(for: path, in: session)
     }
 

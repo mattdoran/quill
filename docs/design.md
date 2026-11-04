@@ -218,10 +218,13 @@ Before either graph starts, `RecordingSession` atomically writes
 `.quill/capture.json` with the intended files and provisional offsets. It updates
 the journal after both first-buffer times are known. A normal stop writes the
 richer `.quill/meta.json` and removes the journal. If the process is interrupted,
-the finalizer can derive missing end time and durations from the surviving CAF
-files and publish recovered metadata. If both CAFs are readable but contain no
-frames, it publishes terminal `audio_state: empty` metadata and removes the
-journal instead of retrying the empty capture on every launch.
+each CAF holds its AAC bytes in an open-ended data chunk with no packet table, and
+CoreAudio reads it as zero frames. `UnindexedCAF` rebuilds the table at launch by
+asking the AAC decoder for the shortest prefix it will decode at each position,
+then the finalizer derives the end time and durations and publishes recovered
+metadata. A source it cannot rebuild leaves the journal in place to retry. If both
+CAFs contain no audio bytes, it publishes terminal `audio_state: empty` metadata
+and removes the journal instead of retrying the empty capture on every launch.
 
 ## 4. Processing during recording
 

@@ -1346,3 +1346,10 @@ empty` over 116 MB per track of intact audio.
 **Decision:** Run `AVAudioEngine` calls in `MicRecorder` through
 `ObjCExceptionCatcher`, so a raise becomes the throw `CaptureSupervisor` already
 retries with backoff.
+
+**Decision:** Rebuild the packet table at launch from the AAC bitstream, using
+Apple's decoder to find each packet's length. This leaves the capture path
+untouched, also recovers files written by earlier versions, and adds no
+dependency. A packet-size sidecar would have meant replacing `AVAudioFile` in the
+capture path. A source that cannot be rebuilt keeps its journal and retries; it
+is never recorded as empty.

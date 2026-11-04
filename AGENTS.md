@@ -19,6 +19,9 @@ is not in play.
 - Run `AVAudioEngine` graph calls through `ObjCExceptionCatcher`. A Bluetooth
   format change makes `installTap` raise, and an uncaught raise aborts every open
   track instead of letting `CaptureSupervisor` retry.
+- A killed process leaves CAFs that read as zero frames but hold all their audio.
+  Check for bytes with `UnindexedCAF`, never `AVAudioFile.length`, before treating
+  a recording as empty.
 - Preserve callback clock timestamps, but keep sampling and
   `clock-observations.jsonl` IO on `TrackWriter`'s queue, never the realtime
   callback.
