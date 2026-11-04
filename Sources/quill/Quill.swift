@@ -9,7 +9,7 @@ struct Quill: ParsableCommand {
         abstract: "Local meeting recorder + transcriber. Records mic and system audio as two tracks, then transcribes on-device.",
         subcommands: [
             Run.self, MeetingStatus.self, ListMeetings.self, ShowMeeting.self,
-            Skill.self, Doctor.self, Install.self, Dev.self,
+            Skill.self, Doctor.self, Install.self, Dev.self, WatchApp.self,
         ],
         defaultSubcommand: Run.self
     )
@@ -56,6 +56,7 @@ struct Run: ParsableCommand {
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
 
+        AppWatcher.start()
         Notifier.shared.start()
         LoginItem.migrateFromLaunchAgent { message in
             FileHandle.standardError.write(Data("\(message)\n".utf8))

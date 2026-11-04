@@ -1358,3 +1358,16 @@ is never recorded as empty.
 log redacts exception reasons and rotates, and an `.ips` lives apart from the
 session, so recovery copies both in. Nothing leaves the Mac: these are private
 meeting recordings.
+
+## 2026-11-04: Come back after a crash and keep recording
+
+**Context:** The same crash left Quill down for 9 minutes with no recording and no
+notice. Capturing audio is the app's first priority, and the login item only acts
+at login.
+
+**Decision:** A small `quill watch-app` process, spawned at launch and told of a
+clean exit over a pipe, reopens Quill after any crash. launchd's `KeepAlive` was
+rejected because it is expected to cover only instances launchd started, leaving
+anything opened by Sparkle or Finder unprotected, and it would replace the login
+item. That expectation was not tested. The watcher covers idle crashes too, so call
+prompts come back. It stops after 5 relaunches in 10 minutes.

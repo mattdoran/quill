@@ -233,6 +233,15 @@ any uncaught exception's reason and stack, graph rebuild attempts and slow attac
 detach calls, and `MainThreadWatchdog` warns when the main thread blocks for over 2
 seconds.
 
+### 3.5 Relaunch and resumed capture
+
+`AppWatcher` spawns `quill watch-app` from the same binary at launch and holds a
+pipe to it. An `atexit` handler writes a clean-exit byte, so EOF with no byte means
+the app died. The watcher waits one second, so `pkill -x quill` reaches it too and
+an install is not fought, then reopens the bundle through LaunchServices. It allows
+5 relaunches in 10 minutes, counted in `relaunches.json` under `QUILL_HOME` and
+logged to `watcher.log`, then posts an alert through `osascript` and exits.
+
 ## 4. Processing during recording
 
 `LiveEchoCanceller` is one optional monitor attached to both `TrackWriter`s. It
