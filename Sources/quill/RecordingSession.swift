@@ -48,6 +48,7 @@ final class RecordingSession {
     private var supervisors: [CaptureSupervisor] = []
     private var deviceWatcher: AudioDevices.Watcher?
     private var ticker: Timer?
+    private var watchdog: MainThreadWatchdog?
     private var journalHasOffsets = false
     private var liveAEC: LiveEchoCanceller?
     private var liveFrames: AcceptedFrameMailbox?
@@ -149,6 +150,9 @@ final class RecordingSession {
             throw error
         }
         supervisors = [micSupervisor, systemSupervisor]
+        let watchdog = MainThreadWatchdog(log: log)
+        watchdog.start()
+        self.watchdog = watchdog
         deviceWatcher = AudioDevices.Watcher(log: log) { [weak self, weak systemSupervisor] in
             guard let self, !self.isStopping else { return }
             self.liveAEC?.reset("output route change")
@@ -179,6 +183,8 @@ final class RecordingSession {
         ticker?.invalidate()
         ticker = nil
         deviceWatcher = nil
+        watchdog?.stop()
+        watchdog = nil
 
         let ended = Date()
         supervisors.forEach { $0.detachForStop() }

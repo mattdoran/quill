@@ -16,10 +16,16 @@ final class SessionLog: @unchecked Sendable {
         return f
     }()
 
+    private nonisolated(unsafe) static weak var active: SessionLog?
+    private static let activeLock = NSLock()
+
     init(dir: URL) {
         let url = SessionFiles.sessionLog(dir)
         FileManager.default.createFile(atPath: url.path, contents: nil)
         handle = try? FileHandle(forWritingTo: url)
+        Self.activeLock.lock()
+        Self.active = self
+        Self.activeLock.unlock()
     }
 
     func log(_ message: String) { append(message, mirrorToStderr: false) }
@@ -30,6 +36,33 @@ final class SessionLog: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         try? handle?.close()
+    }
+
+    private nonisolated(unsafe) static var previousExceptionHandler:
+        (@convention(c) (NSException) -> Void)?
+
+    /// The system log redacts an exception's reason, so this is the only place
+    /// it survives. Writes bypass `lock`: an exception raised while it is held
+    /// would otherwise deadlock instead of crashing.
+    ///
+    /// Call once the application is running. AppKit replaces any handler set
+    /// before that, silently.
+    static func installUncaughtExceptionHandler() {
+        previousExceptionHandler = NSGetUncaughtExceptionHandler()
+        NSSetUncaughtExceptionHandler { exception in
+            let lines = [
+                "FATAL uncaught \(exception.name.rawValue): \(exception.reason ?? "no reason")",
+            ] + exception.callStackSymbols
+            let text = lines.joined(separator: "\n") + "\n"
+            FileHandle.standardError.write(Data(text.utf8))
+            if SessionLog.activeLock.try() {
+                let log = SessionLog.active
+                SessionLog.activeLock.unlock()
+                let time = SessionLog.stamp.string(from: Date())
+                try? log?.handle?.write(contentsOf: Data("\(time) \(text)".utf8))
+            }
+            SessionLog.previousExceptionHandler?(exception)
+        }
     }
 
     private func append(_ message: String, mirrorToStderr: Bool) {

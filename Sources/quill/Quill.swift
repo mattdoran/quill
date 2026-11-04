@@ -87,6 +87,7 @@ struct Run: ParsableCommand {
         FileHandle.standardError.write(Data(
             "quill up · recordings → \(root.path) · ^C to quit\n".utf8
         ))
+        DispatchQueue.main.async { SessionLog.installUncaughtExceptionHandler() }
         app.run()
     }
 }
@@ -252,7 +253,7 @@ final class AppController {
             await transcription.setCompletionHandler { dir in
                 Task { @MainActor [weak self] in self?.transcriptFinished(dir) }
             }
-            await AudioFinalizer.shared.recoverPending(in: root)
+            await AudioFinalizer.shared.recoverPending(in: root, recordingCrashEvidence: true)
             await Task.detached(priority: .utility) {
                 TranscriptStore.upgradeUneditedMarkdown(in: root)
             }.value

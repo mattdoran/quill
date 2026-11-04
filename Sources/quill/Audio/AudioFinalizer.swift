@@ -28,7 +28,7 @@ actor AudioFinalizer {
         }
     }
 
-    func recoverPending(in root: URL) async {
+    func recoverPending(in root: URL, recordingCrashEvidence: Bool = false) async {
         guard let sessions = try? FileManager.default.contentsOfDirectory(
             at: root,
             includingPropertiesForKeys: [.isDirectoryKey],
@@ -44,6 +44,18 @@ actor AudioFinalizer {
                 && SessionFiles.hasProcessableAudio(session)
                 && (try? SessionMetadataStore.readManifest(session).audioState) != .finalized
             guard hasInterruptedCapture || needsFinalization else { continue }
+            if
+                recordingCrashEvidence,
+                hasInterruptedCapture,
+                let journal = try? SessionMetadataStore.readJournal(session),
+                let started = ISO8601DateFormatter().date(from: journal.started)
+            {
+                await Task.detached(priority: .utility) { [self] in
+                    CrashEvidence.record(session: session, startedAt: started) {
+                        appendLog(session, $0)
+                    }
+                }.value
+            }
             do {
                 try await finalize(session: session)
             } catch {

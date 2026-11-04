@@ -1353,3 +1353,8 @@ untouched, also recovers files written by earlier versions, and adds no
 dependency. A packet-size sidecar would have meant replacing `AVAudioFile` in the
 capture path. A source that cannot be rebuilt keeps its journal and retries; it
 is never recorded as empty.
+
+**Decision:** Keep crash diagnostics local, in the session they concern. The system
+log redacts exception reasons and rotates, and an `.ips` lives apart from the
+session, so recovery copies both in. Nothing leaves the Mac: these are private
+meeting recordings.

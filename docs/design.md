@@ -226,6 +226,13 @@ metadata. A source it cannot rebuild leaves the journal in place to retry. If bo
 CAFs contain no audio bytes, it publishes terminal `audio_state: empty` metadata
 and removes the journal instead of retrying the empty capture on every launch.
 
+Launch recovery first calls `CrashEvidence`, which appends the first matching
+`.ips` summary to `session.log` and saves Quill's system log from the minute before
+the death as `.quill/crash-system.log`. During capture, `session.log` also receives
+any uncaught exception's reason and stack, graph rebuild attempts and slow attach or
+detach calls, and `MainThreadWatchdog` warns when the main thread blocks for over 2
+seconds.
+
 ## 4. Processing during recording
 
 `LiveEchoCanceller` is one optional monitor attached to both `TrackWriter`s. It
