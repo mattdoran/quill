@@ -4,7 +4,11 @@ import Foundation
 @MainActor
 final class RecordingSession {
     let dir: URL
-    let startedAt = Date()
+    let startedAt: Date
+    private let captureStartedAt: Date
+    /// The journal as a crash left it, when this capture continues a session.
+    private let resumedJournal: CaptureJournal?
+    private let boundCall: CallApplication?
 
     /// Set the first time a track is interrupted and never cleared: the
     /// recording can no longer be assumed complete, even though capture came
@@ -49,7 +53,7 @@ final class RecordingSession {
     private var deviceWatcher: AudioDevices.Watcher?
     private var ticker: Timer?
     private var watchdog: MainThreadWatchdog?
-    private var journalHasOffsets = false
+    private var journalFirstBuffers = 0
     private var liveAEC: LiveEchoCanceller?
     private var liveFrames: AcceptedFrameMailbox?
     private var liveAECBegun = false
@@ -64,7 +68,12 @@ final class RecordingSession {
 
     /// Create the session folder under `root` (yyyy.MM.dd-HHmm, suffixed on
     /// collision) without starting capture yet.
-    init(root: URL) throws {
+    init(root: URL, boundCall: CallApplication? = nil) throws {
+        let now = Date()
+        startedAt = now
+        captureStartedAt = now
+        resumedJournal = nil
+        self.boundCall = boundCall
         let base = Self.folderFormat.string(from: startedAt)
         var candidate = root.appendingPathComponent(base, isDirectory: true)
         var n = 2
@@ -82,6 +91,36 @@ final class RecordingSession {
         )
     }
 
+    /// Continue a session a crash interrupted, in its own folder and timeline.
+    init(resuming interrupted: CaptureResume.Interrupted) {
+        let now = Date()
+        dir = interrupted.session
+        startedAt = ISO8601DateFormatter().date(from: interrupted.journal.started) ?? now
+        captureStartedAt = now
+        resumedJournal = interrupted.journal
+        boundCall = interrupted.journal.boundCall
+        log = SessionLog(dir: dir)
+        let segment = interrupted.journal.resumedSegments.count + 1
+        clockDiagnostics = ClockDiagnostics(
+            url: SessionFiles.internalFile("clock-observations.\(segment + 1).jsonl", in: dir),
+            log: log
+        )
+        log.warn(
+            "resuming capture \(Int(now.timeIntervalSince(interrupted.lastAudio)))s "
+                + "after the last audio written"
+        )
+        report(
+            "Quill quit and lost \(CaptureResume.spoken(now.timeIntervalSince(interrupted.lastAudio))) "
+                + "at \(CaptureResume.clock(interrupted.lastAudio))"
+        )
+    }
+
+    private var segment: Int { resumedJournal.map { $0.resumedSegments.count + 1 } ?? 0 }
+
+    private func segmentPath(_ track: SourceTrack) -> String {
+        SessionFiles.internalPath(SessionFiles.captureSegmentName(track, segment: segment))
+    }
+
     /// Start both tracks. If the mic fails after the system tap started, the
     /// tap is torn down so we never run half a session silently.
     func start() throws {
@@ -91,12 +130,12 @@ final class RecordingSession {
                 + "output=\(AudioDevices.defaultOutputName())"
         )
         system.prepare(
-            writingTo: SessionFiles.internalFile("system.caf", in: dir),
+            writingTo: dir.appendingPathComponent(segmentPath(.system)),
             log: log,
             clockDiagnostics: clockDiagnostics
         )
         try mic.prepare(
-            writingTo: SessionFiles.internalFile("mic.caf", in: dir),
+            writingTo: dir.appendingPathComponent(segmentPath(.microphone)),
             log: log,
             clockDiagnostics: clockDiagnostics
         )
@@ -107,7 +146,8 @@ final class RecordingSession {
             self?.archiveFailed(name: "system", detail: detail)
         }
 
-        if let canceller = LiveEchoCanceller(
+        // A live result would cover only this segment; finalization rebuilds it.
+        if resumedJournal == nil, let canceller = LiveEchoCanceller(
             session: SessionFiles.internalDirectory(dir),
             rate: MicRecorder.trackSampleRate,
             log: log
@@ -146,7 +186,17 @@ final class RecordingSession {
             clockDiagnostics.finish()
             log.warn("session aborted: \(error)")
             log.close()
-            try? FileManager.default.removeItem(at: dir)
+            if let resumedJournal {
+                // Earlier segments hold the meeting; only this attempt is noise.
+                try? SessionMetadataStore.writeJournal(resumedJournal, to: dir)
+                for track in SourceTrack.allCases {
+                    try? FileManager.default.removeItem(
+                        at: dir.appendingPathComponent(segmentPath(track))
+                    )
+                }
+            } else {
+                try? FileManager.default.removeItem(at: dir)
+            }
             throw error
         }
         supervisors = [micSupervisor, systemSupervisor]
@@ -212,6 +262,24 @@ final class RecordingSession {
         }
 
         let iso = ISO8601DateFormatter()
+
+        // Earlier segments still need rebuilding, which takes minutes, so the
+        // manifest waits for the finalizer.
+        if resumedJournal != nil {
+            do {
+                try await publishResumedStop(ended: iso.string(from: ended))
+            } catch {
+                log.warn("couldn't publish resumed stop: \(error)")
+                log.close()
+                throw error
+            }
+            log.log(String(
+                format: "segment stopped: mic %.0fs (%d gap(s)), system %.0fs (%d gap(s))",
+                mic.duration, mic.gaps.count, system.duration, system.gaps.count
+            ))
+            log.close()
+            return true
+        }
 
         // The tracks don't start on the same buffer; record how far each
         // lags the earliest so transcript timestamps share one clock.
@@ -284,7 +352,7 @@ final class RecordingSession {
     // MARK: -
 
     private func supervise(_ capture: Capture) -> CaptureSupervisor {
-        CaptureSupervisor(capture: capture, log: log, startedAt: startedAt) {
+        CaptureSupervisor(capture: capture, log: log, startedAt: captureStartedAt) {
             [weak self] message in
             self?.report(message)
         }
@@ -316,33 +384,71 @@ final class RecordingSession {
         ))
     }
 
+    /// Published as each track starts: a crash before the second track's first
+    /// buffer must still place the first on the timeline.
     private func publishJournalOffsetsIfReady() {
-        guard !journalHasOffsets, mic.firstBufferAt != nil, system.firstBufferAt != nil else {
-            return
-        }
+        let firstBuffers = [mic.firstBufferAt, system.firstBufferAt].compactMap { $0 }.count
+        guard firstBuffers > journalFirstBuffers else { return }
         do {
             try publishCaptureJournal()
-            journalHasOffsets = true
+            journalFirstBuffers = firstBuffers
         } catch {
             log.warn("couldn't update capture journal offsets: \(error)")
         }
     }
 
     private func publishCaptureJournal() throws {
-        let micStart = mic.firstBufferAt ?? startedAt
-        let systemStart = system.firstBufferAt ?? startedAt
-        let journal = CaptureJournal(
-            started: ISO8601DateFormatter().string(from: startedAt),
-            files: SessionAudioFiles(
-                microphone: SessionFiles.internalPath("mic.caf"),
-                system: SessionFiles.internalPath("system.caf")
-            ),
-            startOffsets: SessionTimeline.startOffsets(
+        try SessionMetadataStore.writeJournal(currentJournal(), to: dir)
+    }
+
+    private func currentJournal() -> CaptureJournal {
+        let micStart = mic.firstBufferAt ?? captureStartedAt
+        let systemStart = system.firstBufferAt ?? captureStartedAt
+        let files = SessionAudioFiles(
+            microphone: segmentPath(.microphone),
+            system: segmentPath(.system)
+        )
+        guard var journal = resumedJournal else {
+            var journal = CaptureJournal(
+                started: ISO8601DateFormatter().string(from: startedAt),
+                files: files,
+                startOffsets: SessionTimeline.startOffsets(
+                    microphoneStartedAt: micStart,
+                    systemStartedAt: systemStart
+                )
+            )
+            journal.timelineOriginMilliseconds = Int64(
+                (min(micStart, systemStart).timeIntervalSince1970 * 1000).rounded()
+            )
+            journal.boundCall = boundCall
+            return journal
+        }
+        journal.resumedSegments.append(CaptureSegment(
+            files: files,
+            startOffsets: SessionTimeline.resumedOffsets(
+                origin: journal.timelineOrigin ?? startedAt,
                 microphoneStartedAt: micStart,
                 systemStartedAt: systemStart
-            )
-        )
-        try SessionMetadataStore.writeJournal(journal, to: dir)
+            ),
+            startedAtMilliseconds: Int64((captureStartedAt.timeIntervalSince1970 * 1000).rounded())
+        ))
+        return journal
+    }
+
+    private func publishResumedStop(ended: String) async throws {
+        var journal = currentJournal()
+        journal.ended = ended
+        let lastSegment = journal.resumedSegments.count - 1
+        journal.resumedSegments[lastSegment].microphoneGaps = mic.gaps.map(Self.sessionGap)
+        journal.resumedSegments[lastSegment].systemGaps = system.gaps.map(Self.sessionGap)
+        let sessionDir = dir
+        try await Task.detached { [journal] in
+            try SessionMetadataStore.writeJournal(journal, to: sessionDir)
+        }.value
+    }
+
+    private static func sessionGap(_ gap: TrackWriter.Gap) -> SessionGap {
+        SessionGap(at: Int(gap.at.rounded()), seconds: Int(gap.seconds.rounded()))
     }
 
     private func reportAudioHealthIfDue() {
@@ -470,9 +576,7 @@ final class RecordingSession {
             capturedSeconds: Int((duration - padded).rounded()),
             // `capturedSeconds` excludes silence padded over gaps, so a track
             // that runs full length but recorded three minutes says so.
-            gaps: gaps.map {
-                SessionGap(at: Int($0.at.rounded()), seconds: Int($0.seconds.rounded()))
-            }
+            gaps: gaps.map(Self.sessionGap)
         )
     }
 }

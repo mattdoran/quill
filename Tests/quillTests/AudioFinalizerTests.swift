@@ -167,6 +167,75 @@ import Testing
         )
     }
 
+    @Test func resumedCaptureStitchesIntoOneTimelineWithTheGapRecorded() async throws {
+        let session = try temporarySession()
+        defer { try? FileManager.default.removeItem(at: session) }
+
+        for (name, seconds) in [("mic.caf", 0.4), ("mic.2.caf", 0.6), ("system.caf", 0.4), ("system.2.caf", 0.6)] {
+            try writeAAC(
+                to: SessionFiles.internalFile(name, in: session),
+                channels: 1,
+                seconds: seconds,
+                frequency: 440
+            )
+        }
+        var journal = CaptureJournal(
+            started: "2026-08-19T00:00:00Z",
+            files: SessionAudioFiles(
+                microphone: SessionFiles.internalPath("mic.caf"),
+                system: SessionFiles.internalPath("system.caf")
+            ),
+            startOffsets: SessionTrackOffsets()
+        )
+        journal.timelineOriginMilliseconds = 1_755_561_600_000
+        journal.ended = "2026-08-19T00:00:05Z"
+        journal.resumedSegments = [CaptureSegment(
+            files: SessionAudioFiles(
+                microphone: SessionFiles.internalPath("mic.2.caf"),
+                system: SessionFiles.internalPath("system.2.caf")
+            ),
+            startOffsets: SessionTrackOffsets(microphone: 3_000, system: 3_100),
+            startedAtMilliseconds: 1_755_561_603_000,
+            microphoneGaps: [SessionGap(at: 0, seconds: 0)],
+            systemGaps: []
+        )]
+        try SessionMetadataStore.writeJournal(journal, to: session)
+        // A crash leaves these describing only the first segment.
+        try writeAAC(
+            to: SessionFiles.internalFile(LiveEchoCanceller.meetingOutputName, in: session),
+            channels: 1,
+            seconds: 0.4,
+            frequency: 440
+        )
+
+        try await AudioFinalizer.shared.finalize(session: session)
+
+        let manifest = try SessionMetadataStore.readManifest(session)
+        #expect(manifest.audioState == .finalized)
+        #expect(manifest.recoveredAfterInterruption == true)
+        #expect(manifest.durationSeconds == 3)
+        #expect(manifest.ended == "2026-08-19T00:00:05Z")
+        let interruption = try #require(manifest.interruptions?.first)
+        #expect(interruption.endMilliseconds == 3_000)
+        #expect(abs(interruption.startMilliseconds - 400) < 60)
+
+        let local = session.appendingPathComponent(AudioFinalizer.localPath)
+        let remote = session.appendingPathComponent(AudioFinalizer.remotePath)
+        let meeting = session.appendingPathComponent(AudioFinalizer.meetingAudioPath)
+        for (url, expected) in [(local, 3.6), (remote, 3.7), (meeting, 3.7)] {
+            let file = try AVAudioFile(forReading: url)
+            let seconds = Double(file.length) / file.fileFormat.sampleRate
+            #expect(abs(seconds - expected) < 0.1, "\(url.lastPathComponent) \(seconds)")
+        }
+        #expect(manifest.tracks.microphone?.gaps.count == 2)
+        #expect(!FileManager.default.fileExists(atPath: SessionFiles.captureJournal(session).path))
+        for name in ["mic.caf", "mic.2.caf", "system.2.caf"] {
+            #expect(!FileManager.default.fileExists(
+                atPath: SessionFiles.internalFile(name, in: session).path
+            ))
+        }
+    }
+
     @Test func interruptedCaptureJournalRecoversBeforeFinalization() async throws {
         let session = try temporarySession()
         defer { try? FileManager.default.removeItem(at: session) }

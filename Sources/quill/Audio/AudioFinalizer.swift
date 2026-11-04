@@ -28,7 +28,12 @@ actor AudioFinalizer {
         }
     }
 
-    func recoverPending(in root: URL, recordingCrashEvidence: Bool = false) async {
+    /// `excluding` is a session this launch is about to keep recording into.
+    func recoverPending(
+        in root: URL,
+        recordingCrashEvidence: Bool = false,
+        excluding resumed: URL? = nil
+    ) async {
         guard let sessions = try? FileManager.default.contentsOfDirectory(
             at: root,
             includingPropertiesForKeys: [.isDirectoryKey],
@@ -36,6 +41,7 @@ actor AudioFinalizer {
         ) else { return }
 
         for session in sessions.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
+            guard session.standardizedFileURL != resumed?.standardizedFileURL else { continue }
             let journal = SessionFiles.captureJournal(session)
             let meta = SessionFiles.metadata(session)
             let hasInterruptedCapture = FileManager.default.fileExists(atPath: journal.path)
@@ -48,13 +54,9 @@ actor AudioFinalizer {
                 recordingCrashEvidence,
                 hasInterruptedCapture,
                 let journal = try? SessionMetadataStore.readJournal(session),
-                let started = ISO8601DateFormatter().date(from: journal.started)
+                journal.ended == nil
             {
-                await Task.detached(priority: .utility) { [self] in
-                    CrashEvidence.record(session: session, startedAt: started) {
-                        appendLog(session, $0)
-                    }
-                }.value
+                await recordCrashEvidence(session: session, journal: journal)
             }
             do {
                 try await finalize(session: session)
@@ -62,6 +64,18 @@ actor AudioFinalizer {
                 appendLog(session, "audio finalization deferred: \(error)")
             }
         }
+    }
+
+    func recordCrashEvidence(session: URL, journal: CaptureJournal) async {
+        guard let started = ISO8601DateFormatter().date(from: journal.started) else { return }
+        let lastAlive = CaptureResume.lastAudio(in: session, journal: journal)
+        let settle = CrashEvidence.reportSettleTime - Date().timeIntervalSince(lastAlive)
+        if settle > 0 { try? await Task.sleep(for: .seconds(settle)) }
+        await Task.detached(priority: .utility) { [self] in
+            CrashEvidence.record(session: session, startedAt: started, lastAlive: lastAlive) {
+                appendLog(session, $0)
+            }
+        }.value
     }
 
     func finalize(session: URL) async throws {
@@ -196,6 +210,7 @@ actor AudioFinalizer {
                 appendLog(session, "couldn't remove finalized \(source.lastPathComponent): \(error)")
             }
         }
+        if metadata.recoveredAfterInterruption == true { removeCaptureSegments(session) }
         appendLog(session, String(
             format: "finished audio published as M4A in %.1fs",
             Date().timeIntervalSince(finalizationStarted)
@@ -215,6 +230,20 @@ actor AudioFinalizer {
             throw FinalizationError.missingMetadata(meta)
         }
         let journal = try SessionMetadataStore.readJournal(session)
+        if !journal.resumedSegments.isEmpty {
+            // Detached for the same reason as the rebuild below.
+            let manifest = try await Task.detached(priority: .utility) { [self] in
+                try stitchResumedCapture(in: session, journal: journal)
+            }.value
+            try SessionMetadataStore.writeManifest(manifest, to: session)
+            removeStaleJournal(session)
+            appendLog(session, String(
+                format: "stitched %d capture segments, %d interruption(s)",
+                journal.resumedSegments.count + 1,
+                manifest.interruptions?.count ?? 0
+            ))
+            return manifest
+        }
         // Detached: a rebuild takes minutes, and a meeting ending meanwhile
         // must still be able to finalize on this actor.
         try await Task.detached(priority: .utility) { [self] in
@@ -300,6 +329,135 @@ actor AudioFinalizer {
         }
     }
 
+    private nonisolated func stitchResumedCapture(
+        in session: URL,
+        journal: CaptureJournal
+    ) throws -> SessionManifest {
+        // Each covers only the first segment, and would be rejected for length.
+        for name in [EchoCancellation.outputName, LiveEchoCanceller.meetingOutputName] {
+            for candidate in [name, "\(name).live"] {
+                try? FileManager.default.removeItem(
+                    at: SessionFiles.internalFile(candidate, in: session)
+                )
+            }
+        }
+
+        let sampleRate = MicRecorder.trackSampleRate
+        let segments = [
+            (files: journal.files, offsets: journal.startOffsets, mic: [SessionGap]?.none, system: [SessionGap]?.none)
+        ] + journal.resumedSegments.map {
+            (files: $0.files, offsets: $0.startOffsets, mic: $0.microphoneGaps, system: $0.systemGaps)
+        }
+        var files = SessionAudioFiles()
+        var offsets = SessionTrackOffsets()
+        var tracks = SessionTracks()
+        var spans: [Int: (start: Int, end: Int)] = [:]
+        var timelineEnd = 0
+
+        for track in SourceTrack.allCases {
+            var audio: [CaptureStitcher.SegmentAudio] = []
+            var knownGaps: [[SessionGap]] = []
+            for (index, segment) in segments.enumerated() {
+                guard
+                    let url = try sourceURL(for: segment.files[track], in: session),
+                    try repairSegment(url, in: session)
+                else { continue }
+                let frames = try AVAudioFile(forReading: url).length
+                guard frames > 0 else { continue }
+                let offset = segment.offsets[track]
+                audio.append(CaptureStitcher.SegmentAudio(
+                    url: url, frames: frames, offsetMilliseconds: offset
+                ))
+                knownGaps.append((track == .microphone ? segment.mic : segment.system) ?? [])
+                let end = offset + Int((Double(frames) / sampleRate * 1000).rounded())
+                let span = spans[index]
+                spans[index] = (
+                    start: min(span?.start ?? offset, offset),
+                    end: max(span?.end ?? end, end)
+                )
+                timelineEnd = max(timelineEnd, end)
+            }
+            guard let plan = CaptureStitcher.plan(audio, sampleRate: sampleRate) else { continue }
+
+            let output: URL
+            let path: String
+            if plan.pieces.count == 1 {
+                output = audio[0].url
+                path = output.path.replacingOccurrences(of: session.path + "/", with: "")
+            } else {
+                path = SessionFiles.internalPath("\(track.rawValue).stitched.caf")
+                output = session.appendingPathComponent(path)
+                try CaptureStitcher.stitch(audio, plan: plan, to: output)
+            }
+
+            var gaps: [SessionGap] = []
+            var cursor: AVAudioFramePosition = 0
+            for piece in plan.pieces {
+                if piece.silenceBefore > 0 {
+                    gaps.append(SessionGap(
+                        at: Int((Double(cursor) / sampleRate).rounded()),
+                        seconds: Int((Double(piece.silenceBefore) / sampleRate).rounded())
+                    ))
+                    cursor += piece.silenceBefore
+                }
+                let start = Int((Double(cursor) / sampleRate).rounded())
+                gaps += knownGaps[piece.source].map {
+                    SessionGap(at: start + $0.at, seconds: $0.seconds)
+                }
+                cursor += audio[piece.source].frames
+            }
+            let duration = Double(cursor) / sampleRate
+            files[track] = path
+            offsets[track] = plan.startOffsetMilliseconds
+            tracks[track] = SessionTrackMetadata(
+                file: path,
+                durationSeconds: Int(duration.rounded()),
+                capturedSeconds: Int(duration.rounded()) - gaps.reduce(0) { $0 + $1.seconds },
+                gaps: gaps,
+                gapsKnown: false
+            )
+        }
+
+        let iso = ISO8601DateFormatter()
+        let origin = journal.timelineOrigin ?? Date()
+        let wallClock = { (milliseconds: Int) in
+            iso.string(from: origin.addingTimeInterval(Double(milliseconds) / 1000))
+        }
+        var interruptions: [SessionInterruption] = []
+        let captured = spans.keys.sorted().compactMap { spans[$0] }
+        for (before, after) in zip(captured, captured.dropFirst()) where after.start > before.end {
+            interruptions.append(SessionInterruption(
+                startMilliseconds: before.end,
+                endMilliseconds: after.start,
+                startedAt: wallClock(before.end),
+                endedAt: wallClock(after.start)
+            ))
+        }
+        return SessionManifest(
+            started: journal.started,
+            ended: journal.ended ?? wallClock(timelineEnd),
+            durationSeconds: timelineEnd / 1000,
+            files: files,
+            startOffsets: offsets,
+            tracks: tracks,
+            recoveredAfterInterruption: true,
+            interruptions: interruptions,
+            audioState: files.hasSourceAudio ? nil : .empty
+        )
+    }
+
+    /// False when a segment holds too little to decode: a crash just after a
+    /// resume writes a header and a partial packet, which is not a lost meeting.
+    private nonisolated func repairSegment(_ url: URL, in session: URL) throws -> Bool {
+        do {
+            try repairUnindexedFile(url, to: url, in: session)
+            return true
+        } catch UnindexedCAF.RepairError.noPackets {
+            appendLog(session, "\(url.lastPathComponent) holds no decodable audio")
+            return false
+        }
+    }
+
     private nonisolated func repairUnindexedFile(
         _ input: URL,
         to output: URL,
@@ -336,6 +494,14 @@ actor AudioFinalizer {
 
     private nonisolated func sourceURL(for path: String?, in session: URL) throws -> URL? {
         try AudioPreparation.url(for: path, in: session)
+    }
+
+    private func removeCaptureSegments(_ session: URL) {
+        let directory = SessionFiles.internalDirectory(session)
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+        for name in names where name.wholeMatch(of: /(mic|system)(\.\d+)?\.caf/) != nil {
+            try? FileManager.default.removeItem(at: directory.appendingPathComponent(name))
+        }
     }
 
     private func removeStaleJournal(_ session: URL) {

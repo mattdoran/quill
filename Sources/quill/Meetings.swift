@@ -41,7 +41,8 @@ struct Meeting {
         let document = try? TranscriptStore(session: folder).read()
         let state: State
         if fm.fileExists(atPath: SessionFiles.captureJournal(folder).path) {
-            state = .recording
+            let stopped = (try? SessionMetadataStore.readJournal(folder))?.ended != nil
+            state = stopped ? .finishing : .recording
         } else if let document {
             // A voice with no rows, such as an unused call track's "Them", has
             // nothing to name.

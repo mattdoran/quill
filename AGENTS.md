@@ -22,6 +22,10 @@ is not in play.
 - A killed process leaves CAFs that read as zero frames but hold all their audio.
   Check for bytes with `UnindexedCAF`, never `AVAudioFile.length`, before treating
   a recording as empty.
+- A resumed session's `stop()` must leave the journal for the finalizer, and a
+  failed resume must keep the folder: earlier segments hold the meeting.
+- `./bundle.sh` wraps the existing binary and does not build. Run `./build.sh`
+  first, or a check exercises the previous code.
 - Preserve callback clock timestamps, but keep sampling and
   `clock-observations.jsonl` IO on `TrackWriter`'s queue, never the realtime
   callback.

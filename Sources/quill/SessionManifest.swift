@@ -94,6 +94,22 @@ struct SessionGap: Codable, Sendable {
     var seconds: Int
 }
 
+/// A stretch of the meeting nobody captured because Quill was not running.
+/// Milliseconds are on the session timeline; the times are wall clock.
+struct SessionInterruption: Codable, Sendable, Equatable {
+    var startMilliseconds: Int
+    var endMilliseconds: Int
+    var startedAt: String
+    var endedAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case startMilliseconds = "start_ms"
+        case endMilliseconds = "end_ms"
+        case startedAt = "started_at"
+        case endedAt = "ended_at"
+    }
+}
+
 struct SessionTrackMetadata: Codable, Sendable {
     var file: String
     var durationSeconds: Int
@@ -167,10 +183,34 @@ struct SessionTracks: Codable, Sendable {
     }
 }
 
+/// Capture after a relaunch. Offsets share the first segment's timeline.
+struct CaptureSegment: Codable, Sendable {
+    var files: SessionAudioFiles
+    var startOffsets: SessionTrackOffsets
+    var startedAtMilliseconds: Int64
+    var microphoneGaps: [SessionGap]?
+    var systemGaps: [SessionGap]?
+
+    enum CodingKeys: String, CodingKey {
+        case files
+        case startOffsets = "start_offset_ms"
+        case startedAtMilliseconds = "started_at_ms"
+        case microphoneGaps = "mic_gaps"
+        case systemGaps = "system_gaps"
+    }
+}
+
 struct CaptureJournal: Codable, Sendable {
     var started: String
     var files: SessionAudioFiles
     var startOffsets: SessionTrackOffsets
+    /// `started` has whole-second precision, too coarse to place later segments.
+    var timelineOriginMilliseconds: Int64?
+    var boundCall: CallApplication?
+    var resumedSegments: [CaptureSegment] = []
+    /// Set by a clean stop, so a later launch does not mistake it for a death.
+    var ended: String?
+    var interruptionNotified = false
 
     init(started: String, files: SessionAudioFiles, startOffsets: SessionTrackOffsets) {
         self.started = started
@@ -186,12 +226,38 @@ struct CaptureJournal: Codable, Sendable {
             SessionTrackOffsets.self,
             forKey: .startOffsets
         ) ?? SessionTrackOffsets()
+        timelineOriginMilliseconds = try values.decodeIfPresent(
+            Int64.self,
+            forKey: .timelineOriginMilliseconds
+        )
+        boundCall = try values.decodeIfPresent(CallApplication.self, forKey: .boundCall)
+        resumedSegments = try values.decodeIfPresent(
+            [CaptureSegment].self,
+            forKey: .resumedSegments
+        ) ?? []
+        ended = try values.decodeIfPresent(String.self, forKey: .ended)
+        interruptionNotified = try values.decodeIfPresent(
+            Bool.self,
+            forKey: .interruptionNotified
+        ) ?? false
     }
 
     enum CodingKeys: String, CodingKey {
         case started
         case files
         case startOffsets = "start_offset_ms"
+        case timelineOriginMilliseconds = "timeline_origin_ms"
+        case boundCall = "bound_call"
+        case resumedSegments = "resumed_segments"
+        case ended
+        case interruptionNotified = "interruption_notified"
+    }
+}
+
+extension CaptureJournal {
+    var timelineOrigin: Date? {
+        timelineOriginMilliseconds.map { Date(timeIntervalSince1970: Double($0) / 1000) }
+            ?? ISO8601DateFormatter().date(from: started)
     }
 }
 
@@ -203,6 +269,7 @@ struct SessionManifest: Codable, Sendable {
     var startOffsets: SessionTrackOffsets
     var tracks: SessionTracks
     var recoveredAfterInterruption: Bool?
+    var interruptions: [SessionInterruption]?
     var audioState: SessionAudioState?
 
     init(
@@ -213,6 +280,7 @@ struct SessionManifest: Codable, Sendable {
         startOffsets: SessionTrackOffsets = SessionTrackOffsets(),
         tracks: SessionTracks = SessionTracks(),
         recoveredAfterInterruption: Bool? = nil,
+        interruptions: [SessionInterruption]? = nil,
         audioState: SessionAudioState? = nil
     ) {
         self.started = started
@@ -222,6 +290,7 @@ struct SessionManifest: Codable, Sendable {
         self.startOffsets = startOffsets
         self.tracks = tracks
         self.recoveredAfterInterruption = recoveredAfterInterruption
+        self.interruptions = interruptions
         self.audioState = audioState
     }
 
@@ -241,6 +310,10 @@ struct SessionManifest: Codable, Sendable {
             Bool.self,
             forKey: .recoveredAfterInterruption
         )
+        interruptions = try values.decodeIfPresent(
+            [SessionInterruption].self,
+            forKey: .interruptions
+        )
         audioState = try values.decodeIfPresent(SessionAudioState.self, forKey: .audioState)
     }
 
@@ -252,6 +325,7 @@ struct SessionManifest: Codable, Sendable {
         case startOffsets = "start_offset_ms"
         case tracks
         case recoveredAfterInterruption = "recovered_after_interruption"
+        case interruptions
         case audioState = "audio_state"
     }
 }

@@ -3,7 +3,7 @@ import ArgumentParser
 import CoreAudio
 import Foundation
 
-struct CallApplication: Hashable, Sendable {
+struct CallApplication: Codable, Hashable, Sendable {
     let id: String
     let name: String
 }

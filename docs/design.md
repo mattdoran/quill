@@ -242,6 +242,41 @@ an install is not fought, then reopens the bundle through LaunchServices. It all
 5 relaunches in 10 minutes, counted in `relaunches.json` under `QUILL_HOME` and
 logged to `watcher.log`, then posts an alert through `osascript` and exits.
 
+At launch `CaptureResume` reads every journal that has no `ended` field. The newest
+resumes if its archives' modification time is under 5 minutes old and it has
+resumed fewer than 3 times in 10 minutes. Everything else finalizes as in 3.4. A
+resume continues in the same folder and timeline:
+
+- New `mic.N.caf` and `system.N.caf` files, described by a `resumed_segments` entry
+  in the journal. Each offset is milliseconds after `timeline_origin_ms`, the first
+  segment's origin, through `SessionTimeline.resumedOffsets`.
+- `session.log` is opened for append, and each segment has its own
+  `clock-observations.N.jsonl`.
+- No live echo cancellation, since its result would cover one segment. Finalization
+  discards the first segment's live outputs and rebuilds them offline.
+- A journal's bound call is restored. If that call is not holding input 10 seconds
+  after the resume, the normal auto-stop grace ends the recording.
+- If capture cannot restart, only the failed segment is removed from the journal
+  and disk, and the session finalizes.
+
+A clean stop of a resumed session writes `ended` to the journal instead of
+`meta.json`, because earlier segments may need minutes of packet-table rebuilding.
+The finalizer then repairs every segment and has `CaptureStitcher` decode and
+re-encode each track into one `<track>.stitched.caf`, with silence at the planned
+gaps. This is the one path that re-encodes source audio. Segments are removed only
+after the M4As publish. The manifest records the crash gaps in each track's `gaps`,
+global `interruptions` with their wall-clock times, and `gaps_known: false`, because
+gaps inside a killed segment are lost with the process. Everything downstream sees
+one file per track.
+
+`CrashEvidence` waits until 30 seconds after the last audio, because ReportCrash
+writes the `.ips` after the relaunch has already happened.
+
+`quill dev check-crash-resume` records with no menu, for checking this from a
+script: open it with `open --env QUILL_HOME=<dir> <bundle> --args dev
+check-crash-resume`, then `kill -9` it. Checks with an isolated `QUILL_HOME` can run
+beside the installed app.
+
 ## 4. Processing during recording
 
 `LiveEchoCanceller` is one optional monitor attached to both `TrackWriter`s. It
@@ -459,7 +494,7 @@ measurement.
 |---|---|---:|---|
 | `.quill/mic.caf` | Normalized microphone capture | Yes until source M4A publication | Never modified by AEC |
 | `.quill/system.caf` | Normalized global playback capture | Yes until source M4A publication | Never modified by AEC |
-| `.quill/capture.json` | Interrupted-capture journal | Temporarily | Reconstructs `meta.json` |
+| `.quill/capture.json` | Interrupted-capture journal, including resumed segments | Temporarily | Reconstructs `meta.json` |
 | `.quill/clock-observations.jsonl` | Sparse device and normalized clock anchors | No | Diagnostic only; capture does not depend on it |
 | `.quill/mic-cleaned.caf` | Live or offline AEC derivative | No | Rebuildable from sources |
 | `.quill/meeting.caf` | Live mono mix derivative | No | Validated or rebuilt |

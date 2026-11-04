@@ -214,7 +214,7 @@ Menu tooltips explain controls without opening Settings. Verbatim:
 
 ## 4. Notifications
 
-Seven, total. Every one of them is a terminal event or a thing the user can act
+Eight, total. Every one of them is a terminal event or a thing the user can act
 on within a minute.
 
 | # | Trigger | Title | Body | Buttons | Click opens | Interrupts | Status |
@@ -226,6 +226,7 @@ on within a minute.
 | 5 | Every audible track quiet 10 minutes | `Still recording` | `No one has spoken for 10 minutes. Is the meeting over?` | `Stop Recording` | — | Yes | Ships |
 | 6 | Recognized call input active for 2s | `Meeting detected` | `Zen Browser` | `Record` | — | Yes | Ships |
 | 7 | Bound call input absent for 4s, companion not visible | `Meeting ended?` | `Zen Browser` | `Stop` | — | Yes | Ships |
+| 8 | Quill died while recording | *see below* | *see below* | `Stop Recording` when resumed | - | Yes | Ships |
 
 Changes to the three that ship: #1 currently interpolates a raw Swift error into
 a banner — the error belongs on stderr and in the log, not in front of a person
@@ -339,6 +340,37 @@ its action if it is already in flight.
 Notification permission is requested when the first stable call is detected or
 the first manual recording starts, whichever happens first. It is never
 requested merely because Quill launched.
+
+### #8: Quill died while recording
+
+Quill reopens itself after any crash, and resumes a recording if the last audio
+was written under 5 minutes ago. Resuming is automatic, because a wrong resume
+costs one stop and a wrong finalize costs the rest of the meeting. Force Quit looks
+the same as a crash, so `Stop Recording` is on the banner.
+
+| Case | Title | Body |
+|---|---|---|
+| Resumed | `Recording resumed` | `Quill quit unexpectedly. About 8 seconds are missing from 2:32 PM. Everything else is saved.` |
+| Not resumed | `Recording interrupted` | `Quill quit unexpectedly at 2:32 PM. Audio up to then is saved and is being transcribed.` |
+| Recovery deferred | `Recording interrupted` | `Quill quit unexpectedly at 2:32 PM. It couldn't recover the audio yet and will try again next time it opens.` |
+| Third resume in 10 minutes died too | `Quill keeps quitting` | `Recording stopped. Audio up to 2:32 PM is saved.` |
+| Sixth relaunch in 10 minutes refused | `Quill can't restart` | `Open it again from Applications.` |
+
+The not-resumed cases are posted after finalization, so they can say what was
+saved, and at least 30 seconds after the death, while crash evidence settles. An
+empty recording posts nothing.
+
+A resumed session also carries a trouble line for the rest of the session:
+`Quill quit and lost 8 seconds at 2:32 PM`. The transcript keeps the gap as its own
+line, which also ends the turn around it:
+
+```
+*Recording gap, 2:32 to 2:41 PM*
+*Recording gap, 8 seconds at 2:32 PM*
+```
+
+The second form is used when both ends fall in one minute. One meeting across a
+crash stays one folder, one transcript and one row in the meetings list.
 
 ### Quill must not speak
 

@@ -28,6 +28,9 @@ enum SessionFiles {
     static func captureJournal(_ session: URL) -> URL {
         internalFile("capture.json", in: session)
     }
+    static func captureSegmentName(_ track: SourceTrack, segment: Int) -> String {
+        segment == 0 ? "\(track.rawValue).caf" : "\(track.rawValue).\(segment + 1).caf"
+    }
     static func sessionLog(_ session: URL) -> URL {
         internalFile("session.log", in: session)
     }

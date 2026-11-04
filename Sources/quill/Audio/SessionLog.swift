@@ -21,8 +21,12 @@ final class SessionLog: @unchecked Sendable {
 
     init(dir: URL) {
         let url = SessionFiles.sessionLog(dir)
-        FileManager.default.createFile(atPath: url.path, contents: nil)
-        handle = try? FileHandle(forWritingTo: url)
+        // Append: a resumed session keeps the log that says why it died, and
+        // crash evidence writes to the same file while this handle is open.
+        let descriptor = open(url.path, O_WRONLY | O_APPEND | O_CREAT, 0o644)
+        handle = descriptor >= 0
+            ? FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+            : nil
         Self.activeLock.lock()
         Self.active = self
         Self.activeLock.unlock()

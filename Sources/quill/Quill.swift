@@ -20,7 +20,7 @@ struct Dev: ParsableCommand {
         abstract: "Tools for developing and checking Quill.",
         subcommands: [
             Diarize.self, WatchCalls.self, PreviewCompanion.self, PreviewVoices.self,
-            CheckLiveAEC.self, CheckEchoDelay.self,
+            CheckLiveAEC.self, CheckEchoDelay.self, CheckCrashResume.self,
         ]
     )
 }
@@ -134,6 +134,7 @@ final class AppController {
     private var promptedCallToken: UUID?
     private var startingCallApplication: CallApplication?
     private var startingCallToken: UUID?
+    private var startingResume: CaptureResume.Interrupted?
     private var recordingCallApplication: CallApplication?
     private var recordingCallToken: UUID?
     private var autoStopDeadline: Date?
@@ -245,6 +246,14 @@ final class AppController {
             await models.fetchIfNeeded()
         }
 
+        let interrupted = CaptureResume.interrupted(in: root)
+        let launched = Date()
+        let resume = interrupted.last.flatMap {
+            CaptureResume.decision(
+                journal: $0.journal, lastAudio: $0.lastAudio, now: launched
+            ) == .resume ? $0 : nil
+        }
+
         Task { [transcription, root] in
             await transcription.setStatusHandler { status in
                 Task { @MainActor [weak self] in
@@ -254,7 +263,14 @@ final class AppController {
             await transcription.setCompletionHandler { dir in
                 Task { @MainActor [weak self] in self?.transcriptFinished(dir) }
             }
-            await AudioFinalizer.shared.recoverPending(in: root, recordingCrashEvidence: true)
+            await AudioFinalizer.shared.recoverPending(
+                in: root,
+                recordingCrashEvidence: true,
+                excluding: resume?.session
+            )
+            for item in interrupted where item.session != resume?.session {
+                self.announceInterrupted(item, now: launched)
+            }
             await Task.detached(priority: .utility) {
                 TranscriptStore.upgradeUneditedMarkdown(in: root)
             }.value
@@ -270,6 +286,20 @@ final class AppController {
         )
         callObserver.start()
         self.callObserver = callObserver
+
+        if let resume {
+            Task {
+                await AudioFinalizer.shared.recordCrashEvidence(
+                    session: resume.session,
+                    journal: resume.journal
+                )
+            }
+            startSession(
+                boundTo: resume.journal.boundCall,
+                token: resume.journal.boundCall.map { _ in UUID() },
+                resuming: resume
+            )
+        }
     }
 
     /// Stop from the Stop Recording button on a notification.
@@ -321,9 +351,14 @@ final class AppController {
         }
     }
 
-    private func startSession(boundTo application: CallApplication?, token: UUID?) {
+    private func startSession(
+        boundTo application: CallApplication?,
+        token: UUID?,
+        resuming: CaptureResume.Interrupted? = nil
+    ) {
         startingCallApplication = application
         startingCallToken = token
+        startingResume = resuming
         isStarting = true
         menuBar.updateStarting()
         // Let the NSMenu action return and AppKit paint the acknowledgement
@@ -336,6 +371,8 @@ final class AppController {
     private func attachSession() {
         guard isStarting else { return }
         Notifier.shared.requestAuthorizationOnce()
+        let resuming = startingResume
+        startingResume = nil
         guard canReachRoot() else {
             isStarting = false
             startingCallApplication = nil
@@ -351,7 +388,8 @@ final class AppController {
             return
         }
         do {
-            let newSession = try RecordingSession(root: root)
+            let newSession = try resuming.map(RecordingSession.init(resuming:))
+                ?? RecordingSession(root: root, boundCall: startingCallApplication)
             // No buttons: at thirty seconds the useful response is physical,
             // and "stop recording" is wrong advice while the other track is
             // still good.
@@ -380,6 +418,12 @@ final class AppController {
             startingCallApplication = nil
             startingCallToken = nil
             refreshMenuStatus()
+            if let resuming {
+                finishInterrupted(resuming)
+                companion.handle(.reset)
+                updater.resumePostponedRelaunchIfPossible()
+                return
+            }
             // The raw error goes to stderr and the log. What reaches someone
             // about to start a meeting is the thing they can act on.
             notifyUser(
@@ -404,6 +448,71 @@ final class AppController {
         }
         scheduleInteractiveTimer(ticker)
         self.ticker = ticker
+        if let resuming { announceResumed(resuming) }
+    }
+
+    private func announceResumed(_ resumed: CaptureResume.Interrupted) {
+        let missing = CaptureResume.spoken(Date().timeIntervalSince(resumed.lastAudio))
+        notifyUser(
+            title: "Recording resumed",
+            body: "Quill quit unexpectedly. About \(missing) are missing from "
+                + "\(CaptureResume.clock(resumed.lastAudio)). Everything else is saved.",
+            stopButton: true
+        )
+        // The call monitor needs a few seconds to see a call it has just met.
+        // A call that ended while Quill was down never reports an end of its own.
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.resumedCallSettle) { [weak self] in
+            guard
+                let self,
+                session != nil,
+                let application = recordingCallApplication,
+                callObserver?.activeApplications.contains(application) == false
+            else { return }
+            callEnded(application)
+        }
+    }
+
+    /// Capture could not restart, so what the crash left is the whole recording.
+    private func finishInterrupted(_ interrupted: CaptureResume.Interrupted) {
+        Task { [weak self, transcription] in
+            try? await AudioFinalizer.shared.finalize(session: interrupted.session)
+            self?.announceInterrupted(interrupted, now: Date())
+            await transcription.enqueue(interrupted.session)
+        }
+    }
+
+    /// Only after finalization: until then the audio may not be recoverable,
+    /// and an empty recording has nothing to report.
+    private func announceInterrupted(_ interrupted: CaptureResume.Interrupted, now: Date) {
+        let session = interrupted.session
+        let time = CaptureResume.clock(interrupted.lastAudio)
+        if let journal = try? SessionMetadataStore.readJournal(session) {
+            guard !journal.interruptionNotified else { return }
+            var marked = journal
+            marked.interruptionNotified = true
+            try? SessionMetadataStore.writeJournal(marked, to: session)
+            notifyUser(
+                title: "Recording interrupted",
+                body: "Quill quit unexpectedly at \(time). It couldn't recover the audio "
+                    + "yet and will try again next time it opens."
+            )
+            return
+        }
+        guard SessionFiles.hasProcessableAudio(session) else { return }
+        if CaptureResume.decision(
+            journal: interrupted.journal, lastAudio: interrupted.lastAudio, now: now
+        ) == .stopResuming {
+            notifyUser(
+                title: "Quill keeps quitting",
+                body: "Recording stopped. Audio up to \(time) is saved."
+            )
+        } else {
+            notifyUser(
+                title: "Recording interrupted",
+                body: "Quill quit unexpectedly at \(time). Audio up to then is saved "
+                    + "and is being transcribed."
+            )
+        }
     }
 
     private func stopSession() async {
@@ -775,6 +884,8 @@ final class AppController {
         )) != nil
     }
 
+
+    private static let resumedCallSettle: TimeInterval = 10
 
     private static func format(_ interval: TimeInterval) -> String {
         let total = Int(interval)

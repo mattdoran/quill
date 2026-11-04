@@ -14,6 +14,9 @@ enum CrashEvidence {
     private static let maxFrames = 30
     private static let secondsBeforeCrash: TimeInterval = 60
     private static let secondsAfterCrash: TimeInterval = 5
+    /// ReportCrash writes the `.ips` after the process is gone, and the watcher
+    /// relaunches within a second, so looking at once reads a crash as a kill.
+    static let reportSettleTime: TimeInterval = 30
 
     private static var defaultReports: URL {
         FileManager.default.homeDirectoryForCurrentUser
@@ -24,6 +27,7 @@ enum CrashEvidence {
     static func record(
         session: URL,
         startedAt: Date,
+        lastAlive: Date? = nil,
         reports: URL? = nil,
         fetchSystemLog: (Date, Date) -> Data? = systemLog,
         log: (String) -> Void
@@ -43,7 +47,7 @@ enum CrashEvidence {
         let sessionLog = SessionFiles.sessionLog(session)
         let lastWrite = (try? sessionLog.resourceValues(forKeys: [.contentModificationDateKey]))?
             .contentModificationDate
-        guard let end = summary?.capturedAt ?? lastWrite else { return }
+        guard let end = summary?.capturedAt ?? lastAlive ?? lastWrite else { return }
         let contents = fetchSystemLog(
             end.addingTimeInterval(-secondsBeforeCrash),
             end.addingTimeInterval(secondsAfterCrash)

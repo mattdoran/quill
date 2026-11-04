@@ -1371,3 +1371,22 @@ rejected because it is expected to cover only instances launchd started, leaving
 anything opened by Sparkle or Finder unprotected, and it would replace the login
 item. That expectation was not tested. The watcher covers idle crashes too, so call
 prompts come back. It stops after 5 relaunches in 10 minutes.
+
+**Decision:** Resume automatically when the last audio is under 5 minutes old,
+whether or not a call is detected, and let the normal auto-stop end a bound call
+that has gone. Stop resuming after 3 resumes in 10 minutes, because capture may be
+what is killing the app. Asking first, or requiring an active call, would lose audio
+whenever nobody clicks or input drops at the moment of relaunch. Force Quit cannot be
+told from a crash, so it also resumes, and the banner offers Stop.
+
+**Decision:** One meeting across a crash is one session, stitched at finalization
+with silence over the gap. This keeps `SessionTimeline`, transcript timestamps, voice
+review and the meetings list unchanged, at the cost of re-encoding source audio and
+rerunning echo cancellation offline for a resumed meeting. Linked sessions would have
+split the transcript and its speaker names. Passthrough joining was not attempted:
+re-encoding is a few lines using `AVAudioFile`, and this path is rare.
+
+**Decision:** Tell the user by banner, by the existing trouble line, and by a gap
+marker in the transcript. The marker stays with the meeting after the banner has
+gone. The companion gets no new state.
+
