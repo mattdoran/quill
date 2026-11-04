@@ -332,7 +332,17 @@ final class VoiceReviewWindowController: NSWindowController, NSWindowDelegate,
         let meetingAudio = meetingAudioURL
         let recorded = TranscriptStore(session: session).recordedMilliseconds
             ?? transcript.segments.map(\.end_ms).max() ?? 0
-        for turn in transcript.turns {
+        for item in transcript.timeline {
+            guard case .turn(let turn) = item else {
+                if case .interruption(let interruption) = item {
+                    let line = time.merging([.paragraphStyle: lastParagraph]) { $1 }
+                    result.append(NSAttributedString(
+                        string: "\(interruption.spokenGap)\n",
+                        attributes: line
+                    ))
+                }
+                continue
+            }
             result.append(NSAttributedString(string: turn.speaker, attributes: speaker))
             var clock = time
             if meetingAudio != nil {

@@ -127,4 +127,33 @@ import Testing
         #expect(CaptureResume.spoken(180) == "3 minutes")
         #expect(CaptureResume.spoken(4_320) == "1 hour 12 minutes")
     }
+
+    @Test func aGapSplitsTheTurnAndAppearsInTheMarkdown() {
+        let row = { (start: Int, text: String) in
+            TranscriptDocument.Segment(
+                speaker: "Me", voice_id: "mic:1", start_ms: start, end_ms: start + 500, text: text
+            )
+        }
+        let document = TranscriptDocument(
+            schema_version: TranscriptDocument.currentSchemaVersion,
+            engine: "e",
+            model: "m",
+            diarizer: nil,
+            created_at: "2026-11-04T00:00:00Z",
+            voices: [:],
+            segments: [row(0, "Before the gap."), row(70_000, "After the gap.")],
+            interruptions: [SessionInterruption(
+                startMilliseconds: 1_000,
+                endMilliseconds: 69_000,
+                startedAt: "2026-11-04T00:01:00Z",
+                endedAt: "2026-11-04T00:02:08Z"
+            )]
+        )
+        #expect(document.turns.count == 2)
+        let lines = document.renderedTurns(longForm: false)
+        let marker = lines.firstIndex { $0.hasPrefix("*Recording gap, ") }
+        #expect(marker == 2)
+        #expect(lines[0].contains("Before the gap."))
+        #expect(lines[4].contains("After the gap."))
+    }
 }

@@ -51,6 +51,7 @@ struct TranscriptDocument: Codable, Sendable {
     let created_at: String
     var voices: [String: Voice]
     var segments: [Segment]
+    var interruptions: [SessionInterruption]? = nil
 
     var canEditVoices: Bool { schema_version == Self.currentSchemaVersion }
 
@@ -122,7 +123,14 @@ struct TranscriptDocument: Codable, Sendable {
 
     func renderedTurns(longForm: Bool) -> [String] {
         var lines: [String] = []
-        for turn in turns {
+        for item in timeline {
+            guard case .turn(let turn) = item else {
+                if case .interruption(let interruption) = item {
+                    lines.append("*\(interruption.spokenGap)*")
+                    lines.append("")
+                }
+                continue
+            }
             for (index, text) in turn.paragraphTexts.enumerated() {
                 lines.append(index == 0
                     ? "**\(turn.speaker)** (\(Self.clock(turn.startMilliseconds, longForm: longForm))): \(text)"

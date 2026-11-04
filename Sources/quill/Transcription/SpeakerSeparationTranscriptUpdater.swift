@@ -157,7 +157,8 @@ enum SpeakerSeparationTranscriptUpdater {
             diarizer: diarizer,
             created_at: displayed.created_at,
             voices: voices,
-            segments: segments
+            segments: segments,
+            interruptions: displayed.interruptions
         )
     }
 

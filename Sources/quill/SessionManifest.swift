@@ -110,6 +110,26 @@ struct SessionInterruption: Codable, Sendable, Equatable {
     }
 }
 
+extension SessionInterruption {
+    /// `Recording gap, 2:32 to 2:41 PM`, or the length when that would read as
+    /// one minute.
+    var spokenGap: String {
+        let iso = ISO8601DateFormatter()
+        guard
+            let start = iso.date(from: startedAt),
+            let end = iso.date(from: endedAt)
+        else { return "Recording gap" }
+        let from = CaptureResume.clock(start)
+        let to = CaptureResume.clock(end)
+        if from == to {
+            let seconds = Double(endMilliseconds - startMilliseconds) / 1000
+            return "Recording gap, \(CaptureResume.spoken(seconds)) at \(to)"
+        }
+        let sameHalf = from.suffix(2) == to.suffix(2)
+        return "Recording gap, \(sameHalf ? String(from.dropLast(3)) : from) to \(to)"
+    }
+}
+
 struct SessionTrackMetadata: Codable, Sendable {
     var file: String
     var durationSeconds: Int

@@ -275,7 +275,8 @@ actor TranscriptionCoordinator {
             diarizer: nil,
             created_at: ISO8601DateFormatter().string(from: Date()),
             voices: voices,
-            segments: merged
+            segments: merged,
+            interruptions: meta.interruptions
         )
         try TranscriptStore(session: dir).write(transcript)
         log(dir, String(

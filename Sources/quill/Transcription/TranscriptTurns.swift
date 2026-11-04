@@ -29,8 +29,38 @@ struct TranscriptTurn: Equatable, Sendable {
     }
 }
 
+enum TranscriptTimelineItem: Equatable, Sendable {
+    case turn(TranscriptTurn)
+    case interruption(SessionInterruption)
+}
+
 extension TranscriptDocument {
-    var turns: [TranscriptTurn] { TranscriptTurns(segments: segments).turns() }
+    var turns: [TranscriptTurn] {
+        timeline.compactMap {
+            if case .turn(let turn) = $0 { turn } else { nil }
+        }
+    }
+
+    /// A gap ends the turn around it: one speaker's words either side of a
+    /// crash are not one stretch of speech.
+    var timeline: [TranscriptTimelineItem] {
+        var items: [TranscriptTimelineItem] = []
+        var remaining = segments[...]
+        for interruption in (interruptions ?? []).sorted(by: {
+            $0.startMilliseconds < $1.startMilliseconds
+        }) {
+            let split = remaining.firstIndex {
+                $0.start_ms >= interruption.startMilliseconds
+            } ?? remaining.endIndex
+            items += TranscriptTurns(segments: Array(remaining[..<split])).turns().map {
+                .turn($0)
+            }
+            items.append(.interruption(interruption))
+            remaining = remaining[split...]
+        }
+        items += TranscriptTurns(segments: Array(remaining)).turns().map { .turn($0) }
+        return items
+    }
 }
 
 struct TranscriptTurns {
