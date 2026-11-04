@@ -17,9 +17,16 @@ Matt rejected drafts on 2026-10-26 for each of these:
   one more cluster" and "the count is an estimate" were gobbledegook.
 - **Lead with the benefit when there is one.** "More accurate. You may see one
   extra voice."
-- **One short line per bullet.** A bullet with a reason attached is too wordy.
-- **No explanations, contrasts or justifications.** "Rather than merging two
-  people into one" confused; "that is deliberate" sounded defensive.
+- **Name a fix honestly.** A crash is called a crash: the symptom the user saw,
+  and that it is fixed, ahead of any new feature. 0.9.1's "Quill keeps recording"
+  hid that it used to crash, and Matt rejected it on 2026-11-04. A brief reason is
+  welcome when it is the user's reason.
+- **Keep edge cases brief.** One line for what recovery does, not every limit and
+  prompt. A review that adds a bullet per edge case has gone the wrong way.
+- **One short line per bullet.** A bullet carrying an engineering reason is too
+  wordy.
+- **No defending design choices.** "Rather than merging two people into one"
+  confused; "that is deliberate" sounded defensive.
 - **Use the app's exact labels.** Head a section with the feature's own label
   (`Separate Voices`, not "Separating voices"), bold buttons, quote prompts.
 - **Say when the user has to act.** "Give both the same name and save."
@@ -67,12 +74,15 @@ GitHub. Write in the user's voice: what a user sees and does, in a user's words.
 
 Rules:
 - Say what changed for the user, never how it works or why it was built that way.
+- Name a fix plainly: if something crashed, say "crash", give the symptom the user
+  saw, and say it is fixed. Put it first.
+- Keep edge cases brief: what happens, not every limit and prompt.
 - Lead an item with its benefit if it has one, for example "More accurate."
 - One short line per bullet. At most two sections of two or three bullets.
 - Use the exact labels given in the facts. Bold buttons, quote prompts, and head
   a section about one feature with that feature's label.
-- No explanations, contrasts or justifications: no "rather than", "instead of",
-  "because", "that is deliberate".
+- Do not defend design choices: no "rather than", "instead of", "that is
+  deliberate". A short reason is fine when it is the user's reason.
 - Say when the user has to do something, for example save.
 - Claim nothing the facts do not support. Name only what is new.
 - Plain Australian English. No em-dashes.
@@ -91,9 +101,10 @@ Reply with the Markdown only, starting with "## Quill {version}".
 ```text
 Review release notes before they reach Quill's users. Be adversarial: treat
 each line as confusing, wordy or wrong until it proves otherwise. The owner has
-rejected notes for jargon, wordiness, clauses that explain or justify a change,
-missing the change that matters most, and claims that were not true. Judge
-clarity and brevity as hard as accuracy.
+rejected notes for jargon, wordiness, clauses that defend a design choice,
+softening a fix so the problem is hidden, a bullet per edge case, missing the
+change that matters most, and claims that were not true. Judge clarity and
+brevity as hard as accuracy.
 
 Readers are everyday users of a macOS meeting recorder. They know its windows
 and buttons, nothing about how it works.
@@ -114,8 +125,11 @@ For each line ask:
 3. Is anything untrue, over-promised or vague?
 4. Does it say what the user must do, and when?
 5. Do button and prompt names match the facts exactly?
-6. Does it explain, justify or contrast instead of saying what changed?
+6. Does it defend a design choice instead of saying what changed?
+7. Does a fix name the problem and symptom plainly, a crash as a crash?
+8. Does it cover an edge case that could be dropped or merged?
 
 Reply with one short sentence per problem, then your final version. It must be
-no longer than the draft and accurate to the facts. Under 200 words.
+no longer than the draft and accurate to the facts. Do not add a line to cover
+a problem when dropping or merging one solves it. Under 200 words.
 ```
