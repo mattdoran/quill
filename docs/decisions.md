@@ -1334,3 +1334,15 @@ an accuracy guarantee, especially across different microphones or call codecs.
 **Decision:** Copy Markdown exports the full canonical transcript and saves any
 speaker name currently being edited. Its shortcut is Shift-Command-C, leaving
 Command-C as ordinary selection copying.
+
+## 2026-11-04: Survive a capture crash and recover what it left
+
+**Context:** A 4h11m recording crashed at the end when AirPods disconnected.
+`installTap` raised a format-mismatch NSException during the microphone rebuild,
+which Swift cannot catch. On relaunch, recovery read every CAF as zero frames
+because a packet table is only written on close, and published `audio_state:
+empty` over 116 MB per track of intact audio.
+
+**Decision:** Run `AVAudioEngine` calls in `MicRecorder` through
+`ObjCExceptionCatcher`, so a raise becomes the throw `CaptureSupervisor` already
+retries with backoff.

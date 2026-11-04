@@ -16,6 +16,9 @@ is not in play.
 
 - Audio tap and IO closures must remain `@Sendable`. Main-actor isolation on a
   Core Audio callback compiled cleanly and then trapped on the realtime thread.
+- Run `AVAudioEngine` graph calls through `ObjCExceptionCatcher`. A Bluetooth
+  format change makes `installTap` raise, and an uncaught raise aborts every open
+  track instead of letting `CaptureSupervisor` retry.
 - Preserve callback clock timestamps, but keep sampling and
   `clock-observations.jsonl` IO on `TrackWriter`'s queue, never the realtime
   callback.

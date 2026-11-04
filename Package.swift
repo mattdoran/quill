@@ -20,6 +20,7 @@ let package = Package(
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
                 .product(name: "FluidAudio", package: "FluidAudio"),
                 .product(name: "Sparkle", package: "Sparkle"),
+                "ObjCExceptions",
                 "WebRTCAudio",
             ],
             exclude: ["AppIcon.icns", "AppIcon.svg", "Info.plist", "quill.entitlements"],
@@ -43,6 +44,7 @@ let package = Package(
                 ]),
             ]
         ),
+        .target(name: "ObjCExceptions", publicHeadersPath: "include"),
         .target(
             name: "WebRTCAudio",
             publicHeadersPath: "include",

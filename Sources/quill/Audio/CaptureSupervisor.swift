@@ -97,6 +97,8 @@ final class CaptureSupervisor {
 
     private let onTrouble: (String) -> Void
 
+    private static let slowGraphCall: TimeInterval = 1
+
     /// Latest moment capture is known to have been alive, so the stall check
     /// has an anchor before the first buffer arrives.
     private var lastEvidence: Date
@@ -158,7 +160,7 @@ final class CaptureSupervisor {
         log.warn("\(capture.name): \(reason)")
         // The outage runs from the last good buffer, not from noticing it.
         outageStartedAt = lastEvidence
-        capture.detach()
+        timed("detach") { capture.detach() }
         rebuild(attempt: 1, now: Date())
     }
 
@@ -189,7 +191,7 @@ final class CaptureSupervisor {
                 report("\(capture.name) capture lost")
             }
             guard now >= nextTry else { return }
-            capture.detach()
+            timed("detach") { capture.detach() }
             rebuild(attempt: attempt + 1, now: now)
         }
     }
@@ -211,8 +213,10 @@ final class CaptureSupervisor {
 
     private func rebuild(attempt: Int, now: Date) {
         let delay = Self.backoff(attempt: attempt)
+        // Before the call: this line is all that remains if it never returns.
+        log.log("\(capture.name): rebuild attempt \(attempt) starting")
         do {
-            try capture.attach()
+            try timed("attach") { try capture.attach() }
             // A rebuilt graph gets at least the stall timeout to prove itself,
             // and longer as attempts mount.
             state = .recovering(attempt: attempt, nextTry: now + max(Self.stallTimeout, delay))
@@ -225,6 +229,17 @@ final class CaptureSupervisor {
             ))
             report("\(capture.name) capture failed to restart")
         }
+    }
+
+    private func timed(_ what: String, _ body: () throws -> Void) rethrows {
+        let started = Date()
+        defer {
+            let elapsed = Date().timeIntervalSince(started)
+            if elapsed > Self.slowGraphCall {
+                log.warn(String(format: "%@: %@ took %.1fs", capture.name, what, elapsed))
+            }
+        }
+        try body()
     }
 
     /// One report per outage: a track that stays broken is not re-announced on

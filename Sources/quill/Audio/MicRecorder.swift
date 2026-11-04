@@ -1,5 +1,6 @@
 import AVFoundation
 import Foundation
+import ObjCExceptions
 
 /// Captures the default input device into a `TrackWriter`, encoding AAC mono.
 /// Buffers stream straight to disk — nothing is held in memory, so session
@@ -91,31 +92,43 @@ final class MicRecorder: Capture {
         guard let writer else { throw RecorderError.notPrepared }
         routeEpoch += 1
         let epoch = routeEpoch
+        var inputFormat = AVAudioFormat()
 
         engine = AVAudioEngine()
-        let input = engine.inputNode
+        let engine = engine
 
-        let inputFormat = input.outputFormat(forBus: 0)
+        // AVAudioEngine raises when a Bluetooth device changes format mid-attach.
+        // Uncaught, that aborts the process and every open track with it.
+        try ObjCExceptionCatcher.perform {
+            let input = engine.inputNode
+            inputFormat = input.outputFormat(forBus: 0)
+            guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else { return }
+            log?.log(
+                "mic: installing tap on \(AudioDevices.defaultInputName()) "
+                    + "at \(inputFormat.short)"
+            )
+
+            // @Sendable required: the tap runs on the render thread, and inherited
+            // main-actor isolation traps the process there.
+            input.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) {
+                @Sendable [weak writer, liveness] buffer, time in
+                liveness.mark()
+                writer?.write(
+                    buffer,
+                    clock: CaptureClockStamp(time: time, routeEpoch: epoch)
+                )
+            }
+
+            engine.prepare()
+        }
         guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
             throw RecorderError.formatUnsupported(inputFormat)
         }
 
-        // @Sendable required: the tap runs on the render thread, and inherited
-        // main-actor isolation traps the process there.
-        input.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) {
-            @Sendable [weak writer, liveness] buffer, time in
-            liveness.mark()
-            writer?.write(
-                buffer,
-                clock: CaptureClockStamp(time: time, routeEpoch: epoch)
-            )
-        }
-
-        engine.prepare()
         do {
             try engine.start()
         } catch {
-            input.removeTap(onBus: 0)
+            try? ObjCExceptionCatcher.perform { engine.inputNode.removeTap(onBus: 0) }
             throw RecorderError.engineStartFailed(error)
         }
         observeConfigurationChange()
@@ -131,8 +144,15 @@ final class MicRecorder: Capture {
             NotificationCenter.default.removeObserver(configurationObserver)
         }
         configurationObserver = nil
-        engine.stop()
-        engine.inputNode.removeTap(onBus: 0)
+        let engine = engine
+        do {
+            try ObjCExceptionCatcher.perform {
+                engine.stop()
+                engine.inputNode.removeTap(onBus: 0)
+            }
+        } catch {
+            log?.warn("mic: detach failed: \(error)")
+        }
     }
 
     func close(at date: Date) {
