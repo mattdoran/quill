@@ -6,6 +6,28 @@
         <description>Signed updates for Quill.</description>
         <language>en</language>
         <item>
+            <title>0.9.1</title>
+            <pubDate>Wed, 04 Nov 2026 22:40:02 +1100</pubDate>
+            <link>https://github.com/mattdoran/quill</link>
+            <sparkle:version>158</sparkle:version>
+            <sparkle:shortVersionString>0.9.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description sparkle:format="markdown"><![CDATA[## Quill 0.9.1
+
+- Fixed: Quill could crash and vanish from the menu bar when AirPods or another audio device disconnected while recording. It now keeps recording, though a few seconds of audio can be lost each time.
+- Fixed: a crash could save a recording as empty, with no transcript. Quill now recovers the audio and transcribes it when it next opens. Recordings already saved as empty aren't recovered.
+
+**If Quill crashes**
+- It reopens within seconds and usually carries on recording in the same meeting. "Recording resumed" says how much is missing, and the transcript marks the gap.
+- A recording you Force Quit resumes too. To end it, click **Stop Recording**.
+
+[Full changelog](https://github.com/mattdoran/quill/compare/v0.9.0...v0.9.1)
+
+]]></description>
+            <enclosure url="https://github.com/mattdoran/quill/releases/download/v0.9.1/Quill-0.9.1.zip" length="5248458" type="application/octet-stream" sparkle:edSignature="Ol/SQxRhlpj/F1YI6W1Vbh4kheo/jjnUvg1UJJ3hYYhA5/MzRdhJHf49X3diiP5NAtDTNqWU3DIBEUKwvVB6CA=="/>
+        </item>
+        <item>
             <title>0.9.0</title>
             <pubDate>Wed, 28 Oct 2026 20:01:50 +1100</pubDate>
             <link>https://github.com/mattdoran/quill</link>
