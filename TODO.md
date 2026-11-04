@@ -109,6 +109,44 @@ Work that remains. Product and architecture decisions live in
       94.8%; 0.5 seconds is untested. The nearest span's voice was right only
       39 to 51% of the time, so it is not a fallback.
 
+## Audio capture
+
+- [ ] **Find why echo cancellation lost alignment after a device switch.** In
+      `2026.11.04-1031` the mic moved from about 120 ms to about 600 ms ahead of
+      the call after the 1:44 switch to speakers, and echo survived cleaning
+      until the 2:16 switch back (windowed envelope correlation 0.39 to 0.60,
+      against 0.05 to 0.18 earlier). 20 of the meeting's 21 echo-flagged rows
+      fall in that stretch. The whole-recording check in `transcribe.log` read
+      "no echo found", so it can miss this. Cause not yet known; check whether
+      it reproduces on the current build.
+- [ ] **Investigate closing the microphone gap on a device switch (backlog,
+      raised 2026-11-04).** Speech during the gap is lost. A test on 4 November
+      (`2026.11.04-2143`, 8 AirPods switches) lost 18 of 151 seconds: 0.6 to
+      0.9 s going to the speakers, and 1.7, 2.0, 6.2 and 4.7 s reconnecting.
+      The microphone stopped within about 0.5 s of the output change, even
+      while it was still the default input, which suggests `AVAudioEngine` ties
+      input to the output device; this is unproven. Quill then waited for
+      `AVAudioEngineConfigurationChange`, which arrived up to 4 s after the
+      default input had changed.
+      - Probe first: does an `IOProc` bound to the built-in microphone keep
+        delivering while AirPods connect? A standalone script logging buffer
+        arrival over two pulls answers it.
+      - If it does, replace `AVAudioEngine` in `MicRecorder` with a
+        device-bound `IOProc`, as `SystemAudioRecorder` uses, and keep the old
+        device running until the new one delivers its first buffer. This also
+        removes `installTap`, the call behind the 4 November crash. A removed
+        device has nothing to overlap with, so pulling AirPods out may keep a
+        short gap. It rewrites the capture path, so timestamps and format
+        changes need a full test.
+      - If it does not, rebuild the microphone when `AudioDevices.Watcher` sees
+        the default input change, without waiting for the engine. Expect the
+        long gaps to fall to about 2 s, and guard against rebuilding twice per
+        switch.
+      - Reference: Granola 7.726.2 is Electron and appears to capture through
+        Chromium's audio stack, so read Chromium's open source macOS input
+        stream and device-change handling. Whether it loses less on a switch
+        is unmeasured; recording with both during a test would show it.
+
 ## Controls
 
 - [ ] **Add a real global recording hotkey.** Menu key equivalents fire only
