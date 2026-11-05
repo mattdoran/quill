@@ -43,10 +43,13 @@ enum LoginItem {
         setEnabled(true)
     }
 
-    static func enableByDefaultOnFirstRun() {
-        guard isAvailable, !Config.loginItemInitialized() else { return }
+    /// Returns whether this launch was a fresh install's first.
+    @discardableResult
+    static func enableByDefaultOnFirstRun() -> Bool {
+        guard isAvailable, !Config.loginItemInitialized() else { return false }
         if !isEnabled { setEnabled(true) }
         Config.setLoginItemInitialized()
+        return true
     }
 
     /// Retire a LaunchAgent left by an older install.

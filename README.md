@@ -62,6 +62,9 @@ login item, so you can change it in Quill Settings or in System Settings →
 General → Login Items. Startup is tied to where the app lives, so move it before
 the first launch rather than afterwards.
 
+Quill has no Dock icon while idle. The first launch opens a short window saying
+where to find it in the menu bar, and opening Quill again shows the same window.
+
 **Requires:** macOS 15+ (Core Audio process taps for system audio — no
 virtual device, no kernel extension) on an Apple silicon Mac. The app is built
 for Apple silicon only and does not run on Intel Macs.

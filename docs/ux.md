@@ -26,12 +26,20 @@ everything else is what ships today.
    contextual recovery command for a Settings-owned value, but never a second
    copy of the setting itself.
 7. **One persistent utility window.** Settings is the only persistent window.
-   A focused, task-scoped transcript review window and the meetings chooser,
-   which closes once used, are allowed; wizards,
-   general editors and persistent recording windows are not.
+   A focused, task-scoped transcript review window, the meetings chooser,
+   which closes once used, and the one-screen welcome window are allowed;
+   wizards, general editors and persistent recording windows are not.
 8. **A visible window is recoverable.** While Quill owns a window, chooser,
    alert or update prompt, it appears in the Dock and Command-Tab switcher.
    The menu exposes one command that raises the existing surface.
+
+### Welcome window
+
+One screen titled `Quill is running`: where the feather is, that Quill offers to
+record when a call starts, and what to do if the feather is hidden. `OK` closes
+it. It opens on a fresh install's first launch, never after an upgrade, and
+whenever Quill is opened while already running. If another Quill window is open,
+opening Quill raises that window instead.
 
 ## 2. Status item
 
@@ -777,7 +785,7 @@ The images above are `light-hybrid-speaker-counts.png`,
 | A general transcript editor | `transcript.md` remains the editable and export artifact. Quill's native window is read-only review plus speaker identification. |
 | A permanent Dock icon | Quill is normally a menu bar accessory. It becomes a regular app while any user-facing window, chooser, alert or update prompt exists, so every visible surface participates in Command-Tab. |
 | Our own sounds | The system's notification sound is the only sound quill makes. |
-| A first-run wizard | Permissions prompt themselves and the operational menu is already the onboarding surface. If more onboarding is needed, the menu is wrong. |
+| A first-run wizard or tour | Permissions prompt themselves and the menu is the onboarding surface once someone has found it. Finding it is the welcome window's one job. |
 | Live transcription during the meeting | Doubles the compute during the one moment the machine is busy, to show text nobody reads while talking. |
 | Progress in the status item | See principle 1. The bar reports recording. |
 | Any cloud, any account, any telemetry | Nothing leaves the machine. This is the product. |

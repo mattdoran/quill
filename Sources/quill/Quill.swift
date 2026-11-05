@@ -61,9 +61,12 @@ struct Run: ParsableCommand {
         LoginItem.migrateFromLaunchAgent { message in
             FileHandle.standardError.write(Data("\(message)\n".utf8))
         }
-        LoginItem.enableByDefaultOnFirstRun()
+        let isFirstLaunch = LoginItem.enableByDefaultOnFirstRun()
         LoginItem.followInstalledBundle()
         let controller = AppController(root: root)
+        if isFirstLaunch {
+            DispatchQueue.main.async { controller.showWelcome() }
+        }
         Notifier.shared.onStopRequested = { [weak controller] in
             controller?.stopFromNotification()
         }
@@ -125,6 +128,8 @@ final class AppController {
     private var settings: SettingsWindowController?
     private let reviews = TranscriptReviewWindows()
     private var meetings: MeetingsWindowController?
+    private var welcome: WelcomeWindowController?
+    private var reopenDelegate: ApplicationReopenDelegate?
     private var recordingsFolderPanel: NSOpenPanel?
     private var session: RecordingSession?
     private var stoppingTask: Task<Void, Never>?
@@ -150,6 +155,9 @@ final class AppController {
     init(root: URL) {
         self.root = root
         updater = UpdaterController(presence: presence)
+        let reopenDelegate = ApplicationReopenDelegate { [weak self] in self?.applicationReopened() }
+        self.reopenDelegate = reopenDelegate
+        NSApp.delegate = reopenDelegate
         applicationMenu.onQuit = { [weak self] in self?.shutdown() }
         applicationMenu.onAbout = { [weak self] in self?.showAbout() }
         applicationMenu.install()
@@ -638,6 +646,21 @@ final class AppController {
         case .failed:
             menuBar.showModelDownloadOffer(true)
             menuBar.updateTranscription("Model download failed", failed: false)
+        }
+    }
+
+    func showWelcome() {
+        if welcome == nil {
+            welcome = WelcomeWindowController(presence: presence)
+        }
+        welcome?.show()
+    }
+
+    private func applicationReopened() {
+        if presence.state.hasUserInterface {
+            presence.raiseFrontmostWindow()
+        } else {
+            showWelcome()
         }
     }
 

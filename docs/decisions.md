@@ -2,6 +2,25 @@
 
 Dated product and architecture decisions. Newest first.
 
+## 2026-11-05: Say where Quill lives, on first launch and on reopen
+
+**Decision:** One welcome window opens on a fresh install's first launch and
+whenever Quill is opened while running and has no other window. There is no
+tour. A fresh install is the same one the login item uses: the
+`launch_at_login_initialized` marker is unset in a bundled launch.
+
+**Why:** Quill's least technical user thought it was not running while still
+getting updates. `LSUIElement` meant opening it showed nothing, so the menu
+could not teach someone who never found it. A one-time tour would not help
+someone who tries opening Quill again later, and the only missing fact is where
+it lives.
+
+**Consequence:** Existing installs never see it unprompted. The window words its
+directions, because a full menu bar or Bartender can hide the icon. From macOS
+27 it points to the system's double-arrow overflow button; earlier versions have
+none, so it suggests quitting another menu bar app. It does not detect whether
+the icon is actually hidden.
+
 ## 2026-10-28: Pad capture gaps from each buffer's capture time
 
 **Decision:** `TrackWriter` measures a capture gap from when each buffer was

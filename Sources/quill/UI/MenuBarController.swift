@@ -396,7 +396,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     </svg>
     """
 
-    private static func featherImage() -> NSImage? {
+    static func featherImage() -> NSImage? {
         guard let data = featherSVG.data(using: .utf8),
               let image = NSImage(data: data)
         else { return nil }

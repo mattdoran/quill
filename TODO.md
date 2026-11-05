@@ -222,6 +222,12 @@ Settled 2026-10-28 in `docs/decisions.md`.
       memo and a stitched Markdown file, in
       `~/projects/claude-scratch/20261028-124939-screenshot-2026-10-28-12-49-14-2x/transcript.md`.
 
+## Onboarding
+
+- [x] **Show a new user that Quill is running.** A welcome window opens on a
+      fresh install's first launch and when Quill is opened while running. See
+      the 2026-11-05 decision.
+
 ## Permissions
 
 - [ ] **Ask for permissions deliberately, not on first record.** Today the
